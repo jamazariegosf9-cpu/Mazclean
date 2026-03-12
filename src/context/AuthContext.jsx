@@ -91,10 +91,13 @@ export function AuthProvider({ children }) {
 
   // ── Cerrar sesión ─────────────────────────────────────────
   const signOut = async () => {
-    await supabase.auth.signOut()
+    try {
+      await supabase.auth.signOut({ scope: 'local' })
+    } catch (e) {
+      // ignorar errores de lock
+    }
     setUser(null)
     setProfile(null)
-    window.location.reload()
   }
 
   const updateProfile = async (updates) => {
