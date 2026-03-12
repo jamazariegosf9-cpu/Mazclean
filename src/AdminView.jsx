@@ -94,7 +94,15 @@ export default function AdminView({ onNavigate }) {
     }
   }
 
-  if (!user || profile?.role !== 'admin') {
+  if (!user || !profile) {
+    return (
+      <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: '#8CA0BF' }}>Cargando...</p>
+      </div>
+    )
+  }
+
+  if (profile.role !== 'admin') {
     return (
       <div style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, textAlign: 'center', padding: 40 }}>
         <div style={{ fontSize: 48 }}>🔐</div>
