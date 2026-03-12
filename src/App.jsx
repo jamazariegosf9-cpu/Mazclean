@@ -1,5 +1,6 @@
 import ClientView from './ClientView'
 import OperatorView from './OperatorView'
+import AdminView from './AdminView'
 import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthModal from './components/auth/AuthModal'
@@ -71,6 +72,7 @@ function AppInner() {
       {view === 'booking'  && <BookingView onNavigate={setView} />}
       {view === 'client'   && <ClientView onNavigate={setView} />}
       {view === 'operator' && <OperatorView onNavigate={setView} />}
+      {view === 'admin'    && <AdminView onNavigate={setView} />}
       {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
     </div>
   )
