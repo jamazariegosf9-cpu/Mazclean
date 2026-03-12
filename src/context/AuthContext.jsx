@@ -8,11 +8,10 @@ import { supabase } from '../lib/supabase'
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [user, setUser]       = useState(null)   // auth.users row
-  const [profile, setProfile] = useState(null)   // profiles row (con role)
+  const [user, setUser]       = useState(null)
+  const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // ── Cargar perfil extendido ───────────────────────────────
   const loadProfile = async (userId) => {
     const { data, error } = await supabase
       .from('profiles')
@@ -22,16 +21,13 @@ export function AuthProvider({ children }) {
     if (!error) setProfile(data)
   }
 
-  // ── Inicializar sesión ────────────────────────────────────
   useEffect(() => {
-    // Obtener sesión activa al cargar
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
       if (session?.user) loadProfile(session.user.id)
       setLoading(false)
     })
 
-    // Escuchar cambios de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setUser(session?.user ?? null)
@@ -47,7 +43,6 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  // ── Registro con email ────────────────────────────────────
   const signUp = async ({ email, password, fullName, phone }) => {
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -59,7 +54,6 @@ export function AuthProvider({ children }) {
     return { data, error }
   }
 
-  // ── Login con email ───────────────────────────────────────
   const signIn = async ({ email, password }) => {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -68,18 +62,14 @@ export function AuthProvider({ children }) {
     return { data, error }
   }
 
-  // ── Login con Google ──────────────────────────────────────
   const signInWithGoogle = async () => {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
     })
     return { data, error }
   }
 
-  // ── Login con teléfono (OTP) ──────────────────────────────
   const signInWithPhone = async (phone) => {
     const { data, error } = await supabase.auth.signInWithOtp({ phone })
     return { data, error }
@@ -87,14 +77,11 @@ export function AuthProvider({ children }) {
 
   const verifyOTP = async (phone, token) => {
     const { data, error } = await supabase.auth.verifyOtp({
-      phone,
-      token,
-      type: 'sms',
+      phone, token, type: 'sms',
     })
     return { data, error }
   }
 
-  // ── Recuperar contraseña ──────────────────────────────────
   const resetPassword = async (email) => {
     const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/auth/reset-password`,
@@ -107,9 +94,9 @@ export function AuthProvider({ children }) {
     await supabase.auth.signOut()
     setUser(null)
     setProfile(null)
+    window.location.reload()
   }
 
-  // ── Actualizar perfil ─────────────────────────────────────
   const updateProfile = async (updates) => {
     const { data, error } = await supabase
       .from('profiles')
