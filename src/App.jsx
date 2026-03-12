@@ -1,4 +1,5 @@
 import ClientView from './ClientView'
+import OperatorView from './OperatorView'
 import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthModal from './components/auth/AuthModal'
@@ -6,6 +7,11 @@ import BookingView from './BookingView'
 
 function Navbar({ view, setView, onShowAuth }) {
   const { user, profile, signOut } = useAuth()
+
+  const navLinks = [['home','Inicio'],['booking','Reservar'],['client','Mi Cuenta']]
+  if (profile?.role === 'operador') navLinks.push(['operator','Panel Operador'])
+  if (profile?.role === 'admin')    navLinks.push(['operator','Panel Operador'], ['admin','Admin'])
+
   return (
     <nav style={{
       position: 'sticky', top: 0, zIndex: 100,
@@ -17,8 +23,8 @@ function Navbar({ view, setView, onShowAuth }) {
         <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>💧</div>
         <span style={{ fontWeight: 800, fontSize: 18 }}>Maz Clean</span>
       </button>
-      <div style={{ display: 'flex', gap: 4, flex: 1 }}>
-        {[['home','Inicio'],['booking','Reservar'],['client','Mi Cuenta']].map(([id, label]) => (
+      <div style={{ display: 'flex', gap: 4, flex: 1, flexWrap: 'wrap' }}>
+        {navLinks.map(([id, label]) => (
           <button key={id} onClick={() => setView(id)} style={{ padding: '8px 14px', border: 'none', cursor: 'pointer', borderRadius: 10, background: view === id ? 'rgba(0,200,255,0.12)' : 'none', color: view === id ? '#00C8FF' : '#8CA0BF', fontWeight: 600, fontSize: 14 }}>{label}</button>
         ))}
       </div>
@@ -61,9 +67,10 @@ function AppInner() {
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>
       <Navbar view={view} setView={setView} onShowAuth={(tab) => setAuthModal(tab)} />
-      {view === 'home'    && <HomeView setView={setView} />}
-      {view === 'booking' && <BookingView onNavigate={setView} />}
-      {view === 'client' && <ClientView onNavigate={setView} />}
+      {view === 'home'     && <HomeView setView={setView} />}
+      {view === 'booking'  && <BookingView onNavigate={setView} />}
+      {view === 'client'   && <ClientView onNavigate={setView} />}
+      {view === 'operator' && <OperatorView onNavigate={setView} />}
       {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
     </div>
   )
