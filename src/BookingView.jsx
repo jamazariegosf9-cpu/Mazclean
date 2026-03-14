@@ -1,322 +1,658 @@
-// ============================================================
-// MAZ CLEAN — BookingView.jsx
-// Flujo de reservación conectado a Supabase
-// ============================================================
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
 
-const CAR_TYPES = [
-  { id: 'sedan', label: 'Sedan', emoji: '🚗' },
-  { id: 'suv',   label: 'SUV',   emoji: '🚙' },
-  { id: 'truck', label: 'Camioneta', emoji: '🛻' },
+const GOOGLE_MAPS_API_KEY = 'AIzaSyA0k4Rg_XowxjDGUsLD3BldhpTINFMihjw'
+
+const SERVICES = [
+  { id: 'basic', name: 'Lavado Básico', description: 'Exterior + secado', price: 150, duration: '45 min' },
+  { id: 'full', name: 'Lavado Completo', description: 'Exterior + interior + aspirado', price: 250, duration: '90 min' },
+  { id: 'premium', name: 'Lavado Premium', description: 'Full + encerado + aromatizante', price: 400, duration: '2 hrs' },
+  { id: 'detailing', name: 'Detailing', description: 'Limpieza profunda completa', price: 800, duration: '4 hrs' },
 ]
 
-const TIMES = ['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00']
+const VEHICLE_TYPES = [
+  { id: 'sedan', name: 'Sedán / Compacto', icon: '🚗' },
+  { id: 'suv', name: 'SUV / Camioneta', icon: '🚙' },
+  { id: 'pickup', name: 'Pickup', icon: '🛻' },
+  { id: 'van', name: 'Van / Minivan', icon: '🚐' },
+]
 
-const btn = (active) => ({
-  padding: '13px 16px', borderRadius: 12, cursor: 'pointer',
-  border: `1px solid ${active ? '#00C8FF' : 'rgba(255,255,255,0.1)'}`,
-  background: active ? 'rgba(0,200,255,0.12)' : 'rgba(255,255,255,0.04)',
-  color: active ? '#00C8FF' : '#F0F6FF',
-  fontWeight: 600, fontSize: 14, transition: 'all 0.2s', textAlign: 'left',
-})
+// Carga el script de Google Maps una sola vez
+function loadGoogleMapsScript(apiKey) {
+  return new Promise((resolve, reject) => {
+    if (window.google && window.google.maps) {
+      resolve(window.google.maps)
+      return
+    }
+    const existingScript = document.getElementById('google-maps-script')
+    if (existingScript) {
+      existingScript.addEventListener('load', () => resolve(window.google.maps))
+      existingScript.addEventListener('error', reject)
+      return
+    }
+    const script = document.createElement('script')
+    script.id = 'google-maps-script'
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+    script.async = true
+    script.defer = true
+    script.onload = () => resolve(window.google.maps)
+    script.onerror = reject
+    document.head.appendChild(script)
+  })
+}
 
-export default function BookingView({ onNavigate }) {
-  const { user, profile } = useAuth()
-  const [step, setStep]         = useState(1)
-  const [services, setServices] = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [saving, setSaving]     = useState(false)
-  const [confirmed, setConfirmed] = useState(null)
-  const [error, setError]       = useState('')
+export default function BookingView() {
+  const { user } = useAuth()
+  const [step, setStep] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [success, setSuccess] = useState(false)
+  const [mapsLoaded, setMapsLoaded] = useState(false)
 
-  const [carType,    setCarType]    = useState('')
-  const [serviceId,  setServiceId]  = useState('')
-  const [address,    setAddress]    = useState('')
-  const [date,       setDate]       = useState('')
-  const [time,       setTime]       = useState('')
-  const [payment,    setPayment]    = useState('')
+  // Paso 1 — Servicio y vehículo
+  const [selectedService, setSelectedService] = useState(null)
+  const [vehicleType, setVehicleType] = useState('')
+  const [vehicleBrand, setVehicleBrand] = useState('')
+  const [vehicleColor, setVehicleColor] = useState('')
 
-  // Cargar servicios desde Supabase
+  // Paso 2 — Ubicación con Google Maps
+  const [address, setAddress] = useState('')
+  const [addressDetails, setAddressDetails] = useState(null) // { lat, lng, formatted }
+  const [mapError, setMapError] = useState('')
+  const mapRef = useRef(null)
+  const mapInstanceRef = useRef(null)
+  const markerRef = useRef(null)
+  const autocompleteRef = useRef(null)
+  const inputRef = useRef(null)
+
+  // Paso 3 — Fecha y hora
+  const [date, setDate] = useState('')
+  const [time, setTime] = useState('')
+
+  // Paso 4 — Confirmación
+  const [notes, setNotes] = useState('')
+
+  // ── Cargar Google Maps ──────────────────────────────────────────────
   useEffect(() => {
-    supabase
-      .from('services')
-      .select('*')
-      .order('name')
-      .then(({ data, error }) => {
-        console.log('DATA:', data)
-        console.log('ERROR:', JSON.stringify(error))
-        setServices(data || [])
-        setLoading(false)
-      })
+    loadGoogleMapsScript(GOOGLE_MAPS_API_KEY)
+      .then(() => setMapsLoaded(true))
+      .catch(() => setMapError('No se pudo cargar Google Maps. Verifica tu conexión.'))
   }, [])
 
-  const selectedService = services.find(s => s.id === serviceId)
-  const priceKey = `price_${carType}`
-  const total = selectedService?.[priceKey] || 0
+  // ── Inicializar mapa y autocompletado cuando llegamos al paso 2 ─────
+  useEffect(() => {
+    if (step !== 2 || !mapsLoaded) return
 
-  const handleConfirm = async () => {
-    if (!user) return setError('Debes iniciar sesion para reservar.')
-    setSaving(true)
-    setError('')
+    // Pequeño delay para que el DOM esté listo
+    const timer = setTimeout(() => {
+      initMap()
+      initAutocomplete()
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [step, mapsLoaded])
 
-    const { data, error } = await supabase
-      .from('bookings')
-      .insert({
-        client_id:      user.id,
-        service_id:     serviceId,
-        address_line:   address,
-        scheduled_date: date,
-        scheduled_time: time,
-        base_price:     total,
-        total_price:    total,
-        payment_method: payment,
-        status:         'pendiente',
-      })
-      .select()
-      .single()
+  const initMap = useCallback(() => {
+    if (!mapRef.current || mapInstanceRef.current) return
 
-    setSaving(false)
-    if (error) return setError('Error al guardar: ' + error.message)
-    setConfirmed(data)
+    // Centro en CDMX por defecto
+    const defaultCenter = { lat: 19.4326, lng: -99.1332 }
+
+    const map = new window.google.maps.Map(mapRef.current, {
+      center: defaultCenter,
+      zoom: 13,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false,
+      styles: [
+        { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+      ],
+    })
+    mapInstanceRef.current = map
+
+    // Marcador arrastrable
+    const marker = new window.google.maps.Marker({
+      position: defaultCenter,
+      map,
+      draggable: true,
+      animation: window.google.maps.Animation.DROP,
+      title: 'Arrastra para ajustar la ubicación',
+    })
+    markerRef.current = marker
+
+    // Al arrastrar el marcador, actualizar dirección
+    marker.addListener('dragend', async (e) => {
+      const lat = e.latLng.lat()
+      const lng = e.latLng.lng()
+      await reverseGeocode(lat, lng)
+    })
+
+    // Clic en el mapa mueve el marcador
+    map.addListener('click', async (e) => {
+      const lat = e.latLng.lat()
+      const lng = e.latLng.lng()
+      marker.setPosition(e.latLng)
+      await reverseGeocode(lat, lng)
+    })
+  }, [])
+
+  const initAutocomplete = useCallback(() => {
+    if (!inputRef.current || autocompleteRef.current) return
+
+    const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
+      componentRestrictions: { country: 'mx' },
+      fields: ['geometry', 'formatted_address', 'name'],
+    })
+    autocompleteRef.current = autocomplete
+
+    autocomplete.addListener('place_changed', () => {
+      const place = autocomplete.getPlace()
+      if (!place.geometry) return
+
+      const lat = place.geometry.location.lat()
+      const lng = place.geometry.location.lng()
+      const formatted = place.formatted_address || place.name
+
+      setAddress(formatted)
+      setAddressDetails({ lat, lng, formatted })
+      setMapError('')
+
+      // Mover mapa y marcador
+      if (mapInstanceRef.current && markerRef.current) {
+        mapInstanceRef.current.setCenter({ lat, lng })
+        mapInstanceRef.current.setZoom(16)
+        markerRef.current.setPosition({ lat, lng })
+      }
+    })
+  }, [])
+
+  const reverseGeocode = async (lat, lng) => {
+    try {
+      const geocoder = new window.google.maps.Geocoder()
+      const result = await geocoder.geocode({ location: { lat, lng } })
+      if (result.results[0]) {
+        const formatted = result.results[0].formatted_address
+        setAddress(formatted)
+        setAddressDetails({ lat, lng, formatted })
+        if (inputRef.current) inputRef.current.value = formatted
+      }
+    } catch (err) {
+      console.error('Reverse geocode error:', err)
+    }
   }
 
-  // ── CONFIRMACION ──────────────────────────────────────────
-  if (confirmed) {
+  const handleUseMyLocation = () => {
+    if (!navigator.geolocation) {
+      setMapError('Tu navegador no soporta geolocalización.')
+      return
+    }
+    setMapError('')
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude
+        const lng = pos.coords.longitude
+        if (mapInstanceRef.current && markerRef.current) {
+          const latlng = { lat, lng }
+          mapInstanceRef.current.setCenter(latlng)
+          mapInstanceRef.current.setZoom(16)
+          markerRef.current.setPosition(latlng)
+        }
+        await reverseGeocode(lat, lng)
+      },
+      () => setMapError('No se pudo obtener tu ubicación. Verifica los permisos del navegador.')
+    )
+  }
+
+  // ── Validaciones por paso ───────────────────────────────────────────
+  const canGoNext = () => {
+    if (step === 1) return selectedService && vehicleType && vehicleBrand && vehicleColor
+    if (step === 2) return addressDetails !== null
+    if (step === 3) return date && time
+    return true
+  }
+
+  // ── Guardar reservación en Supabase ─────────────────────────────────
+  const handleSubmit = async () => {
+    if (!user) return
+    setLoading(true)
+    try {
+      const service = SERVICES.find(s => s.id === selectedService)
+      const vehicle = VEHICLE_TYPES.find(v => v.id === vehicleType)
+
+      const { error } = await supabase.from('bookings').insert({
+        client_id: user.id,
+        service_type: selectedService,
+        service_name: service.name,
+        service_price: service.price,
+        vehicle_type: vehicleType,
+        vehicle_brand: vehicleBrand,
+        vehicle_color: vehicleColor,
+        address: addressDetails.formatted,
+        address_lat: addressDetails.lat,
+        address_lng: addressDetails.lng,
+        scheduled_date: date,
+        scheduled_time: time,
+        notes: notes,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+      })
+
+      if (error) throw error
+      setSuccess(true)
+    } catch (err) {
+      console.error('Error al guardar reservación:', err)
+      alert('Hubo un error al guardar tu reservación. Intenta de nuevo.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const resetForm = () => {
+    setStep(1)
+    setSuccess(false)
+    setSelectedService(null)
+    setVehicleType('')
+    setVehicleBrand('')
+    setVehicleColor('')
+    setAddress('')
+    setAddressDetails(null)
+    setDate('')
+    setTime('')
+    setNotes('')
+    mapInstanceRef.current = null
+    markerRef.current = null
+    autocompleteRef.current = null
+  }
+
+  // ── UI ──────────────────────────────────────────────────────────────
+  if (success) {
     return (
-      <div style={{ minHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 40, textAlign: 'center' }}>
-        <div style={{ width: 90, height: 90, borderRadius: '50%', fontSize: 44, background: 'rgba(0,229,200,0.15)', border: '2px solid #00E5C8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
-        <h2 style={{ fontWeight: 800, fontSize: 32, color: '#00E5C8' }}>Reservacion Confirmada</h2>
-        <p style={{ color: '#8CA0BF', maxWidth: 380, lineHeight: 1.7 }}>
-          Tu folio es <strong style={{ color: '#00C8FF' }}>{confirmed.booking_ref}</strong>. Nos vemos pronto.
-        </p>
-        <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 24, maxWidth: 380, width: '100%', textAlign: 'left' }}>
-          {[
-            ['Servicio',  selectedService?.name],
-            ['Vehiculo',  CAR_TYPES.find(c => c.id === carType)?.label],
-            ['Direccion', address],
-            ['Fecha',     date],
-            ['Hora',      time],
-            ['Pago',      payment],
-            ['Total',     `$${total} MXN`],
-          ].map(([k, v]) => v && (
-            <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginBottom: 10 }}>
-              <span style={{ color: '#8CA0BF' }}>{k}</span>
-              <span style={{ fontWeight: 600 }}>{v}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <button onClick={() => onNavigate('home')} style={{ padding: '12px 28px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, cursor: 'pointer' }}>
-            Ir al inicio
-          </button>
-          <button onClick={() => { setConfirmed(null); setStep(1); setCarType(''); setServiceId(''); setAddress(''); setDate(''); setTime(''); setPayment('') }}
-            style={{ padding: '12px 24px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.15)', background: 'none', color: '#F0F6FF', fontWeight: 600, cursor: 'pointer' }}>
-            Nueva reserva
-          </button>
+      <div style={styles.container}>
+        <div style={styles.successCard}>
+          <div style={styles.successIcon}>✅</div>
+          <h2 style={styles.successTitle}>¡Reservación confirmada!</h2>
+          <p style={styles.successText}>
+            Tu lavado ha sido agendado para el <strong>{date}</strong> a las <strong>{time}</strong>.
+          </p>
+          <p style={styles.successAddress}>📍 {addressDetails?.formatted}</p>
+          <p style={styles.successNote}>Te notificaremos cuando un operador sea asignado.</p>
+          <button onClick={resetForm} style={styles.btnPrimary}>Nueva reservación</button>
         </div>
       </div>
     )
   }
 
-  // ── PROGRESS BAR ─────────────────────────────────────────
-  const totalSteps = 4
-  const Progress = () => (
-    <div style={{ marginBottom: 36 }}>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-        {Array.from({ length: totalSteps }, (_, i) => (
-          <div key={i} style={{
-            flex: 1, height: 4, borderRadius: 2,
-            background: i < step ? 'linear-gradient(90deg,#00C8FF,#00E5C8)' : 'rgba(255,255,255,0.08)',
-            transition: 'background 0.3s',
-          }}/>
-        ))}
-      </div>
-      <p style={{ color: '#8CA0BF', fontSize: 13 }}>Paso {step} de {totalSteps}</p>
-    </div>
-  )
-
   return (
-    <div style={{ minHeight: '100vh', padding: '40px 24px', maxWidth: 660, margin: '0 auto' }}>
-      <button onClick={() => step > 1 ? setStep(s => s-1) : onNavigate('home')}
-        style={{ background: 'none', border: 'none', color: '#8CA0BF', cursor: 'pointer', fontSize: 14, marginBottom: 28 }}>
-        ← {step > 1 ? 'Atras' : 'Inicio'}
-      </button>
-
-      <h2 style={{ fontWeight: 800, fontSize: 28, marginBottom: 6 }}>Reservar Servicio</h2>
-      <Progress />
-
-      {error && (
-        <div style={{ background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 10, padding: '12px 16px', color: '#F87171', fontSize: 14, marginBottom: 20 }}>
-          {error}
-        </div>
-      )}
-
-      {/* ── PASO 1: Vehiculo y servicio ── */}
-      {step === 1 && (
-        <div>
-          <p style={{ color: '#8CA0BF', fontSize: 14, marginBottom: 14 }}>Tipo de vehiculo</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 28 }}>
-            {CAR_TYPES.map(ct => (
-              <button key={ct.id} onClick={() => setCarType(ct.id)} style={{ ...btn(carType === ct.id), textAlign: 'center' }}>
-                <div style={{ fontSize: 26, marginBottom: 6 }}>{ct.emoji}</div>
-                {ct.label}
-              </button>
-            ))}
-          </div>
-
-          <p style={{ color: '#8CA0BF', fontSize: 14, marginBottom: 14 }}>Tipo de servicio</p>
-          {loading ? (
-            <p style={{ color: '#8CA0BF' }}>Cargando servicios...</p>
-          ) : (
-            <div style={{ display: 'grid', gap: 10 }}>
-              {services.map(s => (
-                <button key={s.id} onClick={() => setServiceId(s.id)} style={{
-                  ...btn(serviceId === s.id),
-                  display: 'flex', alignItems: 'center', gap: 14,
-                  border: `1px solid ${serviceId === s.id ? s.color + '60' : 'rgba(255,255,255,0.08)'}`,
-                  background: serviceId === s.id ? `${s.color}10` : 'rgba(255,255,255,0.03)',
+    <div style={styles.container}>
+      <div style={styles.card}>
+        {/* Header */}
+        <div style={styles.header}>
+          <h1 style={styles.title}>🚗 Reservar Lavado</h1>
+          <div style={styles.stepsBar}>
+            {[1, 2, 3, 4].map(s => (
+              <div key={s} style={{ display: 'flex', alignItems: 'center' }}>
+                <div style={{
+                  ...styles.stepDot,
+                  background: s <= step ? '#3b82f6' : '#e5e7eb',
+                  color: s <= step ? '#fff' : '#9ca3af',
                 }}>
-                  <span style={{ fontSize: 22 }}>{s.icon}</span>
-                  <div style={{ flex: 1, textAlign: 'left' }}>
-                    <div style={{ fontWeight: 600 }}>{s.name}</div>
-                    <div style={{ color: '#8CA0BF', fontSize: 12 }}>⏱ {s.duration_min} min</div>
-                  </div>
-                  {carType && (
-                    <span style={{ color: s.color, fontWeight: 800, fontSize: 18 }}>
-                      ${s[priceKey]}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <button onClick={() => setStep(2)} disabled={!carType || !serviceId}
-            style={{ marginTop: 28, width: '100%', padding: 15, borderRadius: 12, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 15, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', opacity: (!carType || !serviceId) ? 0.4 : 1 }}>
-            Continuar →
-          </button>
-        </div>
-      )}
-
-      {/* ── PASO 2: Direccion ── */}
-      {step === 2 && (
-        <div>
-          <h3 style={{ fontWeight: 700, fontSize: 20, marginBottom: 24 }}>Donde atendemos tu vehiculo?</h3>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 13, color: '#8CA0BF', display: 'block', marginBottom: 8 }}>Direccion completa</label>
-            <input value={address} onChange={e => setAddress(e.target.value)}
-              placeholder="Ej: Av. Insurgentes Sur 1234, Col. Del Valle"
-              style={{ width: '100%', padding: '13px 16px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 10, color: '#F0F6FF', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
-          </div>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 13, color: '#8CA0BF', display: 'block', marginBottom: 8 }}>Notas adicionales (opcional)</label>
-            <textarea placeholder="Ej: Dejar con el portero, edificio azul..."
-              style={{ width: '100%', padding: '13px 16px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 10, color: '#F0F6FF', fontSize: 14, outline: 'none', boxSizing: 'border-box', resize: 'vertical', minHeight: 80 }} />
-          </div>
-
-          {/* Mapa placeholder */}
-          <div style={{ height: 200, borderRadius: 14, border: '1px solid rgba(0,200,255,0.2)', background: 'linear-gradient(135deg,#0A1F3C,#0D2A50)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10, marginBottom: 24, position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(0,200,255,0.05) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,255,0.05) 1px,transparent 1px)', backgroundSize: '28px 28px' }}/>
-            {address ? (
-              <>
-                <div style={{ fontSize: 32 }}>📍</div>
-                <div style={{ background: 'rgba(0,200,255,0.12)', border: '1px solid rgba(0,200,255,0.3)', borderRadius: 10, padding: '8px 16px', fontSize: 13, color: '#00C8FF' }}>
-                  Direccion confirmada
+                  {s < step ? '✓' : s}
                 </div>
-              </>
-            ) : (
-              <p style={{ color: '#8CA0BF', fontSize: 14 }}>Ingresa tu direccion para confirmarla</p>
-            )}
-          </div>
-
-          <button onClick={() => setStep(3)} disabled={!address}
-            style={{ width: '100%', padding: 15, borderRadius: 12, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 15, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', opacity: !address ? 0.4 : 1 }}>
-            Confirmar Direccion →
-          </button>
-        </div>
-      )}
-
-      {/* ── PASO 3: Fecha y hora ── */}
-      {step === 3 && (
-        <div>
-          <h3 style={{ fontWeight: 700, fontSize: 20, marginBottom: 24 }}>Cuando te visitamos?</h3>
-          <div style={{ marginBottom: 24 }}>
-            <label style={{ fontSize: 13, color: '#8CA0BF', display: 'block', marginBottom: 8 }}>Fecha</label>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)}
-              min={new Date().toISOString().split('T')[0]}
-              style={{ width: '100%', padding: '13px 16px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 10, color: '#F0F6FF', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
-          </div>
-
-          <p style={{ color: '#8CA0BF', fontSize: 13, marginBottom: 14 }}>Horario disponible</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 28 }}>
-            {TIMES.map(t => (
-              <button key={t} onClick={() => setTime(t)} style={{ ...btn(time === t), textAlign: 'center', padding: '12px 6px' }}>
-                {t}
-              </button>
-            ))}
-          </div>
-
-          <button onClick={() => setStep(4)} disabled={!date || !time}
-            style={{ width: '100%', padding: 15, borderRadius: 12, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 15, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', opacity: (!date || !time) ? 0.4 : 1 }}>
-            Continuar →
-          </button>
-        </div>
-      )}
-
-      {/* ── PASO 4: Pago y confirmacion ── */}
-      {step === 4 && (
-        <div>
-          <h3 style={{ fontWeight: 700, fontSize: 20, marginBottom: 24 }}>Metodo de pago</h3>
-
-          <div style={{ display: 'grid', gap: 10, marginBottom: 28 }}>
-            {[
-              { id: 'efectivo',       label: 'Efectivo',                icon: '💵', desc: 'Pagas al operador al llegar' },
-              { id: 'transferencia',  label: 'Transferencia bancaria',  icon: '🏦', desc: 'CLABE / SPEI al confirmar' },
-              { id: 'tarjeta',        label: 'Tarjeta credito/debito',  icon: '💳', desc: 'Visa, Mastercard, Amex' },
-            ].map(p => (
-              <button key={p.id} onClick={() => setPayment(p.id)} style={{
-                ...btn(payment === p.id),
-                display: 'flex', alignItems: 'center', gap: 14,
-              }}>
-                <span style={{ fontSize: 24 }}>{p.icon}</span>
-                <div style={{ flex: 1, textAlign: 'left' }}>
-                  <div style={{ fontWeight: 600 }}>{p.label}</div>
-                  <div style={{ color: '#8CA0BF', fontSize: 12 }}>{p.desc}</div>
-                </div>
-                {payment === p.id && <span style={{ color: '#00C8FF' }}>✓</span>}
-              </button>
-            ))}
-          </div>
-
-          {/* Resumen */}
-          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,200,255,0.2)', borderRadius: 14, padding: 20, marginBottom: 20 }}>
-            <p style={{ fontWeight: 700, color: '#00C8FF', marginBottom: 14 }}>Resumen</p>
-            {[
-              ['Servicio',  selectedService?.name],
-              ['Vehiculo',  CAR_TYPES.find(c => c.id === carType)?.label],
-              ['Fecha',     date],
-              ['Hora',      time],
-              ['Direccion', address],
-            ].map(([k, v]) => (
-              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
-                <span style={{ color: '#8CA0BF' }}>{k}</span>
-                <span style={{ fontWeight: 500, maxWidth: '60%', textAlign: 'right' }}>{v}</span>
+                {s < 4 && <div style={{ ...styles.stepLine, background: s < step ? '#3b82f6' : '#e5e7eb' }} />}
               </div>
             ))}
-            <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 12, paddingTop: 12, display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ fontWeight: 700 }}>Total</span>
-              <span style={{ fontWeight: 800, color: '#00C8FF', fontSize: 20 }}>${total} MXN</span>
+          </div>
+          <div style={styles.stepLabel}>
+            {step === 1 && 'Servicio y vehículo'}
+            {step === 2 && 'Ubicación'}
+            {step === 3 && 'Fecha y hora'}
+            {step === 4 && 'Confirmar'}
+          </div>
+        </div>
+
+        {/* ── PASO 1: Servicio y vehículo ── */}
+        {step === 1 && (
+          <div style={styles.body}>
+            <h3 style={styles.sectionTitle}>¿Qué servicio necesitas?</h3>
+            <div style={styles.serviceGrid}>
+              {SERVICES.map(s => (
+                <div
+                  key={s.id}
+                  onClick={() => setSelectedService(s.id)}
+                  style={{
+                    ...styles.serviceCard,
+                    border: selectedService === s.id ? '2px solid #3b82f6' : '2px solid #e5e7eb',
+                    background: selectedService === s.id ? '#eff6ff' : '#fff',
+                  }}
+                >
+                  <div style={styles.serviceName}>{s.name}</div>
+                  <div style={styles.serviceDesc}>{s.description}</div>
+                  <div style={styles.serviceFooter}>
+                    <span style={styles.servicePrice}>${s.price}</span>
+                    <span style={styles.serviceDuration}>⏱ {s.duration}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <h3 style={{ ...styles.sectionTitle, marginTop: 24 }}>Tipo de vehículo</h3>
+            <div style={styles.vehicleGrid}>
+              {VEHICLE_TYPES.map(v => (
+                <div
+                  key={v.id}
+                  onClick={() => setVehicleType(v.id)}
+                  style={{
+                    ...styles.vehicleCard,
+                    border: vehicleType === v.id ? '2px solid #3b82f6' : '2px solid #e5e7eb',
+                    background: vehicleType === v.id ? '#eff6ff' : '#fff',
+                  }}
+                >
+                  <span style={{ fontSize: 28 }}>{v.icon}</span>
+                  <span style={styles.vehicleName}>{v.name}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={styles.row}>
+              <div style={styles.field}>
+                <label style={styles.label}>Marca / Modelo</label>
+                <input
+                  style={styles.input}
+                  placeholder="Ej: Toyota Corolla"
+                  value={vehicleBrand}
+                  onChange={e => setVehicleBrand(e.target.value)}
+                />
+              </div>
+              <div style={styles.field}>
+                <label style={styles.label}>Color</label>
+                <input
+                  style={styles.input}
+                  placeholder="Ej: Blanco"
+                  value={vehicleColor}
+                  onChange={e => setVehicleColor(e.target.value)}
+                />
+              </div>
             </div>
           </div>
+        )}
 
-          <button onClick={handleConfirm} disabled={!payment || saving}
-            style={{ width: '100%', padding: 15, borderRadius: 12, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 15, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', opacity: (!payment || saving) ? 0.5 : 1 }}>
-            {saving ? 'Guardando...' : 'Confirmar Reservacion ✓'}
-          </button>
+        {/* ── PASO 2: Ubicación con Google Maps ── */}
+        {step === 2 && (
+          <div style={styles.body}>
+            <h3 style={styles.sectionTitle}>¿Dónde está tu vehículo?</h3>
+
+            {/* Input de autocompletado */}
+            <div style={{ position: 'relative', marginBottom: 12 }}>
+              <input
+                ref={inputRef}
+                style={{ ...styles.input, paddingLeft: 40 }}
+                placeholder="Busca tu dirección..."
+                defaultValue={address}
+                onChange={e => {
+                  if (!e.target.value) {
+                    setAddress('')
+                    setAddressDetails(null)
+                  }
+                }}
+              />
+              <span style={styles.inputIcon}>🔍</span>
+            </div>
+
+            {/* Botón: usar mi ubicación */}
+            <button onClick={handleUseMyLocation} style={styles.btnLocation}>
+              📍 Usar mi ubicación actual
+            </button>
+
+            {mapError && <p style={styles.errorText}>{mapError}</p>}
+
+            {/* Mapa */}
+            {!mapsLoaded ? (
+              <div style={styles.mapPlaceholder}>Cargando mapa...</div>
+            ) : (
+              <div
+                ref={mapRef}
+                style={styles.mapContainer}
+              />
+            )}
+
+            {addressDetails && (
+              <div style={styles.addressConfirm}>
+                ✅ <strong>Dirección seleccionada:</strong> {addressDetails.formatted}
+              </div>
+            )}
+
+            <p style={styles.mapHint}>
+              💡 Puedes arrastrar el pin o hacer clic en el mapa para ajustar la ubicación exacta.
+            </p>
+          </div>
+        )}
+
+        {/* ── PASO 3: Fecha y hora ── */}
+        {step === 3 && (
+          <div style={styles.body}>
+            <h3 style={styles.sectionTitle}>¿Cuándo lo necesitas?</h3>
+            <div style={styles.row}>
+              <div style={styles.field}>
+                <label style={styles.label}>Fecha</label>
+                <input
+                  type="date"
+                  style={styles.input}
+                  value={date}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={e => setDate(e.target.value)}
+                />
+              </div>
+              <div style={styles.field}>
+                <label style={styles.label}>Hora</label>
+                <select style={styles.input} value={time} onChange={e => setTime(e.target.value)}>
+                  <option value="">Selecciona hora</option>
+                  {['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'].map(t => (
+                    <option key={t} value={t}>{t} hrs</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div style={styles.field}>
+              <label style={styles.label}>Notas adicionales (opcional)</label>
+              <textarea
+                style={{ ...styles.input, height: 80, resize: 'vertical' }}
+                placeholder="Ej: El coche está en la cochera, tocar el timbre..."
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ── PASO 4: Resumen ── */}
+        {step === 4 && (
+          <div style={styles.body}>
+            <h3 style={styles.sectionTitle}>Resumen de tu reservación</h3>
+            {(() => {
+              const service = SERVICES.find(s => s.id === selectedService)
+              const vehicle = VEHICLE_TYPES.find(v => v.id === vehicleType)
+              return (
+                <div style={styles.summaryCard}>
+                  <SummaryRow icon="🧽" label="Servicio" value={service?.name} sub={`$${service?.price} · ${service?.duration}`} />
+                  <SummaryRow icon={vehicle?.icon} label="Vehículo" value={`${vehicleBrand} · ${vehicleColor}`} sub={vehicle?.name} />
+                  <SummaryRow icon="📍" label="Dirección" value={addressDetails?.formatted} />
+                  <SummaryRow icon="📅" label="Fecha y hora" value={`${date} a las ${time} hrs`} />
+                  {notes && <SummaryRow icon="📝" label="Notas" value={notes} />}
+                  <div style={styles.totalRow}>
+                    <span>Total a pagar</span>
+                    <span style={styles.totalPrice}>${service?.price} MXN</span>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        )}
+
+        {/* Botones de navegación */}
+        <div style={styles.footer}>
+          {step > 1 && (
+            <button onClick={() => setStep(s => s - 1)} style={styles.btnSecondary}>
+              ← Atrás
+            </button>
+          )}
+          {step < 4 ? (
+            <button
+              onClick={() => setStep(s => s + 1)}
+              disabled={!canGoNext()}
+              style={{ ...styles.btnPrimary, opacity: canGoNext() ? 1 : 0.5 }}
+            >
+              Siguiente →
+            </button>
+          ) : (
+            <button
+              onClick={handleSubmit}
+              disabled={loading}
+              style={{ ...styles.btnPrimary, background: '#10b981' }}
+            >
+              {loading ? 'Guardando...' : '✅ Confirmar reservación'}
+            </button>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
+}
+
+function SummaryRow({ icon, label, value, sub }) {
+  return (
+    <div style={styles.summaryRow}>
+      <span style={styles.summaryIcon}>{icon}</span>
+      <div>
+        <div style={styles.summaryLabel}>{label}</div>
+        <div style={styles.summaryValue}>{value}</div>
+        {sub && <div style={styles.summarySub}>{sub}</div>}
+      </div>
+    </div>
+  )
+}
+
+const styles = {
+  container: {
+    minHeight: '100vh',
+    background: '#f3f4f6',
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    padding: '24px 16px',
+  },
+  card: {
+    background: '#fff',
+    borderRadius: 16,
+    boxShadow: '0 4px 24px rgba(0,0,0,0.10)',
+    width: '100%',
+    maxWidth: 680,
+    overflow: 'hidden',
+  },
+  header: {
+    background: 'linear-gradient(135deg, #1e40af, #3b82f6)',
+    padding: '24px',
+    textAlign: 'center',
+  },
+  title: { color: '#fff', fontSize: 22, fontWeight: 700, margin: '0 0 16px' },
+  stepsBar: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0 },
+  stepDot: {
+    width: 32, height: 32, borderRadius: '50%',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontWeight: 700, fontSize: 14, transition: 'all 0.3s',
+  },
+  stepLine: { width: 40, height: 3, transition: 'all 0.3s' },
+  stepLabel: { color: '#bfdbfe', fontSize: 13, marginTop: 8 },
+  body: { padding: 24 },
+  footer: { padding: '16px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', gap: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 },
+  serviceGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 },
+  serviceCard: {
+    padding: 14, borderRadius: 10, cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  serviceName: { fontWeight: 600, fontSize: 15, color: '#1f2937' },
+  serviceDesc: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  serviceFooter: { display: 'flex', justifyContent: 'space-between', marginTop: 8, alignItems: 'center' },
+  servicePrice: { fontWeight: 700, color: '#3b82f6', fontSize: 16 },
+  serviceDuration: { fontSize: 11, color: '#9ca3af' },
+  vehicleGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 },
+  vehicleCard: {
+    padding: '10px 4px', borderRadius: 10, cursor: 'pointer',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+    transition: 'all 0.2s',
+  },
+  vehicleName: { fontSize: 11, color: '#374151', textAlign: 'center', fontWeight: 500 },
+  row: { display: 'flex', gap: 12 },
+  field: { flex: 1, display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 },
+  label: { fontSize: 13, fontWeight: 500, color: '#374151' },
+  input: {
+    padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb',
+    fontSize: 14, outline: 'none', width: '100%', boxSizing: 'border-box',
+    fontFamily: 'inherit',
+  },
+  inputIcon: {
+    position: 'absolute', left: 12, top: '50%',
+    transform: 'translateY(-50%)', fontSize: 16,
+  },
+  btnLocation: {
+    background: '#f0f9ff', border: '1.5px solid #bae6fd',
+    borderRadius: 8, padding: '8px 14px', cursor: 'pointer',
+    fontSize: 13, color: '#0369a1', fontWeight: 500,
+    marginBottom: 12, width: '100%',
+  },
+  mapContainer: {
+    width: '100%', height: 280, borderRadius: 12,
+    border: '1.5px solid #e5e7eb', overflow: 'hidden',
+    marginBottom: 12,
+  },
+  mapPlaceholder: {
+    width: '100%', height: 280, borderRadius: 12,
+    background: '#f9fafb', display: 'flex', alignItems: 'center',
+    justifyContent: 'center', color: '#9ca3af', fontSize: 14,
+    border: '1.5px solid #e5e7eb', marginBottom: 12,
+  },
+  addressConfirm: {
+    background: '#f0fdf4', border: '1px solid #bbf7d0',
+    borderRadius: 8, padding: '10px 14px', fontSize: 13,
+    color: '#166534', marginBottom: 8,
+  },
+  mapHint: { fontSize: 12, color: '#9ca3af', margin: '4px 0 0' },
+  errorText: { color: '#dc2626', fontSize: 13, marginBottom: 8 },
+  summaryCard: {
+    background: '#f9fafb', borderRadius: 12,
+    border: '1px solid #e5e7eb', overflow: 'hidden',
+  },
+  summaryRow: {
+    display: 'flex', gap: 12, padding: '14px 16px',
+    borderBottom: '1px solid #f3f4f6', alignItems: 'flex-start',
+  },
+  summaryIcon: { fontSize: 20, flexShrink: 0, marginTop: 2 },
+  summaryLabel: { fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 },
+  summaryValue: { fontSize: 14, color: '#1f2937', fontWeight: 500, marginTop: 2 },
+  summarySub: { fontSize: 12, color: '#6b7280', marginTop: 1 },
+  totalRow: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '14px 16px', background: '#eff6ff',
+    fontWeight: 600, fontSize: 15, color: '#1e40af',
+  },
+  totalPrice: { fontSize: 20, fontWeight: 700, color: '#1d4ed8' },
+  btnPrimary: {
+    background: '#3b82f6', color: '#fff', border: 'none',
+    borderRadius: 8, padding: '11px 24px', cursor: 'pointer',
+    fontSize: 15, fontWeight: 600, flex: 1,
+  },
+  btnSecondary: {
+    background: '#f3f4f6', color: '#374151', border: 'none',
+    borderRadius: 8, padding: '11px 20px', cursor: 'pointer',
+    fontSize: 15, fontWeight: 500,
+  },
+  successCard: {
+    background: '#fff', borderRadius: 16, padding: 40,
+    maxWidth: 480, margin: '0 auto', textAlign: 'center',
+    boxShadow: '0 4px 24px rgba(0,0,0,0.10)',
+  },
+  successIcon: { fontSize: 56, marginBottom: 16 },
+  successTitle: { fontSize: 24, fontWeight: 700, color: '#065f46', margin: '0 0 12px' },
+  successText: { fontSize: 16, color: '#374151', margin: '0 0 8px' },
+  successAddress: { fontSize: 14, color: '#6b7280', margin: '0 0 8px' },
+  successNote: { fontSize: 13, color: '#9ca3af', margin: '0 0 24px' },
 }
