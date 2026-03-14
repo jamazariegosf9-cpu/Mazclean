@@ -7,21 +7,29 @@ import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
 
 const STATUS_COLORS = {
-  pendiente:  '#FFD166',
-  confirmado: '#00C8FF',
-  en_camino:  '#A78BFA',
-  en_proceso: '#F97316',
-  finalizado: '#00E5C8',
-  cancelado:  '#F87171',
+  pending:     '#FFD166',
+  assigned:    '#8CA0BF',
+  confirmado:  '#00C8FF',
+  on_the_way:  '#A78BFA',
+  arrived:     '#F97316',
+  washing:     '#F97316',
+  done:        '#00E5C8',
+  finalizado:  '#00E5C8',
+  cancelled:   '#F87171',
+  cancelado:   '#F87171',
 }
 
 const STATUS_LABELS = {
-  pendiente:  'Pendiente',
-  confirmado: 'Confirmado',
-  en_camino:  'En camino',
-  en_proceso: 'En proceso',
-  finalizado: 'Finalizado',
-  cancelado:  'Cancelado',
+  pending:     'Pendiente',
+  assigned:    'Asignado',
+  confirmado:  'Confirmado',
+  on_the_way:  'En camino',
+  arrived:     'Llegó',
+  washing:     'Lavando',
+  done:        'Completado',
+  finalizado:  'Finalizado',
+  cancelled:   'Cancelado',
+  cancelado:   'Cancelado',
 }
 
 function StatusBadge({ status }) {
@@ -33,7 +41,7 @@ function StatusBadge({ status }) {
       background: `${color}20`, color, fontSize: 11, fontWeight: 600,
     }}>
       <span style={{ width: 5, height: 5, borderRadius: '50%', background: color, display: 'inline-block' }}/>
-      {STATUS_LABELS[status]}
+      {STATUS_LABELS[status] || status}
     </span>
   )
 }
@@ -44,7 +52,6 @@ export default function AdminView({ onNavigate }) {
   const [bookings, setBookings]   = useState([])
   const [operators, setOperators] = useState([])
   const [clients, setClients]     = useState([])
-  const [services, setServices]   = useState([])
   const [loading, setLoading]     = useState(true)
   const [assigning, setAssigning] = useState(null)
 
@@ -55,16 +62,23 @@ export default function AdminView({ onNavigate }) {
 
   const loadAll = async () => {
     setLoading(true)
-    const [b, o, c, s] = await Promise.all([
-      supabase.from('bookings').select(`*, services(name,icon,color), profiles!bookings_client_id_fkey(full_name,phone)`).order('created_at', { ascending: false }),
-      supabase.from('profiles').select('*').eq('role', 'operador'),
-      supabase.from('profiles').select('*').eq('role', 'cliente'),
-      supabase.from('services').select('*').order('name'),
+    const [b, o, c] = await Promise.all([
+      supabase
+        .from('bookings')
+        .select('*')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'operador'),
+      supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'cliente'),
     ])
     if (b.data) setBookings(b.data)
     if (o.data) setOperators(o.data)
     if (c.data) setClients(c.data)
-    if (s.data) setServices(s.data)
     setLoading(false)
   }
 
@@ -72,11 +86,11 @@ export default function AdminView({ onNavigate }) {
     setAssigning(bookingId)
     const { error } = await supabase
       .from('bookings')
-      .update({ operator_id: operatorId, status: 'confirmado' })
+      .update({ operator_id: operatorId, status: 'assigned' })
       .eq('id', bookingId)
     if (!error) {
       setBookings(prev => prev.map(b =>
-        b.id === bookingId ? { ...b, operator_id: operatorId, status: 'confirmado' } : b
+        b.id === bookingId ? { ...b, operator_id: operatorId, status: 'assigned' } : b
       ))
     }
     setAssigning(null)
@@ -117,10 +131,10 @@ export default function AdminView({ onNavigate }) {
 
   // ── Métricas ──────────────────────────────────────────────
   const total       = bookings.length
-  const pendientes  = bookings.filter(b => b.status === 'pendiente').length
-  const activos     = bookings.filter(b => ['confirmado','en_camino','en_proceso'].includes(b.status)).length
-  const finalizados = bookings.filter(b => b.status === 'finalizado').length
-  const ingresos    = bookings.filter(b => b.status === 'finalizado').reduce((s, b) => s + (b.total_price || 0), 0)
+  const pendientes  = bookings.filter(b => b.status === 'pending').length
+  const activos     = bookings.filter(b => ['assigned','confirmado','on_the_way','arrived','washing'].includes(b.status)).length
+  const finalizados = bookings.filter(b => ['done','finalizado'].includes(b.status)).length
+  const ingresos    = bookings.filter(b => ['done','finalizado'].includes(b.status)).reduce((s, b) => s + (b.service_price || b.total_price || 0), 0)
   const today       = new Date().toISOString().split('T')[0]
   const hoy         = bookings.filter(b => b.scheduled_date === today).length
 
@@ -182,18 +196,17 @@ export default function AdminView({ onNavigate }) {
                 ))}
               </div>
 
-              {/* Últimas reservaciones */}
               <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 14, color: '#8CA0BF' }}>Últimas reservaciones</h3>
               <div style={{ display: 'grid', gap: 10 }}>
                 {bookings.slice(0, 5).map(b => (
                   <div key={b.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: 22 }}>{b.services?.icon || '🚗'}</div>
+                    <div style={{ fontSize: 22 }}>🚗</div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>{b.services?.name}</div>
-                      <div style={{ color: '#8CA0BF', fontSize: 12 }}>{b.profiles?.full_name} · {b.scheduled_date}</div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{b.service_name}</div>
+                      <div style={{ color: '#8CA0BF', fontSize: 12 }}>{b.scheduled_date} · {b.scheduled_time}</div>
                     </div>
                     <StatusBadge status={b.status} />
-                    <div style={{ color: '#00C8FF', fontWeight: 700 }}>${b.total_price} MXN</div>
+                    <div style={{ color: '#00C8FF', fontWeight: 700 }}>${b.service_price || b.total_price || 0} MXN</div>
                   </div>
                 ))}
               </div>
@@ -203,26 +216,30 @@ export default function AdminView({ onNavigate }) {
           {/* ── RESERVACIONES ── */}
           {tab === 'bookings' && (
             <div style={{ display: 'grid', gap: 14 }}>
-              {bookings.map(b => (
+              {bookings.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 60, color: '#8CA0BF' }}>
+                  <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
+                  <p>No hay reservaciones aún.</p>
+                </div>
+              ) : bookings.map(b => (
                 <div key={b.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 20 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                      <div style={{ fontSize: 28 }}>{b.services?.icon || '🚗'}</div>
+                      <div style={{ fontSize: 28 }}>🚗</div>
                       <div>
-                        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 3 }}>{b.services?.name}</div>
-                        <div style={{ color: '#8CA0BF', fontSize: 13 }}>👤 {b.profiles?.full_name}</div>
-                        <div style={{ color: '#8CA0BF', fontSize: 13 }}>📍 {b.address_line}</div>
-                        <div style={{ color: '#8CA0BF', fontSize: 13 }}>📅 {b.scheduled_date} · {b.scheduled_time?.slice(0,5)}</div>
-                        <div style={{ color: '#8CA0BF', fontSize: 11, marginTop: 2 }}>{b.booking_ref}</div>
+                        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 3 }}>{b.service_name}</div>
+                        <div style={{ color: '#8CA0BF', fontSize: 13 }}>🚙 {b.vehicle_brand} {b.vehicle_color}</div>
+                        <div style={{ color: '#8CA0BF', fontSize: 13 }}>📍 {b.address}</div>
+                        <div style={{ color: '#8CA0BF', fontSize: 13 }}>📅 {b.scheduled_date} · {b.scheduled_time}</div>
+                        {b.notes && <div style={{ color: '#8CA0BF', fontSize: 12, marginTop: 2 }}>📝 {b.notes}</div>}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <StatusBadge status={b.status} />
-                      <div style={{ color: '#00C8FF', fontWeight: 800, fontSize: 17, marginTop: 6 }}>${b.total_price} MXN</div>
+                      <div style={{ color: '#00C8FF', fontWeight: 800, fontSize: 17, marginTop: 6 }}>${b.service_price || b.total_price || 0} MXN</div>
                     </div>
                   </div>
 
-                  {/* Asignar operador */}
                   <div style={{ display: 'flex', gap: 10, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.06)', flexWrap: 'wrap', alignItems: 'center' }}>
                     <select
                       defaultValue={b.operator_id || ''}
@@ -266,8 +283,8 @@ export default function AdminView({ onNavigate }) {
               ) : (
                 <div style={{ display: 'grid', gap: 12 }}>
                   {operators.map(op => {
-                    const asignados = bookings.filter(b => b.operator_id === op.id && !['finalizado','cancelado'].includes(b.status)).length
-                    const completados = bookings.filter(b => b.operator_id === op.id && b.status === 'finalizado').length
+                    const asignados   = bookings.filter(b => b.operator_id === op.id && !['done','finalizado','cancelled','cancelado'].includes(b.status)).length
+                    const completados = bookings.filter(b => b.operator_id === op.id && ['done','finalizado'].includes(b.status)).length
                     return (
                       <div key={op.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                         <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#1A3A6B,#0D1F3C)', border: '2px solid rgba(0,229,200,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16, color: '#00E5C8', flexShrink: 0 }}>
@@ -299,33 +316,40 @@ export default function AdminView({ onNavigate }) {
           {tab === 'clients' && (
             <div>
               <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 16 }}>Clientes ({clients.length})</h3>
-              <div style={{ display: 'grid', gap: 10 }}>
-                {clients.map(c => {
-                  const total = bookings.filter(b => b.client_id === c.id).length
-                  const gasto = bookings.filter(b => b.client_id === c.id && b.status === 'finalizado').reduce((s, b) => s + (b.total_price || 0), 0)
-                  return (
-                    <div key={c.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#1A3A6B,#0D1F3C)', border: '2px solid rgba(0,200,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, color: '#00C8FF', flexShrink: 0 }}>
-                        {c.full_name?.charAt(0)}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>{c.full_name}</div>
-                        <div style={{ color: '#8CA0BF', fontSize: 12 }}>{c.phone || 'Sin teléfono'}</div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 20, textAlign: 'center' }}>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: 16, color: '#00C8FF' }}>{total}</div>
-                          <div style={{ color: '#8CA0BF', fontSize: 11 }}>Servicios</div>
+              {clients.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 60, color: '#8CA0BF' }}>
+                  <div style={{ fontSize: 48, marginBottom: 16 }}>👥</div>
+                  <p>No hay clientes registrados aún.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {clients.map(c => {
+                    const totalServicios = bookings.filter(b => b.client_id === c.id).length
+                    const gasto = bookings.filter(b => b.client_id === c.id && ['done','finalizado'].includes(b.status)).reduce((s, b) => s + (b.service_price || b.total_price || 0), 0)
+                    return (
+                      <div key={c.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                        <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#1A3A6B,#0D1F3C)', border: '2px solid rgba(0,200,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, color: '#00C8FF', flexShrink: 0 }}>
+                          {c.full_name?.charAt(0)}
                         </div>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: 16, color: '#00E5C8' }}>${gasto.toLocaleString()}</div>
-                          <div style={{ color: '#8CA0BF', fontSize: 11 }}>Gastado</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>{c.full_name}</div>
+                          <div style={{ color: '#8CA0BF', fontSize: 12 }}>{c.phone || 'Sin teléfono'}</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 20, textAlign: 'center' }}>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 16, color: '#00C8FF' }}>{totalServicios}</div>
+                            <div style={{ color: '#8CA0BF', fontSize: 11 }}>Servicios</div>
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 16, color: '#00E5C8' }}>${gasto.toLocaleString()}</div>
+                            <div style={{ color: '#8CA0BF', fontSize: 11 }}>Gastado</div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )
-                })}
-              </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
         </>
