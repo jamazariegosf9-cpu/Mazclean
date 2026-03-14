@@ -192,7 +192,7 @@ export default function BookingView() {
         total_price:     service.price,
         payment_method:  'efectivo',
         payment_status:  'pendiente',
-        status:          'pending',
+        status:          'pendiente',
         has_incident:    false,
         created_at:      new Date().toISOString(),
         updated_at:      new Date().toISOString(),
