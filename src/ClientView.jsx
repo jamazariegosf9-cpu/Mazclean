@@ -1,306 +1,386 @@
-// ============================================================
-// MAZ CLEAN — ClientView.jsx
-// Panel del cliente conectado a Supabase
-// ============================================================
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
 
-const STATUS_CONFIG = {
-  pendiente:   { label: 'Pendiente',  color: '#FFD166', bg: 'rgba(255,209,102,0.15)' },
-  confirmado:  { label: 'Confirmado', color: '#00C8FF', bg: 'rgba(0,200,255,0.15)' },
-  en_camino:   { label: 'En camino',  color: '#00C8FF', bg: 'rgba(0,200,255,0.15)' },
-  en_proceso:  { label: 'En proceso', color: '#A78BFA', bg: 'rgba(167,139,250,0.15)' },
-  finalizado:  { label: 'Finalizado', color: '#00E5C8', bg: 'rgba(0,229,200,0.15)' },
-  cancelado:   { label: 'Cancelado',  color: '#F87171', bg: 'rgba(248,113,113,0.15)' },
+const GOOGLE_MAPS_API_KEY = 'AIzaSyA0k4Rg_XowxjDGUsLD3BldhpTINFMihjw'
+
+const STATUS_INFO = {
+  pending:     { label: 'Pendiente',     icon: '⏳', color: '#f59e0b', desc: 'Buscando operador disponible...' },
+  assigned:    { label: 'Asignado',      icon: '📋', color: '#6b7280', desc: 'Operador asignado, en espera de inicio' },
+  on_the_way:  { label: 'En camino',     icon: '🚗', color: '#3b82f6', desc: 'Tu operador está en camino' },
+  arrived:     { label: 'Llegó',         icon: '📍', color: '#f59e0b', desc: 'Tu operador ha llegado' },
+  washing:     { label: 'Lavando',       icon: '🧽', color: '#8b5cf6', desc: 'Tu vehículo está siendo lavado' },
+  done:        { label: 'Completado',    icon: '✅', color: '#10b981', desc: '¡Tu vehículo está listo!' },
+  cancelled:   { label: 'Cancelado',     icon: '❌', color: '#ef4444', desc: 'Reservación cancelada' },
 }
 
-function StatusBadge({ status }) {
-  const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.pendiente
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: '4px 12px', borderRadius: 100,
-      background: cfg.bg, color: cfg.color, fontSize: 12, fontWeight: 600,
-    }}>
-      <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.color, display: 'inline-block' }}/>
-      {cfg.label}
-    </span>
-  )
+function loadGoogleMapsScript(apiKey) {
+  return new Promise((resolve, reject) => {
+    if (window.google && window.google.maps) { resolve(window.google.maps); return }
+    const existing = document.getElementById('google-maps-script')
+    if (existing) {
+      existing.addEventListener('load', () => resolve(window.google.maps))
+      return
+    }
+    const script = document.createElement('script')
+    script.id = 'google-maps-script'
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+    script.async = true
+    script.onload = () => resolve(window.google.maps)
+    script.onerror = reject
+    document.head.appendChild(script)
+  })
 }
 
-function Card({ children, style = {} }) {
-  return (
-    <div style={{
-      background: 'rgba(255,255,255,0.04)',
-      border: '1px solid rgba(255,255,255,0.08)',
-      borderRadius: 16, ...style,
-    }}>
-      {children}
-    </div>
-  )
-}
-
-export default function ClientView({ onNavigate }) {
-  const { user, profile, updateProfile } = useAuth()
-  const [tab, setTab]           = useState('reservaciones')
+export default function ClientView() {
+  const { user } = useAuth()
   const [bookings, setBookings] = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [editMode, setEditMode] = useState(false)
-  const [saving, setSaving]     = useState(false)
-  const [saved, setSaved]       = useState(false)
+  const [activeBooking, setActiveBooking] = useState(null)
+  const [tab, setTab] = useState('active')
+  const [loading, setLoading] = useState(true)
+  const [mapsLoaded, setMapsLoaded] = useState(false)
+  const [eta, setEta] = useState(null)
 
-  // Edicion de perfil
-  const [fullName, setFullName] = useState(profile?.full_name || '')
-  const [phone, setPhone]       = useState(profile?.phone || '')
-
-  // Cargar reservaciones del cliente
   useEffect(() => {
-    if (!user) return
-    setLoading(true)
-    supabase
-      .from('bookings')
-      .select(`
-        *,
-        services ( name, icon, color )
-      `)
-      .eq('client_id', user.id)
-      .order('created_at', { ascending: false })
-      .then(({ data, error }) => {
-        if (!error) setBookings(data || [])
-        setLoading(false)
-      })
+    if (user) {
+      fetchBookings()
+      loadGoogleMapsScript(GOOGLE_MAPS_API_KEY).then(() => setMapsLoaded(true))
+    }
   }, [user])
 
-  const handleSaveProfile = async () => {
-    setSaving(true)
-    await updateProfile({ full_name: fullName, phone })
-    setSaving(false)
-    setSaved(true)
-    setEditMode(false)
-    setTimeout(() => setSaved(false), 3000)
+  const fetchBookings = async () => {
+    setLoading(true)
+    const { data } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('client_id', user.id)
+      .order('created_at', { ascending: false })
+    setBookings(data || [])
+    const active = (data || []).find(b => ['pending','assigned','on_the_way','arrived','washing'].includes(b.status))
+    if (active) setActiveBooking(active)
+    setLoading(false)
   }
 
-  if (!user) {
-    return (
-      <div style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, textAlign: 'center', padding: 40 }}>
-        <div style={{ fontSize: 48 }}>🔐</div>
-        <h3 style={{ fontWeight: 800, fontSize: 24 }}>Inicia sesion para ver tu cuenta</h3>
-        <button onClick={() => onNavigate('home')} style={{ padding: '12px 28px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, cursor: 'pointer' }}>
-          Ir al inicio
-        </button>
-      </div>
-    )
-  }
+  // Realtime: escuchar cambios en la reservación activa
+  useEffect(() => {
+    if (!activeBooking) return
+    const channel = supabase
+      .channel(`booking-${activeBooking.id}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'bookings',
+        filter: `id=eq.${activeBooking.id}`,
+      }, (payload) => {
+        setActiveBooking(payload.new)
+        setBookings(prev => prev.map(b => b.id === payload.new.id ? payload.new : b))
+      })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [activeBooking?.id])
 
-  const initials = profile?.full_name?.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase() || 'U'
-  const pending  = bookings.filter(b => b.status === 'pendiente' || b.status === 'confirmado' || b.status === 'en_camino' || b.status === 'en_proceso')
-  const finished = bookings.filter(b => b.status === 'finalizado' || b.status === 'cancelado')
+  const activeList  = bookings.filter(b => ['pending','assigned','on_the_way','arrived','washing'].includes(b.status))
+  const historyList = bookings.filter(b => ['done','cancelled'].includes(b.status))
+
+  if (loading) return <div style={styles.loading}>Cargando tus reservaciones...</div>
 
   return (
-    <div style={{ minHeight: '100vh', padding: '32px 24px', maxWidth: 800, margin: '0 auto' }}>
+    <div style={styles.container}>
+      {/* Tracking card para reservación activa */}
+      {activeBooking && ['on_the_way', 'arrived', 'washing'].includes(activeBooking.status) && (
+        <TrackingCard
+          booking={activeBooking}
+          mapsLoaded={mapsLoaded}
+          eta={eta}
+          setEta={setEta}
+        />
+      )}
 
-      {/* Header perfil */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 36, flexWrap: 'wrap' }}>
-        <div style={{
-          width: 64, height: 64, borderRadius: '50%',
-          background: 'linear-gradient(135deg,#1A3A6B,#0D1F3C)',
-          border: '2px solid rgba(0,200,255,0.4)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 22, fontWeight: 800, color: '#00C8FF', flexShrink: 0,
-        }}>{initials}</div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ fontWeight: 800, fontSize: 24, marginBottom: 4 }}>{profile?.full_name}</h2>
-          <p style={{ color: '#8CA0BF', fontSize: 14 }}>{user.email}</p>
-          <div style={{ display: 'flex', gap: 16, marginTop: 6, flexWrap: 'wrap' }}>
-            <span style={{ color: '#FFD166', fontSize: 13 }}>⭐ {profile?.points || 0} puntos</span>
-            <span style={{ color: '#8CA0BF', fontSize: 13 }}>📋 {bookings.length} servicios</span>
-          </div>
+      <div style={styles.card}>
+        <h2 style={styles.title}>🚗 Mis Reservaciones</h2>
+
+        <div style={styles.tabs}>
+          {[
+            { key: 'active',   label: `Activas (${activeList.length})` },
+            { key: 'history',  label: `Historial (${historyList.length})` },
+          ].map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              style={{ ...styles.tab, ...(tab === t.key ? styles.tabActive : {}) }}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
-        <button onClick={() => onNavigate('booking')} style={{
-          padding: '12px 24px', borderRadius: 12, border: 'none', cursor: 'pointer',
-          background: 'linear-gradient(135deg,#00C8FF,#00E5C8)',
-          color: '#050A14', fontWeight: 700, fontSize: 14,
-        }}>
-          + Nueva Reserva
-        </button>
+
+        {(tab === 'active' ? activeList : historyList).length === 0 ? (
+          <div style={styles.empty}>
+            {tab === 'active' ? 'No tienes reservaciones activas' : 'Sin historial aún'}
+          </div>
+        ) : (
+          (tab === 'active' ? activeList : historyList).map(b => (
+            <BookingCard key={b.id} booking={b} />
+          ))
+        )}
       </div>
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: 4, marginBottom: 28, gap: 4 }}>
-        {[
-          ['reservaciones', '📋 Reservaciones'],
-          ['activas',       '🔵 Activas'],
-          ['perfil',        '👤 Perfil'],
-        ].map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} style={{
-            flex: 1, padding: '10px 8px', borderRadius: 10, border: 'none', cursor: 'pointer',
-            background: tab === k ? 'rgba(0,200,255,0.15)' : 'transparent',
-            color: tab === k ? '#00C8FF' : '#8CA0BF',
-            fontWeight: 600, fontSize: 13, transition: 'all 0.2s',
-          }}>{l}</button>
-        ))}
-      </div>
-
-      {/* ── TAB: RESERVACIONES ── */}
-      {tab === 'reservaciones' && (
-        <div style={{ display: 'grid', gap: 14 }}>
-          {loading ? (
-            <p style={{ color: '#8CA0BF', textAlign: 'center', padding: 40 }}>Cargando reservaciones...</p>
-          ) : bookings.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 60 }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>📭</div>
-              <p style={{ color: '#8CA0BF', fontSize: 16, marginBottom: 20 }}>Aun no tienes reservaciones</p>
-              <button onClick={() => onNavigate('booking')} style={{ padding: '12px 28px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, cursor: 'pointer' }}>
-                Hacer mi primera reserva
-              </button>
-            </div>
-          ) : (
-            bookings.map((b, i) => (
-              <Card key={b.id} style={{ padding: 22, animationDelay: `${i * 0.06}s` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-                  <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                    <div style={{
-                      width: 46, height: 46, borderRadius: 12, fontSize: 22, flexShrink: 0,
-                      background: `${b.services?.color || '#00C8FF'}18`,
-                      border: `1px solid ${b.services?.color || '#00C8FF'}30`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      {b.services?.icon || '🚗'}
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>{b.services?.name || 'Servicio'}</div>
-                      <div style={{ color: '#8CA0BF', fontSize: 13, marginBottom: 2 }}>📍 {b.address_line}</div>
-                      <div style={{ color: '#8CA0BF', fontSize: 13 }}>📅 {b.scheduled_date} · {b.scheduled_time?.slice(0,5)}</div>
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <StatusBadge status={b.status} />
-                    <div style={{ color: '#00C8FF', fontWeight: 800, fontSize: 18, marginTop: 8 }}>${b.total_price} MXN</div>
-                    <div style={{ color: '#8CA0BF', fontSize: 12, marginTop: 2 }}>{b.booking_ref}</div>
-                  </div>
-                </div>
-              </Card>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* ── TAB: ACTIVAS ── */}
-      {tab === 'activas' && (
-        <div style={{ display: 'grid', gap: 14 }}>
-          {pending.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 60 }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-              <p style={{ color: '#8CA0BF', fontSize: 16 }}>No tienes reservaciones activas</p>
-            </div>
-          ) : (
-            pending.map(b => (
-              <Card key={b.id} style={{ padding: 22, borderColor: 'rgba(0,200,255,0.2)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>{b.services?.name || 'Servicio'}</div>
-                    <div style={{ color: '#8CA0BF', fontSize: 13, marginBottom: 4 }}>📍 {b.address_line}</div>
-                    <div style={{ color: '#8CA0BF', fontSize: 13 }}>📅 {b.scheduled_date} · {b.scheduled_time?.slice(0,5)}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <StatusBadge status={b.status} />
-                    <div style={{ color: '#00C8FF', fontWeight: 800, fontSize: 20, marginTop: 8 }}>${b.total_price} MXN</div>
-                  </div>
-                </div>
-                {/* Progress bar de estado */}
-                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    {['Pendiente', 'Confirmado', 'En camino', 'Finalizado'].map((s, i) => {
-                      const steps = { pendiente: 0, confirmado: 1, en_camino: 2, en_proceso: 2, finalizado: 3 }
-                      const current = steps[b.status] ?? 0
-                      return (
-                        <span key={s} style={{ fontSize: 11, color: i <= current ? '#00C8FF' : '#8CA0BF', fontWeight: i <= current ? 600 : 400 }}>
-                          {s}
-                        </span>
-                      )
-                    })}
-                  </div>
-                  <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2 }}>
-                    <div style={{
-                      height: '100%', borderRadius: 2,
-                      background: 'linear-gradient(90deg,#00C8FF,#00E5C8)',
-                      width: `${({ pendiente: 10, confirmado: 33, en_camino: 66, en_proceso: 75, finalizado: 100 }[b.status]) || 10}%`,
-                      transition: 'width 0.5s ease',
-                    }}/>
-                  </div>
-                </div>
-              </Card>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* ── TAB: PERFIL ── */}
-      {tab === 'perfil' && (
-        <Card style={{ padding: 28 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-            <h3 style={{ fontWeight: 700, fontSize: 18 }}>Informacion Personal</h3>
-            {!editMode && (
-              <button onClick={() => setEditMode(true)} style={{ padding: '8px 18px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: 'none', color: '#F0F6FF', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-                Editar
-              </button>
-            )}
-          </div>
-
-          {saved && (
-            <div style={{ background: 'rgba(0,229,200,0.12)', border: '1px solid rgba(0,229,200,0.3)', borderRadius: 10, padding: '10px 16px', color: '#00E5C8', fontSize: 14, marginBottom: 20 }}>
-              ✓ Perfil actualizado correctamente
-            </div>
-          )}
-
-          <div style={{ display: 'grid', gap: 18 }}>
-            {[
-              { label: 'Nombre completo', value: fullName, setter: setFullName, type: 'text' },
-              { label: 'Telefono', value: phone, setter: setPhone, type: 'tel' },
-            ].map(({ label, value, setter, type }) => (
-              <div key={label}>
-                <label style={{ fontSize: 13, color: '#8CA0BF', display: 'block', marginBottom: 8 }}>{label}</label>
-                <input
-                  type={type}
-                  value={value}
-                  onChange={e => setter(e.target.value)}
-                  disabled={!editMode}
-                  style={{
-                    width: '100%', padding: '12px 16px',
-                    background: editMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
-                    border: `1px solid ${editMode ? 'rgba(0,200,255,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                    borderRadius: 10, color: '#F0F6FF', fontSize: 15, outline: 'none',
-                    boxSizing: 'border-box',
-                  }}
-                />
-              </div>
-            ))}
-
-            {/* Campo no editable */}
-            <div>
-              <label style={{ fontSize: 13, color: '#8CA0BF', display: 'block', marginBottom: 8 }}>Correo electronico</label>
-              <input value={user.email} disabled style={{ width: '100%', padding: '12px 16px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, color: '#8CA0BF', fontSize: 15, boxSizing: 'border-box' }} />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 13, color: '#8CA0BF', display: 'block', marginBottom: 8 }}>Rol de cuenta</label>
-              <input value={profile?.role || 'cliente'} disabled style={{ width: '100%', padding: '12px 16px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, color: '#8CA0BF', fontSize: 15, boxSizing: 'border-box', textTransform: 'capitalize' }} />
-            </div>
-          </div>
-
-          {editMode && (
-            <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-              <button onClick={handleSaveProfile} disabled={saving} style={{ flex: 2, padding: '13px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
-                {saving ? 'Guardando...' : 'Guardar Cambios'}
-              </button>
-              <button onClick={() => { setEditMode(false); setFullName(profile?.full_name || ''); setPhone(profile?.phone || '') }} style={{ flex: 1, padding: '13px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.15)', background: 'none', color: '#F0F6FF', fontWeight: 600, cursor: 'pointer' }}>
-                Cancelar
-              </button>
-            </div>
-          )}
-        </Card>
-      )}
     </div>
   )
+}
+
+// ── Tarjeta de tracking en tiempo real ──────────────────────────────
+function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
+  const mapRef = useRef(null)
+  const mapInstanceRef = useRef(null)
+  const operatorMarkerRef = useRef(null)
+  const clientMarkerRef = useRef(null)
+  const status = STATUS_INFO[booking.status] || STATUS_INFO.pending
+
+  // Inicializar mapa
+  useEffect(() => {
+    if (!mapsLoaded || !mapRef.current) return
+    const timer = setTimeout(initMap, 100)
+    return () => clearTimeout(timer)
+  }, [mapsLoaded, booking.id])
+
+  const initMap = () => {
+    if (mapInstanceRef.current) return
+    const center = { lat: booking.address_lat || 19.4326, lng: booking.address_lng || -99.1332 }
+    const map = new window.google.maps.Map(mapRef.current, {
+      center,
+      zoom: 14,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false,
+    })
+    mapInstanceRef.current = map
+
+    // Marcador del cliente (destino)
+    if (booking.address_lat && booking.address_lng) {
+      clientMarkerRef.current = new window.google.maps.Marker({
+        position: { lat: booking.address_lat, lng: booking.address_lng },
+        map,
+        icon: {
+          url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
+        },
+        title: 'Tu ubicación',
+      })
+    }
+  }
+
+  // Suscripción realtime a la ubicación del operador
+  useEffect(() => {
+    if (!booking.id) return
+    const channel = supabase
+      .channel(`operator-location-${booking.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'operator_locations',
+        filter: `booking_id=eq.${booking.id}`,
+      }, (payload) => {
+        const { lat, lng } = payload.new
+        updateOperatorMarker(lat, lng)
+        if (booking.address_lat && booking.address_lng) {
+          calculateETA(lat, lng, booking.address_lat, booking.address_lng)
+        }
+      })
+      .subscribe()
+
+    // También cargar la última ubicación conocida
+    loadLastLocation()
+
+    return () => supabase.removeChannel(channel)
+  }, [booking.id, mapsLoaded])
+
+  const loadLastLocation = async () => {
+    const { data } = await supabase
+      .from('operator_locations')
+      .select('*')
+      .eq('booking_id', booking.id)
+      .single()
+
+    if (data && mapsLoaded) {
+      updateOperatorMarker(data.lat, data.lng)
+      if (booking.address_lat && booking.address_lng) {
+        calculateETA(data.lat, data.lng, booking.address_lat, booking.address_lng)
+      }
+    }
+  }
+
+  const updateOperatorMarker = (lat, lng) => {
+    if (!mapInstanceRef.current) return
+    const pos = { lat, lng }
+    if (operatorMarkerRef.current) {
+      operatorMarkerRef.current.setPosition(pos)
+    } else {
+      operatorMarkerRef.current = new window.google.maps.Marker({
+        position: pos,
+        map: mapInstanceRef.current,
+        icon: {
+          url: 'https://maps.google.com/mapfiles/ms/icons/cabs.png',
+        },
+        title: 'Tu operador',
+        animation: window.google.maps.Animation.BOUNCE,
+      })
+      setTimeout(() => operatorMarkerRef.current?.setAnimation(null), 2000)
+    }
+
+    // Ajustar vista para mostrar ambos puntos
+    if (clientMarkerRef.current) {
+      const bounds = new window.google.maps.LatLngBounds()
+      bounds.extend(pos)
+      bounds.extend(clientMarkerRef.current.getPosition())
+      mapInstanceRef.current.fitBounds(bounds, { padding: 60 })
+    } else {
+      mapInstanceRef.current.setCenter(pos)
+      mapInstanceRef.current.setZoom(15)
+    }
+  }
+
+  const calculateETA = (fromLat, fromLng, toLat, toLng) => {
+    if (!window.google) return
+    const service = new window.google.maps.DistanceMatrixService()
+    service.getDistanceMatrix({
+      origins: [{ lat: fromLat, lng: fromLng }],
+      destinations: [{ lat: toLat, lng: toLng }],
+      travelMode: window.google.maps.TravelMode.DRIVING,
+    }, (response, status) => {
+      if (status === 'OK' && response.rows[0]?.elements[0]?.status === 'OK') {
+        setEta(response.rows[0].elements[0].duration.text)
+      }
+    })
+  }
+
+  return (
+    <div style={styles.trackingCard}>
+      {/* Header */}
+      <div style={styles.trackingHeader}>
+        <div style={styles.liveChip}>
+          <span style={styles.liveDot} />
+          EN VIVO
+        </div>
+        <div style={{ color: '#bfdbfe', fontSize: 13 }}>
+          {booking.service_name}
+        </div>
+      </div>
+
+      {/* Status */}
+      <div style={styles.statusRow}>
+        <span style={{ fontSize: 32 }}>{status.icon}</span>
+        <div>
+          <div style={{ color: '#fff', fontWeight: 700, fontSize: 18 }}>{status.label}</div>
+          <div style={{ color: '#bfdbfe', fontSize: 13 }}>{status.desc}</div>
+        </div>
+        {eta && booking.status === 'on_the_way' && (
+          <div style={styles.etaChip}>
+            <div style={{ fontSize: 11, color: '#93c5fd' }}>LLEGA EN</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>{eta}</div>
+          </div>
+        )}
+      </div>
+
+      {/* Mapa */}
+      {!mapsLoaded ? (
+        <div style={styles.mapPlaceholder}>Cargando mapa...</div>
+      ) : (
+        <div ref={mapRef} style={styles.trackingMap} />
+      )}
+
+      <div style={styles.trackingFooter}>
+        <span style={{ fontSize: 12, color: '#93c5fd' }}>
+          🔵 Tu ubicación &nbsp;&nbsp; 🚕 Operador
+        </span>
+        <span style={{ fontSize: 11, color: '#60a5fa' }}>
+          Actualización automática
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ── Tarjeta de reservación ───────────────────────────────────────────
+function BookingCard({ booking }) {
+  const status = STATUS_INFO[booking.status] || STATUS_INFO.pending
+  return (
+    <div style={styles.bookingCard}>
+      <div style={styles.bookingHeader}>
+        <div>
+          <div style={styles.bookingTitle}>{booking.service_name}</div>
+          <div style={styles.bookingMeta}>{booking.vehicle_brand} · {booking.vehicle_color}</div>
+        </div>
+        <div style={{ ...styles.statusPill, background: status.color + '20', color: status.color }}>
+          {status.icon} {status.label}
+        </div>
+      </div>
+      <div style={styles.bookingInfo}>
+        <span>📍 {booking.address}</span>
+        <span>📅 {booking.scheduled_date} · {booking.scheduled_time} hrs</span>
+        <span>💰 ${booking.service_price} MXN</span>
+      </div>
+    </div>
+  )
+}
+
+const styles = {
+  container: { minHeight: '100vh', background: '#f3f4f6', padding: 16 },
+  loading: { padding: 40, textAlign: 'center', color: '#6b7280' },
+  card: {
+    background: '#fff', borderRadius: 16, padding: 20,
+    maxWidth: 640, margin: '0 auto',
+    boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+  },
+  title: { fontSize: 20, fontWeight: 700, color: '#1f2937', margin: '0 0 16px' },
+  tabs: { display: 'flex', gap: 8, marginBottom: 16, borderBottom: '2px solid #f3f4f6', paddingBottom: 8 },
+  tab: {
+    padding: '6px 16px', borderRadius: 20, border: 'none',
+    background: '#f3f4f6', color: '#6b7280', cursor: 'pointer', fontSize: 13, fontWeight: 500,
+  },
+  tabActive: { background: '#eff6ff', color: '#3b82f6', fontWeight: 600 },
+  empty: { textAlign: 'center', color: '#9ca3af', padding: '32px 0', fontSize: 14 },
+
+  // Tracking card
+  trackingCard: {
+    background: 'linear-gradient(135deg, #1e3a8a, #1e40af)',
+    borderRadius: 16, padding: 16, maxWidth: 640,
+    margin: '0 auto 16px', overflow: 'hidden',
+  },
+  trackingHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  liveChip: {
+    display: 'flex', alignItems: 'center', gap: 6,
+    background: 'rgba(255,255,255,0.15)', borderRadius: 20,
+    padding: '4px 12px', color: '#fff', fontWeight: 700, fontSize: 12,
+  },
+  liveDot: {
+    width: 8, height: 8, borderRadius: '50%', background: '#4ade80',
+    boxShadow: '0 0 8px #4ade80',
+    display: 'inline-block',
+  },
+  statusRow: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 },
+  etaChip: {
+    marginLeft: 'auto', background: 'rgba(255,255,255,0.15)',
+    borderRadius: 12, padding: '8px 14px', textAlign: 'center',
+  },
+  trackingMap: {
+    width: '100%', height: 240, borderRadius: 12,
+    border: '2px solid rgba(255,255,255,0.2)',
+    marginBottom: 10,
+  },
+  mapPlaceholder: {
+    width: '100%', height: 240, borderRadius: 12,
+    background: 'rgba(0,0,0,0.2)', display: 'flex',
+    alignItems: 'center', justifyContent: 'center',
+    color: '#93c5fd', fontSize: 14, marginBottom: 10,
+  },
+  trackingFooter: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+
+  // Booking cards
+  bookingCard: {
+    border: '2px solid #f3f4f6', borderRadius: 12, padding: 14, marginBottom: 10,
+  },
+  bookingHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
+  bookingTitle: { fontWeight: 600, fontSize: 15, color: '#1f2937' },
+  bookingMeta: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
+  statusPill: { padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, flexShrink: 0 },
+  bookingInfo: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, color: '#374151' },
 }

@@ -1,237 +1,395 @@
-// ============================================================
-// MAZ CLEAN — OperatorView.jsx
-// Panel del operador conectado a Supabase
-// ============================================================
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
 
-const STATUS_FLOW = {
-  pendiente:  { next: 'confirmado',  label: 'Confirmar',     color: '#FFD166', nextLabel: 'Confirmado' },
-  confirmado: { next: 'en_camino',   label: 'Salir',         color: '#00C8FF', nextLabel: 'En camino' },
-  en_camino:  { next: 'en_proceso',  label: 'Iniciar',       color: '#A78BFA', nextLabel: 'En proceso' },
-  en_proceso: { next: 'finalizado',  label: 'Finalizar',     color: '#00E5C8', nextLabel: 'Finalizado' },
-  finalizado: { next: null,          label: 'Completado',    color: '#00E5C8', nextLabel: null },
-  cancelado:  { next: null,          label: 'Cancelado',     color: '#F87171', nextLabel: null },
-}
+const STATUS_FLOW = [
+  { key: 'assigned',  label: 'Asignado',    icon: '📋', color: '#6b7280' },
+  { key: 'on_the_way', label: 'En camino',  icon: '🚗', color: '#3b82f6' },
+  { key: 'arrived',   label: 'Llegué',      icon: '📍', color: '#f59e0b' },
+  { key: 'washing',   label: 'Lavando',     icon: '🧽', color: '#8b5cf6' },
+  { key: 'done',      label: 'Terminado',   icon: '✅', color: '#10b981' },
+]
 
-const STATUS_LABELS = {
-  pendiente:  'Pendiente',
-  confirmado: 'Confirmado',
-  en_camino:  'En camino',
-  en_proceso: 'En proceso',
-  finalizado: 'Finalizado',
-  cancelado:  'Cancelado',
-}
+export default function OperatorView() {
+  const { user } = useAuth()
+  const [bookings, setBookings] = useState([])
+  const [activeBooking, setActiveBooking] = useState(null)
+  const [tracking, setTracking] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState('pending') // pending | active | done
+  const watchIdRef = useRef(null)
+  const intervalRef = useRef(null)
 
-function StatusBadge({ status }) {
-  const cfg = STATUS_FLOW[status] || STATUS_FLOW.pendiente
+  useEffect(() => {
+    if (user) fetchBookings()
+    return () => stopTracking()
+  }, [user])
+
+  const fetchBookings = async () => {
+    setLoading(true)
+    try {
+      // Buscar el operador por user_id
+      const { data: opData } = await supabase
+        .from('operators')
+        .select('id')
+        .eq('user_id', user.id)
+        .single()
+
+      if (!opData) { setLoading(false); return }
+
+      const { data } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('operator_id', opData.id)
+        .order('scheduled_date', { ascending: true })
+
+      setBookings(data || [])
+
+      // Si hay uno activo, restaurarlo
+      const active = (data || []).find(b =>
+        ['on_the_way', 'arrived', 'washing'].includes(b.status)
+      )
+      if (active) setActiveBooking(active)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ── GPS tracking ────────────────────────────────────────────────────
+  const startTracking = async (booking) => {
+    if (!navigator.geolocation) {
+      alert('Tu dispositivo no soporta GPS.')
+      return
+    }
+
+    setActiveBooking(booking)
+    setTracking(true)
+
+    // Actualizar estado a "en camino"
+    await updateBookingStatus(booking.id, 'on_the_way')
+
+    // Enviar ubicación cada 10 segundos
+    intervalRef.current = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          await supabase.from('operator_locations').upsert({
+            operator_id: user.id,
+            booking_id: booking.id,
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'booking_id' })
+        },
+        (err) => console.error('GPS error:', err),
+        { enableHighAccuracy: true }
+      )
+    }, 10000)
+
+    // Primera ubicación inmediata
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      await supabase.from('operator_locations').upsert({
+        operator_id: user.id,
+        booking_id: booking.id,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'booking_id' })
+    })
+  }
+
+  const stopTracking = () => {
+    if (intervalRef.current) clearInterval(intervalRef.current)
+    if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current)
+    setTracking(false)
+  }
+
+  const updateBookingStatus = async (bookingId, newStatus) => {
+    await supabase
+      .from('bookings')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', bookingId)
+
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, status: newStatus } : b
+    ))
+    if (activeBooking?.id === bookingId) {
+      setActiveBooking(prev => ({ ...prev, status: newStatus }))
+    }
+
+    if (newStatus === 'done') {
+      stopTracking()
+      setActiveBooking(null)
+    }
+  }
+
+  // ── Filtros ──────────────────────────────────────────────────────────
+  const pendingBookings = bookings.filter(b => b.status === 'assigned' || b.status === 'pending')
+  const activeBookings  = bookings.filter(b => ['on_the_way','arrived','washing'].includes(b.status))
+  const doneBookings    = bookings.filter(b => b.status === 'done')
+
+  const currentList = tab === 'pending' ? pendingBookings
+                    : tab === 'active'  ? activeBookings
+                    : doneBookings
+
+  if (loading) return <div style={styles.loading}>Cargando servicios...</div>
+
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: '4px 12px', borderRadius: 100,
-      background: `${cfg.color}20`, color: cfg.color,
-      fontSize: 12, fontWeight: 600,
-    }}>
-      <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.color, display: 'inline-block' }}/>
-      {STATUS_LABELS[status]}
-    </span>
+    <div style={styles.container}>
+      {/* Panel de tracking activo */}
+      {activeBooking && tracking && (
+        <ActiveTrackingBanner
+          booking={activeBooking}
+          onStatusChange={(s) => updateBookingStatus(activeBooking.id, s)}
+          onStopTracking={stopTracking}
+        />
+      )}
+
+      <div style={styles.card}>
+        <h2 style={styles.title}>📋 Mis Servicios</h2>
+
+        {/* Tabs */}
+        <div style={styles.tabs}>
+          {[
+            { key: 'pending', label: `Pendientes (${pendingBookings.length})` },
+            { key: 'active',  label: `Activos (${activeBookings.length})` },
+            { key: 'done',    label: `Completados (${doneBookings.length})` },
+          ].map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              style={{ ...styles.tab, ...(tab === t.key ? styles.tabActive : {}) }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Lista */}
+        {currentList.length === 0 ? (
+          <div style={styles.empty}>No hay servicios en esta sección</div>
+        ) : (
+          currentList.map(booking => (
+            <BookingCard
+              key={booking.id}
+              booking={booking}
+              isActive={activeBooking?.id === booking.id}
+              tracking={tracking && activeBooking?.id === booking.id}
+              onStart={() => startTracking(booking)}
+              onStatusChange={(s) => updateBookingStatus(booking.id, s)}
+            />
+          ))
+        )}
+      </div>
+    </div>
   )
 }
 
-export default function OperatorView({ onNavigate }) {
-  const { user, profile } = useAuth()
-  const [tab, setTab]           = useState('activas')
-  const [bookings, setBookings] = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [updating, setUpdating] = useState(null)
-
-  const loadBookings = () => {
-    if (!user) return
-    setLoading(true)
-    supabase
-      .from('bookings')
-      .select(`*, services ( name, icon, color ), profiles!bookings_client_id_fkey ( full_name, phone )`)
-      .eq('operator_id', user.id)
-      .order('scheduled_date', { ascending: true })
-      .then(({ data, error }) => {
-        if (!error && data) setBookings(data)
-        setLoading(false)
-      })
-  }
-
-  useEffect(() => { loadBookings() }, [user])
-
-  const handleStatusChange = async (bookingId, newStatus) => {
-    setUpdating(bookingId)
-    const { error } = await supabase
-      .from('bookings')
-      .update({ status: newStatus })
-      .eq('id', bookingId)
-    if (!error) {
-      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: newStatus } : b))
-    }
-    setUpdating(null)
-  }
-
-  if (!user || profile?.role !== 'operador') {
-    return (
-      <div style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, textAlign: 'center', padding: 40 }}>
-        <div style={{ fontSize: 48 }}>🔐</div>
-        <h3 style={{ fontWeight: 800, fontSize: 24 }}>Acceso solo para operadores</h3>
-        <p style={{ color: '#8CA0BF' }}>Tu cuenta no tiene permisos de operador.</p>
-        <button onClick={() => onNavigate('home')} style={{ padding: '12px 28px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, cursor: 'pointer' }}>
-          Ir al inicio
-        </button>
-      </div>
-    )
-  }
-
-  const activas   = bookings.filter(b => !['finalizado','cancelado'].includes(b.status))
-  const historial = bookings.filter(b =>  ['finalizado','cancelado'].includes(b.status))
-  const shown     = tab === 'activas' ? activas : historial
-
-  const today = new Date().toISOString().split('T')[0]
-  const hoy   = activas.filter(b => b.scheduled_date === today)
+// ── Banner de tracking activo ────────────────────────────────────────
+function ActiveTrackingBanner({ booking, onStatusChange, onStopTracking }) {
+  const currentStatus = STATUS_FLOW.find(s => s.key === booking.status)
+  const currentIdx = STATUS_FLOW.findIndex(s => s.key === booking.status)
+  const nextStatus = STATUS_FLOW[currentIdx + 1]
 
   return (
-    <div style={{ minHeight: '100vh', padding: '32px 24px', maxWidth: 800, margin: '0 auto' }}>
-
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 28, flexWrap: 'wrap' }}>
-        <div style={{
-          width: 56, height: 56, borderRadius: '50%',
-          background: 'linear-gradient(135deg,#1A3A6B,#0D1F3C)',
-          border: '2px solid rgba(0,229,200,0.4)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 24, flexShrink: 0,
-        }}>🧹</div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ fontWeight: 800, fontSize: 22, marginBottom: 2 }}>Panel Operador</h2>
-          <p style={{ color: '#8CA0BF', fontSize: 14 }}>{profile?.full_name}</p>
+    <div style={styles.banner}>
+      <div style={styles.bannerHeader}>
+        <div style={styles.liveIndicator}>
+          <span style={styles.liveDot} />
+          GPS ACTIVO
         </div>
-        <button onClick={loadBookings} style={{ padding: '10px 20px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'none', color: '#8CA0BF', cursor: 'pointer', fontSize: 13 }}>
-          Actualizar
-        </button>
+        <span style={{ fontSize: 13, color: '#bfdbfe' }}>
+          Actualizando cada 10 seg
+        </span>
+      </div>
+      <div style={styles.bannerBody}>
+        <div>
+          <div style={styles.bannerTitle}>{booking.service_name}</div>
+          <div style={styles.bannerAddress}>📍 {booking.address}</div>
+          <div style={{ ...styles.statusBadge, background: currentStatus?.color }}>
+            {currentStatus?.icon} {currentStatus?.label}
+          </div>
+        </div>
+        <div style={styles.bannerButtons}>
+          {nextStatus && (
+            <button
+              onClick={() => onStatusChange(nextStatus.key)}
+              style={styles.btnNext}
+            >
+              {nextStatus.icon} {nextStatus.label}
+            </button>
+          )}
+          <button onClick={onStopTracking} style={styles.btnStop}>
+            ⏹ Pausar GPS
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Tarjeta de reservación ───────────────────────────────────────────
+function BookingCard({ booking, isActive, tracking, onStart, onStatusChange }) {
+  const status = STATUS_FLOW.find(s => s.key === booking.status) || STATUS_FLOW[0]
+  const currentIdx = STATUS_FLOW.findIndex(s => s.key === booking.status)
+  const nextStatus = STATUS_FLOW[currentIdx + 1]
+
+  return (
+    <div style={{ ...styles.bookingCard, border: isActive ? '2px solid #3b82f6' : '2px solid #f3f4f6' }}>
+      <div style={styles.bookingHeader}>
+        <div>
+          <div style={styles.bookingTitle}>{booking.service_name}</div>
+          <div style={styles.bookingMeta}>
+            {booking.vehicle_brand} · {booking.vehicle_color} · {booking.vehicle_type}
+          </div>
+        </div>
+        <div style={{ ...styles.statusPill, background: status.color + '20', color: status.color }}>
+          {status.icon} {status.label}
+        </div>
       </div>
 
-      {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 28 }}>
-        {[
-          { label: 'Hoy',      value: hoy.length,      color: '#00C8FF', icon: '📅' },
-          { label: 'Activas',  value: activas.length,   color: '#FFD166', icon: '🔵' },
-          { label: 'Completados', value: historial.filter(b => b.status === 'finalizado').length, color: '#00E5C8', icon: '✅' },
-        ].map(s => (
-          <div key={s.label} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '16px 20px', textAlign: 'center' }}>
-            <div style={{ fontSize: 22, marginBottom: 6 }}>{s.icon}</div>
-            <div style={{ fontWeight: 800, fontSize: 24, color: s.color }}>{s.value}</div>
-            <div style={{ color: '#8CA0BF', fontSize: 12 }}>{s.label}</div>
+      <div style={styles.bookingInfo}>
+        <InfoRow icon="📍" text={booking.address} />
+        <InfoRow icon="📅" text={`${booking.scheduled_date} · ${booking.scheduled_time} hrs`} />
+        <InfoRow icon="💰" text={`$${booking.service_price} MXN`} />
+        {booking.notes && <InfoRow icon="📝" text={booking.notes} />}
+      </div>
+
+      {/* Barra de progreso */}
+      <div style={styles.progressBar}>
+        {STATUS_FLOW.map((s, i) => (
+          <div key={s.key} style={styles.progressStep}>
+            <div style={{
+              ...styles.progressDot,
+              background: i <= currentIdx ? s.color : '#e5e7eb',
+            }}>
+              {i < currentIdx ? '✓' : s.icon}
+            </div>
+            <div style={{ fontSize: 9, color: i <= currentIdx ? s.color : '#9ca3af', marginTop: 2 }}>
+              {s.label}
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: 4, marginBottom: 24, gap: 4 }}>
-        {[['activas','🔵 Activas'],['historial','📋 Historial']].map(([k,l]) => (
-          <button key={k} onClick={() => setTab(k)} style={{
-            flex: 1, padding: '10px 8px', borderRadius: 10, border: 'none', cursor: 'pointer',
-            background: tab === k ? 'rgba(0,200,255,0.15)' : 'transparent',
-            color: tab === k ? '#00C8FF' : '#8CA0BF',
-            fontWeight: 600, fontSize: 13,
-          }}>{l}</button>
-        ))}
+      {/* Acciones */}
+      <div style={styles.bookingActions}>
+        {booking.status === 'assigned' && !tracking && (
+          <button onClick={onStart} style={styles.btnStart}>
+            🚗 Iniciar viaje + GPS
+          </button>
+        )}
+        {isActive && tracking && nextStatus && nextStatus.key !== 'done' && (
+          <button
+            onClick={() => onStatusChange(nextStatus.key)}
+            style={{ ...styles.btnAction, background: nextStatus.color }}
+          >
+            {nextStatus.icon} Marcar como: {nextStatus.label}
+          </button>
+        )}
+        {isActive && tracking && booking.status === 'washing' && (
+          <button
+            onClick={() => onStatusChange('done')}
+            style={{ ...styles.btnAction, background: '#10b981' }}
+          >
+            ✅ Servicio completado
+          </button>
+        )}
       </div>
-
-      {/* Bookings */}
-      {loading ? (
-        <p style={{ color: '#8CA0BF', textAlign: 'center', padding: 40 }}>Cargando servicios...</p>
-      ) : shown.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 60 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>{tab === 'activas' ? '🎉' : '📭'}</div>
-          <p style={{ color: '#8CA0BF', fontSize: 16 }}>
-            {tab === 'activas' ? 'No tienes servicios activos por ahora' : 'No hay servicios completados aun'}
-          </p>
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gap: 14 }}>
-          {shown.map(b => {
-            const flow = STATUS_FLOW[b.status]
-            const isToday = b.scheduled_date === today
-            return (
-              <div key={b.id} style={{
-                background: 'rgba(255,255,255,0.04)',
-                border: `1px solid ${isToday ? 'rgba(0,200,255,0.3)' : 'rgba(255,255,255,0.08)'}`,
-                borderRadius: 16, padding: 22,
-              }}>
-                {isToday && (
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(0,200,255,0.12)', border: '1px solid rgba(0,200,255,0.3)', borderRadius: 100, padding: '3px 12px', fontSize: 11, color: '#00C8FF', fontWeight: 600, marginBottom: 14 }}>
-                    ⚡ HOY
-                  </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
-                  <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                    <div style={{
-                      width: 46, height: 46, borderRadius: 12, fontSize: 22, flexShrink: 0,
-                      background: `${b.services?.color || '#00C8FF'}18`,
-                      border: `1px solid ${b.services?.color || '#00C8FF'}30`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      {b.services?.icon || '🚗'}
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>{b.services?.name}</div>
-                      <div style={{ color: '#8CA0BF', fontSize: 13, marginBottom: 2 }}>
-                        👤 {b.profiles?.full_name || 'Cliente'}
-                      </div>
-                      {b.profiles?.phone && (
-                        <div style={{ color: '#8CA0BF', fontSize: 13, marginBottom: 2 }}>
-                          📞 {b.profiles.phone}
-                        </div>
-                      )}
-                      <div style={{ color: '#8CA0BF', fontSize: 13, marginBottom: 2 }}>📍 {b.address_line}</div>
-                      <div style={{ color: '#8CA0BF', fontSize: 13 }}>📅 {b.scheduled_date} · {b.scheduled_time?.slice(0,5)}</div>
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <StatusBadge status={b.status} />
-                    <div style={{ color: '#00C8FF', fontWeight: 800, fontSize: 18, marginTop: 8 }}>${b.total_price} MXN</div>
-                    <div style={{ color: '#8CA0BF', fontSize: 11, marginTop: 2 }}>{b.booking_ref}</div>
-                  </div>
-                </div>
-
-                {/* Botones de accion */}
-                {flow?.next && (
-                  <div style={{ display: 'flex', gap: 10, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                    <button
-                      onClick={() => handleStatusChange(b.id, flow.next)}
-                      disabled={updating === b.id}
-                      style={{
-                        flex: 2, padding: '11px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                        background: `linear-gradient(135deg, ${flow.color}, ${flow.color}CC)`,
-                        color: '#050A14', fontWeight: 700, fontSize: 14,
-                        opacity: updating === b.id ? 0.6 : 1,
-                      }}>
-                      {updating === b.id ? 'Actualizando...' : `${flow.label} → ${flow.nextLabel}`}
-                    </button>
-                    {b.status === 'pendiente' && (
-                      <button
-                        onClick={() => handleStatusChange(b.id, 'cancelado')}
-                        disabled={updating === b.id}
-                        style={{
-                          flex: 1, padding: '11px', borderRadius: 10, cursor: 'pointer',
-                          border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.08)',
-                          color: '#F87171', fontWeight: 600, fontSize: 13,
-                        }}>
-                        Cancelar
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
+}
+
+function InfoRow({ icon, text }) {
+  return (
+    <div style={styles.infoRow}>
+      <span>{icon}</span>
+      <span style={styles.infoText}>{text}</span>
+    </div>
+  )
+}
+
+const styles = {
+  container: { minHeight: '100vh', background: '#f3f4f6', padding: '16px' },
+  loading: { padding: 40, textAlign: 'center', color: '#6b7280' },
+  card: {
+    background: '#fff', borderRadius: 16, padding: 20,
+    maxWidth: 640, margin: '0 auto',
+    boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+  },
+  title: { fontSize: 20, fontWeight: 700, color: '#1f2937', margin: '0 0 16px' },
+  tabs: { display: 'flex', gap: 8, marginBottom: 16, borderBottom: '2px solid #f3f4f6', paddingBottom: 8 },
+  tab: {
+    padding: '6px 14px', borderRadius: 20, border: 'none',
+    background: '#f3f4f6', color: '#6b7280', cursor: 'pointer',
+    fontSize: 13, fontWeight: 500,
+  },
+  tabActive: { background: '#eff6ff', color: '#3b82f6', fontWeight: 600 },
+  empty: { textAlign: 'center', color: '#9ca3af', padding: '32px 0', fontSize: 14 },
+
+  // Banner
+  banner: {
+    background: 'linear-gradient(135deg, #1e40af, #3b82f6)',
+    borderRadius: 16, padding: 16, marginBottom: 16,
+    maxWidth: 640, margin: '0 auto 16px',
+  },
+  bannerHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  liveIndicator: { display: 'flex', alignItems: 'center', gap: 6, color: '#fff', fontWeight: 700, fontSize: 13 },
+  liveDot: {
+    width: 8, height: 8, borderRadius: '50%', background: '#4ade80',
+    boxShadow: '0 0 8px #4ade80', animation: 'pulse 1.5s infinite',
+  },
+  bannerBody: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
+  bannerTitle: { color: '#fff', fontWeight: 700, fontSize: 16, marginBottom: 4 },
+  bannerAddress: { color: '#bfdbfe', fontSize: 13, marginBottom: 8 },
+  statusBadge: {
+    display: 'inline-block', padding: '4px 10px', borderRadius: 20,
+    color: '#fff', fontSize: 12, fontWeight: 600,
+  },
+  bannerButtons: { display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 },
+  btnNext: {
+    background: '#fff', color: '#1e40af', border: 'none',
+    borderRadius: 8, padding: '8px 14px', cursor: 'pointer',
+    fontSize: 13, fontWeight: 700,
+  },
+  btnStop: {
+    background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)',
+    borderRadius: 8, padding: '8px 14px', cursor: 'pointer', fontSize: 13,
+  },
+
+  // Booking card
+  bookingCard: {
+    borderRadius: 12, padding: 16, marginBottom: 12,
+    transition: 'all 0.2s',
+  },
+  bookingHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
+  bookingTitle: { fontWeight: 600, fontSize: 16, color: '#1f2937' },
+  bookingMeta: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
+  statusPill: { padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, flexShrink: 0 },
+  bookingInfo: { display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 },
+  infoRow: { display: 'flex', gap: 8, alignItems: 'flex-start' },
+  infoText: { fontSize: 13, color: '#374151' },
+
+  // Progress
+  progressBar: { display: 'flex', justifyContent: 'space-between', marginBottom: 12, padding: '8px 0' },
+  progressStep: { display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 },
+  progressDot: {
+    width: 28, height: 28, borderRadius: '50%', display: 'flex',
+    alignItems: 'center', justifyContent: 'center', fontSize: 12,
+    color: '#fff', fontWeight: 700, marginBottom: 2,
+  },
+
+  // Buttons
+  bookingActions: { display: 'flex', gap: 8 },
+  btnStart: {
+    flex: 1, background: '#3b82f6', color: '#fff', border: 'none',
+    borderRadius: 8, padding: '10px 16px', cursor: 'pointer',
+    fontSize: 14, fontWeight: 600,
+  },
+  btnAction: {
+    flex: 1, color: '#fff', border: 'none',
+    borderRadius: 8, padding: '10px 16px', cursor: 'pointer',
+    fontSize: 14, fontWeight: 600,
+  },
 }
