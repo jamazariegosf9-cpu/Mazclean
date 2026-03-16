@@ -161,20 +161,23 @@ export default function BookingView() {
 
       if (insertError) throw insertError
 
-      // Notificación WhatsApp al cliente
-      const { data: profileData } = await supabase
-        .from('profiles').select('phone').eq('id', user.id).single()
-      if (profileData?.phone) {
-        await sendWhatsApp('booking_created', profileData.phone, {
-          booking_ref:    bookingRef,
-          service_name:   service.name,
-          scheduled_date: date,
-          scheduled_time: time,
-          total_price:    price,
-        })
-      }
-
+      // Reservacion guardada exitosamente
       setSuccess(true)
+
+      // WhatsApp desacoplado — nunca bloquea el flujo principal
+      try {
+        const { data: profileData } = await supabase
+          .from('profiles').select('phone').eq('id', user.id).single()
+        if (profileData?.phone) {
+          sendWhatsApp('booking_created', profileData.phone, {
+            booking_ref:    bookingRef,
+            service_name:   service.name,
+            scheduled_date: date,
+            scheduled_time: time,
+            total_price:    price,
+          })
+        }
+      } catch (_) {}
     } catch (err) {
       console.error('Error al guardar reservación:', err)
       setError('Hubo un error al guardar. Intenta de nuevo.')
