@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
+import { sendWhatsApp } from './lib/whatsapp'
 
 const STATUS_FLOW = [
   { key: 'assigned',    label: 'Asignado',   icon: '📋', color: '#6b7280' },
@@ -104,6 +105,24 @@ export default function OperatorView() {
     if (activeBooking?.id === bookingId) {
       setActiveBooking(prev => ({ ...prev, status: newStatus }))
     }
+
+    // Notificación WhatsApp al cliente según el nuevo estado
+    const booking = bookings.find(b => b.id === bookingId)
+    if (booking && ['on_the_way', 'arrived', 'washing', 'done'].includes(newStatus)) {
+      const { data: clientProfile } = await supabase
+        .from('profiles').select('phone').eq('id', booking.client_id).single()
+      if (clientProfile?.phone) {
+        await sendWhatsApp(newStatus, clientProfile.phone, {
+          booking_ref:    booking.booking_ref,
+          service_name:   booking.service_name,
+          scheduled_date: booking.scheduled_date,
+          scheduled_time: booking.scheduled_time,
+          total_price:    booking.total_price || booking.service_price,
+          operator_name:  'tu operador Maz Clean',
+        })
+      }
+    }
+
     if (newStatus === 'done') {
       stopTracking()
       setActiveBooking(null)

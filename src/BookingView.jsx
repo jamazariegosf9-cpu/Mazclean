@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
+import { sendWhatsApp } from './lib/whatsapp'
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyA0k4Rg_XowxjDGUsLD3BldhpTINFMihjw'
 
@@ -128,11 +129,12 @@ export default function BookingView() {
     if (!user) return
     setLoading(true); setError('')
     try {
-      const service = SERVICES.find(s => s.id === selectedService)
-      const price   = getPrice()
+      const service    = SERVICES.find(s => s.id === selectedService)
+      const price      = getPrice()
+      const bookingRef = generateRef()
 
       const { error: insertError } = await supabase.from('bookings').insert({
-        booking_ref:     generateRef(),
+        booking_ref:     bookingRef,
         client_id:       user.id,
         service_id:      service.id,
         address_line:    addressDetails.formatted,
@@ -158,6 +160,20 @@ export default function BookingView() {
       })
 
       if (insertError) throw insertError
+
+      // Notificación WhatsApp al cliente
+      const { data: profileData } = await supabase
+        .from('profiles').select('phone').eq('id', user.id).single()
+      if (profileData?.phone) {
+        await sendWhatsApp('booking_created', profileData.phone, {
+          booking_ref:    bookingRef,
+          service_name:   service.name,
+          scheduled_date: date,
+          scheduled_time: time,
+          total_price:    price,
+        })
+      }
+
       setSuccess(true)
     } catch (err) {
       console.error('Error al guardar reservación:', err)

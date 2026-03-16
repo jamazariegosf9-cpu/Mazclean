@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
+import { sendWhatsApp } from './lib/whatsapp'
 
 const STATUS_COLORS = {
   pending:     '#FFD166',
@@ -92,6 +93,24 @@ export default function AdminView({ onNavigate }) {
       setBookings(prev => prev.map(b =>
         b.id === bookingId ? { ...b, operator_id: operatorId, status: 'assigned' } : b
       ))
+
+      // Notificación WhatsApp al cliente
+      const booking   = bookings.find(b => b.id === bookingId)
+      const operator  = operators.find(o => o.id === operatorId)
+      if (booking) {
+        const { data: clientProfile } = await supabase
+          .from('profiles').select('phone').eq('id', booking.client_id).single()
+        if (clientProfile?.phone) {
+          await sendWhatsApp('operator_assigned', clientProfile.phone, {
+            booking_ref:    booking.booking_ref,
+            service_name:   booking.service_name,
+            scheduled_date: booking.scheduled_date,
+            scheduled_time: booking.scheduled_time,
+            total_price:    booking.total_price || booking.service_price,
+            operator_name:  operator?.full_name || 'nuestro operador',
+          })
+        }
+      }
     }
     setAssigning(null)
   }
