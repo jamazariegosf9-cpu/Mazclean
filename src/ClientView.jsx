@@ -5,13 +5,12 @@ import { useAuth } from './context/AuthContext'
 const GOOGLE_MAPS_API_KEY = 'AIzaSyA0k4Rg_XowxjDGUsLD3BldhpTINFMihjw'
 
 const STATUS_INFO = {
-  pending:     { label: 'Pendiente',     icon: '⏳', color: '#f59e0b', desc: 'Buscando operador disponible...' },
-  assigned:    { label: 'Asignado',      icon: '📋', color: '#6b7280', desc: 'Operador asignado, en espera de inicio' },
-  on_the_way:  { label: 'En camino',     icon: '🚗', color: '#3b82f6', desc: 'Tu operador está en camino' },
-  arrived:     { label: 'Llegó',         icon: '📍', color: '#f59e0b', desc: 'Tu operador ha llegado' },
-  washing:     { label: 'Lavando',       icon: '🧽', color: '#8b5cf6', desc: 'Tu vehículo está siendo lavado' },
-  done:        { label: 'Completado',    icon: '✅', color: '#10b981', desc: '¡Tu vehículo está listo!' },
-  cancelled:   { label: 'Cancelado',     icon: '❌', color: '#ef4444', desc: 'Reservación cancelada' },
+  pendiente:  { label: 'Pendiente',  icon: '⏳', color: '#f59e0b', desc: 'Buscando operador disponible...' },
+  confirmado: { label: 'Confirmado', icon: '📋', color: '#3b82f6', desc: 'Operador asignado, en espera de inicio' },
+  en_camino:  { label: 'En camino',  icon: '🚗', color: '#6366f1', desc: 'Tu operador está en camino' },
+  en_proceso: { label: 'Lavando',    icon: '🧽', color: '#8b5cf6', desc: 'Tu vehículo está siendo lavado' },
+  finalizado: { label: 'Completado', icon: '✅', color: '#10b981', desc: '¡Tu vehículo está listo!' },
+  cancelado:  { label: 'Cancelado',  icon: '❌', color: '#ef4444', desc: 'Reservación cancelada' },
 }
 
 function loadGoogleMapsScript(apiKey) {
@@ -56,12 +55,11 @@ export default function ClientView() {
       .eq('client_id', user.id)
       .order('created_at', { ascending: false })
     setBookings(data || [])
-    const active = (data || []).find(b => ['pending','assigned','on_the_way','arrived','washing'].includes(b.status))
+    const active = (data || []).find(b => ['pendiente','confirmado','en_camino','en_proceso'].includes(b.status))
     if (active) setActiveBooking(active)
     setLoading(false)
   }
 
-  // Realtime: escuchar cambios en la reservación activa
   useEffect(() => {
     if (!activeBooking) return
     const channel = supabase
@@ -79,15 +77,14 @@ export default function ClientView() {
     return () => supabase.removeChannel(channel)
   }, [activeBooking?.id])
 
-  const activeList  = bookings.filter(b => ['pending','assigned','on_the_way','arrived','washing'].includes(b.status))
-  const historyList = bookings.filter(b => ['done','cancelled'].includes(b.status))
+  const activeList  = bookings.filter(b => ['pendiente','confirmado','en_camino','en_proceso'].includes(b.status))
+  const historyList = bookings.filter(b => ['finalizado','cancelado'].includes(b.status))
 
   if (loading) return <div style={styles.loading}>Cargando tus reservaciones...</div>
 
   return (
     <div style={styles.container}>
-      {/* Tracking card para reservación activa */}
-      {activeBooking && ['on_the_way', 'arrived', 'washing'].includes(activeBooking.status) && (
+      {activeBooking && ['en_camino', 'en_proceso'].includes(activeBooking.status) && (
         <TrackingCard
           booking={activeBooking}
           mapsLoaded={mapsLoaded}
@@ -101,8 +98,8 @@ export default function ClientView() {
 
         <div style={styles.tabs}>
           {[
-            { key: 'active',   label: `Activas (${activeList.length})` },
-            { key: 'history',  label: `Historial (${historyList.length})` },
+            { key: 'active',  label: `Activas (${activeList.length})` },
+            { key: 'history', label: `Historial (${historyList.length})` },
           ].map(t => (
             <button
               key={t.key}
@@ -128,15 +125,13 @@ export default function ClientView() {
   )
 }
 
-// ── Tarjeta de tracking en tiempo real ──────────────────────────────
 function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const operatorMarkerRef = useRef(null)
   const clientMarkerRef = useRef(null)
-  const status = STATUS_INFO[booking.status] || STATUS_INFO.pending
+  const status = STATUS_INFO[booking.status] || STATUS_INFO.pendiente
 
-  // Inicializar mapa
   useEffect(() => {
     if (!mapsLoaded || !mapRef.current) return
     const timer = setTimeout(initMap, 100)
@@ -155,20 +150,16 @@ function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
     })
     mapInstanceRef.current = map
 
-    // Marcador del cliente (destino)
     if (booking.address_lat && booking.address_lng) {
       clientMarkerRef.current = new window.google.maps.Marker({
         position: { lat: booking.address_lat, lng: booking.address_lng },
         map,
-        icon: {
-          url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
-        },
+        icon: { url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png' },
         title: 'Tu ubicación',
       })
     }
   }
 
-  // Suscripción realtime a la ubicación del operador
   useEffect(() => {
     if (!booking.id) return
     const channel = supabase
@@ -187,9 +178,7 @@ function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
       })
       .subscribe()
 
-    // También cargar la última ubicación conocida
     loadLastLocation()
-
     return () => supabase.removeChannel(channel)
   }, [booking.id, mapsLoaded])
 
@@ -217,16 +206,13 @@ function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
       operatorMarkerRef.current = new window.google.maps.Marker({
         position: pos,
         map: mapInstanceRef.current,
-        icon: {
-          url: 'https://maps.google.com/mapfiles/ms/icons/cabs.png',
-        },
+        icon: { url: 'https://maps.google.com/mapfiles/ms/icons/cabs.png' },
         title: 'Tu operador',
         animation: window.google.maps.Animation.BOUNCE,
       })
       setTimeout(() => operatorMarkerRef.current?.setAnimation(null), 2000)
     }
 
-    // Ajustar vista para mostrar ambos puntos
     if (clientMarkerRef.current) {
       const bounds = new window.google.maps.LatLngBounds()
       bounds.extend(pos)
@@ -254,25 +240,21 @@ function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
 
   return (
     <div style={styles.trackingCard}>
-      {/* Header */}
       <div style={styles.trackingHeader}>
         <div style={styles.liveChip}>
           <span style={styles.liveDot} />
           EN VIVO
         </div>
-        <div style={{ color: '#bfdbfe', fontSize: 13 }}>
-          {booking.service_name}
-        </div>
+        <div style={{ color: '#bfdbfe', fontSize: 13 }}>{booking.service_name}</div>
       </div>
 
-      {/* Status */}
       <div style={styles.statusRow}>
         <span style={{ fontSize: 32 }}>{status.icon}</span>
         <div>
           <div style={{ color: '#fff', fontWeight: 700, fontSize: 18 }}>{status.label}</div>
           <div style={{ color: '#bfdbfe', fontSize: 13 }}>{status.desc}</div>
         </div>
-        {eta && booking.status === 'on_the_way' && (
+        {eta && booking.status === 'en_camino' && (
           <div style={styles.etaChip}>
             <div style={{ fontSize: 11, color: '#93c5fd' }}>LLEGA EN</div>
             <div style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>{eta}</div>
@@ -280,7 +262,6 @@ function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
         )}
       </div>
 
-      {/* Mapa */}
       {!mapsLoaded ? (
         <div style={styles.mapPlaceholder}>Cargando mapa...</div>
       ) : (
@@ -288,20 +269,15 @@ function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
       )}
 
       <div style={styles.trackingFooter}>
-        <span style={{ fontSize: 12, color: '#93c5fd' }}>
-          🔵 Tu ubicación &nbsp;&nbsp; 🚕 Operador
-        </span>
-        <span style={{ fontSize: 11, color: '#60a5fa' }}>
-          Actualización automática
-        </span>
+        <span style={{ fontSize: 12, color: '#93c5fd' }}>🔵 Tu ubicación &nbsp;&nbsp; 🚕 Operador</span>
+        <span style={{ fontSize: 11, color: '#60a5fa' }}>Actualización automática</span>
       </div>
     </div>
   )
 }
 
-// ── Tarjeta de reservación ───────────────────────────────────────────
 function BookingCard({ booking }) {
-  const status = STATUS_INFO[booking.status] || STATUS_INFO.pending
+  const status = STATUS_INFO[booking.status] || STATUS_INFO.pendiente
   return (
     <div style={styles.bookingCard}>
       <div style={styles.bookingHeader}>
@@ -314,9 +290,9 @@ function BookingCard({ booking }) {
         </div>
       </div>
       <div style={styles.bookingInfo}>
-        <span>📍 {booking.address}</span>
+        <span>📍 {booking.address_line}</span>
         <span>📅 {booking.scheduled_date} · {booking.scheduled_time} hrs</span>
-        <span>💰 ${booking.service_price} MXN</span>
+        <span>💰 ${booking.total_price || booking.service_price} MXN</span>
       </div>
     </div>
   )
@@ -338,8 +314,6 @@ const styles = {
   },
   tabActive: { background: '#eff6ff', color: '#3b82f6', fontWeight: 600 },
   empty: { textAlign: 'center', color: '#9ca3af', padding: '32px 0', fontSize: 14 },
-
-  // Tracking card
   trackingCard: {
     background: 'linear-gradient(135deg, #1e3a8a, #1e40af)',
     borderRadius: 16, padding: 16, maxWidth: 640,
@@ -353,8 +327,7 @@ const styles = {
   },
   liveDot: {
     width: 8, height: 8, borderRadius: '50%', background: '#4ade80',
-    boxShadow: '0 0 8px #4ade80',
-    display: 'inline-block',
+    boxShadow: '0 0 8px #4ade80', display: 'inline-block',
   },
   statusRow: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 },
   etaChip: {
@@ -363,8 +336,7 @@ const styles = {
   },
   trackingMap: {
     width: '100%', height: 240, borderRadius: 12,
-    border: '2px solid rgba(255,255,255,0.2)',
-    marginBottom: 10,
+    border: '2px solid rgba(255,255,255,0.2)', marginBottom: 10,
   },
   mapPlaceholder: {
     width: '100%', height: 240, borderRadius: 12,
@@ -373,11 +345,7 @@ const styles = {
     color: '#93c5fd', fontSize: 14, marginBottom: 10,
   },
   trackingFooter: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-
-  // Booking cards
-  bookingCard: {
-    border: '2px solid #f3f4f6', borderRadius: 12, padding: 14, marginBottom: 10,
-  },
+  bookingCard: { border: '2px solid #f3f4f6', borderRadius: 12, padding: 14, marginBottom: 10 },
   bookingHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
   bookingTitle: { fontWeight: 600, fontSize: 15, color: '#1f2937' },
   bookingMeta: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
