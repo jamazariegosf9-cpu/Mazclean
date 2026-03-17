@@ -65,7 +65,7 @@ const AdminView = () => {
         .from('bookings')
         .select(`
           *,
-          customer:client_id(full_name, phone, email),
+          customer:client_id(full_name, phone),
           operator:operator_id(full_name, phone)
         `)
         .order('created_at', { ascending: false });
