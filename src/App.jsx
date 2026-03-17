@@ -107,26 +107,15 @@ function HomeView({ setView }) {
 }
 
 function AppInner() {
-  const { profile } = useAuth()
   const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
+
   useEffect(() => {
     const style = document.createElement('style')
     style.textContent = `* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #050A14; color: #F0F6FF; font-family: sans-serif; }`
     document.head.appendChild(style)
     return () => document.head.removeChild(style)
   }, [])
-
-  // Redirigir cuando cambia el usuario (login, logout, cambio de cuenta)
-  useEffect(() => {
-    if (profile?.id) {
-      if (profile.role === 'admin') setView('admin')
-      else if (profile.role === 'operador') setView('operator')
-      else setView('home')
-    } else {
-      setView('home')
-    }
-  }, [profile?.id])
 
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>
