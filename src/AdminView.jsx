@@ -278,7 +278,12 @@ export default function AdminView({ onNavigate }) {
 
                     <select
                       value={b.status}
-                      onChange={e => updateStatus(b.id, e.target.value)}
+                      onChange={e => {
+                        const newStatus = e.target.value
+                        if (newStatus && newStatus !== b.status) {
+                          updateStatus(b.id, newStatus)
+                        }
+                      }}
                       style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', background: '#0D1F3C', color: '#F0F6FF', fontSize: 13, cursor: 'pointer' }}
                     >
                       {Object.entries(STATUS_LABELS).map(([k, v]) => (
