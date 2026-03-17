@@ -4,6 +4,8 @@ import { useAuth } from './context/AuthContext'
 import { sendWhatsApp } from './lib/whatsapp'
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyA0k4Rg_XowxjDGUsLD3BldhpTINFMihjw'
+const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_ANON_KEY   = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 const SERVICES = [
   { id: '00131559-0491-479f-a295-664a68c3a222', name: 'Lavado Exterior',  description: 'Lavado completo de carrocería, llantas y cristales',            icon: '🚿', duration: '45 min', prices: { sedan: 199, suv: 249, pickup: 299, van: 299 } },
@@ -61,6 +63,11 @@ export default function BookingView() {
   const [time, setTime]   = useState('')
   const [notes, setNotes] = useState('')
 
+  // ── Slots inteligentes ──────────────────────────────────────────
+  const [slots, setSlots]             = useState([])
+  const [loadingSlots, setLoadingSlots] = useState(false)
+  const [slotsError, setSlotsError]   = useState('')
+
   const getPrice = useCallback(() => {
     if (!selectedService || !vehicleType) return null
     const service = SERVICES.find(s => s.id === selectedService)
@@ -77,6 +84,44 @@ export default function BookingView() {
     const t = setTimeout(() => { initMap(); initAutocomplete() }, 100)
     return () => clearTimeout(t)
   }, [step, mapsLoaded])
+
+  // ── Cargar slots cuando cambia fecha, servicio o vehículo ───────
+  useEffect(() => {
+    if (step === 3 && date && selectedService && vehicleType && addressDetails) {
+      fetchSlots()
+    }
+  }, [step, date, selectedService, vehicleType, addressDetails])
+
+  const fetchSlots = async () => {
+    if (!date || !selectedService || !vehicleType || !addressDetails) return
+    setLoadingSlots(true)
+    setSlotsError('')
+    setTime('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/get-available-slots`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({
+          lat:         addressDetails.lat,
+          lng:         addressDetails.lng,
+          fecha:       date,
+          service_id:  selectedService,
+          vehicle_type: vehicleType
+        })
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setSlots(data.slots || [])
+    } catch (err) {
+      setSlotsError('No se pudo cargar la disponibilidad. Intenta de nuevo.')
+      console.error('Error fetching slots:', err)
+    } finally {
+      setLoadingSlots(false)
+    }
+  }
 
   const initMap = useCallback(() => {
     if (!mapRef.current || mapInstanceRef.current) return
@@ -161,10 +206,8 @@ export default function BookingView() {
 
       if (insertError) throw insertError
 
-      // Reservacion guardada exitosamente
       setSuccess(true)
 
-      // WhatsApp desacoplado — nunca bloquea el flujo principal
       try {
         const { data: profileData } = await supabase
           .from('profiles').select('phone').eq('id', user.id).single()
@@ -190,6 +233,7 @@ export default function BookingView() {
     setStep(1); setSuccess(false); setError('')
     setSelectedService(null); setVehicleType(''); setVehicleBrand(''); setVehicleColor('')
     setAddress(''); setAddressDetails(null); setDate(''); setTime(''); setNotes('')
+    setSlots([]); setSlotsError('')
     mapInstanceRef.current = null
     markerRef.current = null
     autocompleteRef.current = null
@@ -297,20 +341,123 @@ export default function BookingView() {
         {step === 3 && (
           <div style={styles.body}>
             <h3 style={styles.sectionTitle}>¿Cuándo lo necesitas?</h3>
-            <div style={styles.row}>
-              <div style={styles.field}>
-                <label style={styles.label}>Fecha</label>
-                <input type="date" style={styles.input} value={date} min={new Date().toISOString().split('T')[0]} onChange={e => setDate(e.target.value)} />
-              </div>
-              <div style={styles.field}>
-                <label style={styles.label}>Hora</label>
-                <select style={styles.input} value={time} onChange={e => setTime(e.target.value)}>
-                  <option value="">Selecciona hora</option>
-                  {['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00'].map(t => <option key={t} value={t}>{t} hrs</option>)}
-                </select>
-              </div>
-            </div>
+
+            {/* Selector de fecha */}
             <div style={styles.field}>
+              <label style={styles.label}>Fecha</label>
+              <input
+                type="date"
+                style={styles.input}
+                value={date}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={e => { setDate(e.target.value); setTime(''); setSlots([]) }}
+              />
+            </div>
+
+            {/* Selector de hora inteligente */}
+            {date && (
+              <div style={styles.field}>
+                <label style={styles.label}>
+                  Hora disponible
+                  {loadingSlots && <span style={{ marginLeft: 8, fontSize: 11, color: '#9ca3af' }}>⏳ Calculando disponibilidad...</span>}
+                </label>
+
+                {slotsError && (
+                  <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'8px 12px', fontSize:12, color:'#dc2626', marginBottom:8 }}>
+                    ⚠️ {slotsError}
+                    <button onClick={fetchSlots} style={{ marginLeft:8, background:'none', border:'none', color:'#3b82f6', cursor:'pointer', fontSize:12, fontWeight:600 }}>Reintentar</button>
+                  </div>
+                )}
+
+                {loadingSlots ? (
+                  <div style={{ background:'#f9fafb', borderRadius:10, padding:'20px', textAlign:'center', color:'#9ca3af', fontSize:13 }}>
+                    🔍 Buscando los mejores horarios para ti...
+                  </div>
+                ) : slots.length > 0 ? (
+                  <div>
+                    {/* Horarios sugeridos */}
+                    {slots.some(s => s.available && s.suggested) && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                          ⚡ Horarios recomendados
+                        </div>
+                        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6 }}>
+                          {slots.filter(s => s.available && s.suggested).map(slot => (
+                            <button
+                              key={slot.time}
+                              onClick={() => setTime(slot.time)}
+                              style={{
+                                padding: '10px 6px',
+                                borderRadius: 10,
+                                border: time === slot.time ? '2px solid #059669' : '2px solid #bbf7d0',
+                                background: time === slot.time ? '#059669' : '#f0fdf4',
+                                color: time === slot.time ? '#fff' : '#166534',
+                                cursor: 'pointer',
+                                fontSize: 13,
+                                fontWeight: 700,
+                                transition: 'all 0.2s',
+                                textAlign: 'center',
+                              }}
+                            >
+                              <div>{slot.time}</div>
+                              <div style={{ fontSize: 9, fontWeight: 500, marginTop: 2, opacity: 0.8 }}>
+                                🌱 Llegada puntual
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Todos los horarios disponibles */}
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                      Todos los horarios
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:6 }}>
+                      {slots.map(slot => {
+                        if (slot.available && slot.suggested) return null // ya mostrados arriba
+                        return (
+                          <button
+                            key={slot.time}
+                            onClick={() => slot.available ? setTime(slot.time) : null}
+                            disabled={!slot.available}
+                            title={!slot.available ? slot.reason : `Operador: ${slot.operator_name}`}
+                            style={{
+                              padding: '8px 4px',
+                              borderRadius: 8,
+                              border: time === slot.time ? '2px solid #3b82f6' : '1.5px solid #e5e7eb',
+                              background: !slot.available ? '#f9fafb' : time === slot.time ? '#3b82f6' : '#fff',
+                              color: !slot.available ? '#d1d5db' : time === slot.time ? '#fff' : '#374151',
+                              cursor: slot.available ? 'pointer' : 'not-allowed',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              transition: 'all 0.2s',
+                              textDecoration: !slot.available ? 'line-through' : 'none',
+                              opacity: !slot.available ? 0.5 : 1,
+                            }}
+                          >
+                            {slot.time}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {slots.every(s => !s.available) && (
+                      <div style={{ background:'#fef9c3', border:'1px solid #fde68a', borderRadius:8, padding:'12px 14px', fontSize:13, color:'#854d0e', marginTop:8 }}>
+                        😔 No hay horarios disponibles para esta fecha. Por favor selecciona otro día.
+                      </div>
+                    )}
+                  </div>
+                ) : date && !loadingSlots && !slotsError ? (
+                  <div style={{ background:'#f9fafb', borderRadius:10, padding:'16px', textAlign:'center', color:'#9ca3af', fontSize:13 }}>
+                    Selecciona una fecha para ver los horarios disponibles.
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {/* Notas */}
+            <div style={{ ...styles.field, marginTop: 16 }}>
               <label style={styles.label}>Notas adicionales (opcional)</label>
               <textarea style={{ ...styles.input, height:80, resize:'vertical' }} placeholder="Ej: El coche está en la cochera, tocar el timbre..." value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
@@ -380,7 +527,7 @@ const styles = {
   row:            { display:'flex', gap:12 },
   field:          { flex:1, display:'flex', flexDirection:'column', gap:4, marginBottom:12 },
   label:          { fontSize:13, fontWeight:500, color:'#374151' },
-  input:          { padding:'10px 12px', borderRadius:8, border:'1.5px solid #e5e7eb', fontSize:14, outline:'none', width:'100%', boxSizing:'border-box', fontFamily:'inherit' },
+  input:          { padding:'10px 12px', borderRadius:8, border:'1.5px solid #e5e7eb', fontSize:14, outline:'none', width:'100%', boxSizing:'border-box', fontFamily:'inherit', color:'#1f2937' },
   btnLocation:    { background:'#f0f9ff', border:'1.5px solid #bae6fd', borderRadius:8, padding:'8px 14px', cursor:'pointer', fontSize:13, color:'#0369a1', fontWeight:500, marginBottom:12, width:'100%' },
   mapContainer:   { width:'100%', height:280, borderRadius:12, border:'1.5px solid #e5e7eb', overflow:'hidden', marginBottom:12 },
   mapPlaceholder: { width:'100%', height:280, borderRadius:12, background:'#f9fafb', display:'flex', alignItems:'center', justifyContent:'center', color:'#9ca3af', fontSize:14, border:'1.5px solid #e5e7eb', marginBottom:12 },
