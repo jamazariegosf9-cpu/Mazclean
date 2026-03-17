@@ -117,7 +117,7 @@ export default function OperatorView() {
           scheduled_date: booking.scheduled_date,
           scheduled_time: booking.scheduled_time,
           total_price:    booking.total_price || booking.service_price,
-          operator_name:  'tu operador Maz Clean',
+          operator_name:  user.user_metadata.full_name || 'tu operador Maz Clean',
         })
       }
     }
