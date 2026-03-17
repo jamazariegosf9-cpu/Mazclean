@@ -1,7 +1,7 @@
 import ClientView from './ClientView'
 import OperatorView from './OperatorView'
 import AdminView from './AdminView'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthModal from './components/auth/AuthModal'
 import BookingView from './BookingView'
@@ -107,8 +107,10 @@ function HomeView({ setView }) {
 }
 
 function AppInner() {
+  const { profile, loading } = useAuth()
   const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
+  const didSetInitialView         = useRef(false)
 
   useEffect(() => {
     const style = document.createElement('style')
@@ -116,6 +118,29 @@ function AppInner() {
     document.head.appendChild(style)
     return () => document.head.removeChild(style)
   }, [])
+
+  // Solo al terminar de cargar por primera vez, redirigir según rol
+  useEffect(() => {
+    if (!loading && !didSetInitialView.current) {
+      didSetInitialView.current = true
+      if (profile?.role === 'admin') setView('admin')
+      else if (profile?.role === 'operador') setView('operator')
+    }
+    // Si cierra sesión, resetear para que el próximo login redirija de nuevo
+    if (!loading && !profile) {
+      didSetInitialView.current = false
+      setView('home')
+    }
+  }, [loading, profile])
+
+  // Mientras carga la sesión, mostrar pantalla en blanco (no "Cargando...")
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ color: '#8CA0BF', fontSize: 14 }}>Iniciando...</div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>
