@@ -25,6 +25,12 @@ const STATUS_LABELS = {
   cancelado:   'Cancelado',
 }
 
+// Normalizar status al enum correcto
+function normalizeStatus(status) {
+  const map = { pending: 'pendiente', assigned: 'confirmado', on_the_way: 'en_camino', arrived: 'en_proceso', washing: 'en_proceso', done: 'finalizado', cancelled: 'cancelado' }
+  return map[status] || status
+}
+
 function StatusBadge({ status }) {
   const color = STATUS_COLORS[status] || '#8CA0BF'
   return (
@@ -155,7 +161,7 @@ export default function AdminView({ onNavigate }) {
 
   // ── Métricas ──────────────────────────────────────────────
   const total       = bookings.length
-  const pendientes  = bookings.filter(b => b.status === 'pendiente').length
+  const pendientes  = bookings.filter(b => normalizeStatus(b.status) === 'pendiente').length
   const activos     = bookings.filter(b => ['confirmado','en_camino','en_proceso'].includes(b.status)).length
   const finalizados = bookings.filter(b => b.status === 'finalizado').length
   const ingresos    = bookings.filter(b => b.status === 'finalizado').reduce((s, b) => s + (b.service_price || b.total_price || 0), 0)
@@ -283,10 +289,10 @@ export default function AdminView({ onNavigate }) {
                     </select>
 
                     <select
-                      value={b.status}
+                      value={normalizeStatus(b.status)}
                       onChange={e => {
                         const newStatus = e.target.value
-                        if (newStatus && newStatus !== b.status) {
+                        if (newStatus && newStatus !== normalizeStatus(b.status)) {
                           updateStatus(b.id, newStatus)
                         }
                       }}
