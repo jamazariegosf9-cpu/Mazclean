@@ -107,7 +107,7 @@ function HomeView({ setView }) {
 }
 
 function AppInner() {
-  const { loading } = useAuth()
+  const { loading, user } = useAuth()
   const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
 
@@ -117,6 +117,12 @@ function AppInner() {
     document.head.appendChild(style)
     return () => document.head.removeChild(style)
   }, [])
+
+  useEffect(() => {
+    if (!loading && !user) {
+      setView('home')
+    }
+  }, [loading, user])
 
   // Mientras AuthContext verifica la sesión y carga el perfil, no renderizar nada
   if (loading) {
