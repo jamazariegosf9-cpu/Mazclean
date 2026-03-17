@@ -103,37 +103,51 @@ export default function AdminView({ onNavigate }) {
   }
 
   const assignOperator = async (bookingId, operatorId) => {
+    if (!operatorId) return
     setAssigning(bookingId)
-    const { error } = await supabase
-      .from('bookings')
-      .update({ operator_id: operatorId, status: 'confirmado' })
-      .eq('id', bookingId)
 
-    if (isIgnorableError(error)) {
-      setBookings(prev => prev.map(b =>
-        b.id === bookingId ? { ...b, operator_id: operatorId, status: 'confirmado' } : b
-      ))
-      // Notificación WhatsApp al cliente — no bloqueante
-      const booking  = bookings.find(b => b.id === bookingId)
-      const operator = operators.find(o => o.id === operatorId)
-      if (booking) {
-        supabase.from('profiles').select('phone').eq('id', booking.client_id).single()
-          .then(({ data: clientProfile }) => {
-            if (clientProfile?.phone) {
-              sendWhatsApp('operator_assigned', clientProfile.phone, {
-                booking_ref:    booking.booking_ref,
-                service_name:   booking.service_name,
-                scheduled_date: booking.scheduled_date,
-                scheduled_time: booking.scheduled_time,
-                total_price:    booking.total_price || booking.service_price,
-                operator_name:  operator?.full_name || 'nuestro operador',
-              })
-            }
-          })
-          .catch(() => {})
+    try {
+      const { data, error } = await supabase
+        .from('bookings')
+        .update({
+          operator_id: operatorId,
+          status: 'confirmado',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', bookingId)
+        .select()
+
+      if (error) {
+        console.error('Error de Supabase:', error)
+      } else {
+        setBookings(prev => prev.map(b =>
+          b.id === bookingId ? { ...b, operator_id: operatorId, status: 'confirmado' } : b
+        ))
+        // Notificación WhatsApp al cliente — no bloqueante
+        const booking  = bookings.find(b => b.id === bookingId)
+        const operator = operators.find(o => o.id === operatorId)
+        if (booking) {
+          supabase.from('profiles').select('phone').eq('id', booking.client_id).single()
+            .then(({ data: clientProfile }) => {
+              if (clientProfile?.phone) {
+                sendWhatsApp('operator_assigned', clientProfile.phone, {
+                  booking_ref:    booking.booking_ref,
+                  service_name:   booking.service_name,
+                  scheduled_date: booking.scheduled_date,
+                  scheduled_time: booking.scheduled_time,
+                  total_price:    booking.total_price || booking.service_price,
+                  operator_name:  operator?.full_name || 'nuestro operador',
+                })
+              }
+            })
+            .catch(() => {})
+        }
       }
+    } catch (err) {
+      console.error('Error inesperado:', err)
+    } finally {
+      setAssigning(null)
     }
-    setAssigning(null)
   }
 
   const updateStatus = async (bookingId, newStatus) => {
