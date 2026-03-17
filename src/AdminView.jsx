@@ -39,6 +39,13 @@ function StatusBadge({ status }) {
   )
 }
 
+// Verifica si un error de Supabase es ignorable (el update sí se aplicó)
+function isIgnorableError(error) {
+  if (!error) return true
+  const msg = error.message || ''
+  return msg.includes('409') || msg.includes('Conflict') || error.code === '23505'
+}
+
 export default function AdminView({ onNavigate }) {
   const { user, profile } = useAuth()
   const [tab, setTab]             = useState('dashboard')
@@ -86,14 +93,13 @@ export default function AdminView({ onNavigate }) {
       .from('bookings')
       .update({ operator_id: operatorId, status: 'confirmado' })
       .eq('id', bookingId)
-    if (!error) {
+    if (isIgnorableError(error)) {
       setBookings(prev => prev.map(b =>
         b.id === bookingId ? { ...b, operator_id: operatorId, status: 'confirmado' } : b
       ))
-
       // Notificación WhatsApp al cliente — no bloqueante
-      const booking   = bookings.find(b => b.id === bookingId)
-      const operator  = operators.find(o => o.id === operatorId)
+      const booking  = bookings.find(b => b.id === bookingId)
+      const operator = operators.find(o => o.id === operatorId)
       if (booking) {
         supabase.from('profiles').select('phone').eq('id', booking.client_id).single()
           .then(({ data: clientProfile }) => {
@@ -119,7 +125,7 @@ export default function AdminView({ onNavigate }) {
       .from('bookings')
       .update({ status: newStatus })
       .eq('id', bookingId)
-    if (!error) {
+    if (isIgnorableError(error)) {
       setBookings(prev => prev.map(b =>
         b.id === bookingId ? { ...b, status: newStatus } : b
       ))
@@ -149,7 +155,7 @@ export default function AdminView({ onNavigate }) {
 
   // ── Métricas ──────────────────────────────────────────────
   const total       = bookings.length
-  const pendientes  = bookings.filter(b => b.status === 'pending').length
+  const pendientes  = bookings.filter(b => b.status === 'pendiente').length
   const activos     = bookings.filter(b => ['confirmado','en_camino','en_proceso'].includes(b.status)).length
   const finalizados = bookings.filter(b => b.status === 'finalizado').length
   const ingresos    = bookings.filter(b => b.status === 'finalizado').reduce((s, b) => s + (b.service_price || b.total_price || 0), 0)
