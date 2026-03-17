@@ -1,7 +1,7 @@
 import ClientView from './ClientView'
 import OperatorView from './OperatorView'
 import AdminView from './AdminView'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthModal from './components/auth/AuthModal'
 import BookingView from './BookingView'
@@ -110,8 +110,6 @@ function AppInner() {
   const { profile } = useAuth()
   const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
-  const prevProfileRef            = useRef(null)
-
   useEffect(() => {
     const style = document.createElement('style')
     style.textContent = `* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #050A14; color: #F0F6FF; font-family: sans-serif; }`
@@ -119,21 +117,16 @@ function AppInner() {
     return () => document.head.removeChild(style)
   }, [])
 
-  // Redirigir solo cuando el usuario ACABA de iniciar sesión (de null a tener perfil)
+  // Redirigir cuando cambia el usuario (login, logout, cambio de cuenta)
   useEffect(() => {
-    const wasLoggedOut = prevProfileRef.current === null
-    const isNowLoggedIn = profile !== null
-    if (wasLoggedOut && isNowLoggedIn) {
+    if (profile?.id) {
       if (profile.role === 'admin') setView('admin')
       else if (profile.role === 'operador') setView('operator')
       else setView('home')
-    }
-    // Si cerró sesión, volver al inicio
-    if (!isNowLoggedIn && prevProfileRef.current !== null) {
+    } else {
       setView('home')
     }
-    prevProfileRef.current = profile
-  }, [profile])
+  }, [profile?.id])
 
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>

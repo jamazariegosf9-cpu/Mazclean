@@ -155,16 +155,8 @@ export default function AdminView({ onNavigate }) {
   }
 
   if (profile.role !== 'admin') {
-    return (
-      <div style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, textAlign: 'center', padding: 40 }}>
-        <div style={{ fontSize: 48 }}>🔐</div>
-        <h3 style={{ fontWeight: 800, fontSize: 24 }}>Acceso solo para administradores</h3>
-        <p style={{ color: '#8CA0BF' }}>Tu cuenta no tiene permisos de administrador.</p>
-        <button onClick={() => onNavigate('home')} style={{ padding: '12px 28px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, cursor: 'pointer' }}>
-          Ir al inicio
-        </button>
-      </div>
-    )
+    onNavigate('home')
+    return null
   }
 
   // ── Métricas ──────────────────────────────────────────────
