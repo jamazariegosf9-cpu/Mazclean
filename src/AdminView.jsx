@@ -63,17 +63,14 @@ export default function AdminView({ onNavigate }) {
 
   useEffect(() => {
     if (!user) return
-    if (profile && profile.role !== 'admin') {
-      onNavigate('home')
-      return
-    }
     loadAll()
+    // Recargar cuando el usuario regresa a esta pestaña
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') loadAll()
     }
     document.addEventListener('visibilitychange', handleVisibility)
     return () => document.removeEventListener('visibilitychange', handleVisibility)
-  }, [user, profile])
+  }, [user])
 
   const loadAll = async () => {
     setLoading(true)
@@ -149,7 +146,23 @@ export default function AdminView({ onNavigate }) {
     }
   }
 
+  const deleteBooking = async (bookingId) => {
+    if (!window.confirm('¿Eliminar esta reservación? Esta acción no se puede deshacer.')) return
+    const { error } = await supabase
+      .from('bookings')
+      .delete()
+      .eq('id', bookingId)
+    if (!error) {
+      setBookings(prev => prev.filter(b => b.id !== bookingId))
+    }
+  }
+
   if (!user || !profile) return null
+
+  if (profile.role !== 'admin') {
+    onNavigate('home')
+    return null
+  }
 
   // ── Métricas ──────────────────────────────────────────────
   const total       = bookings.length
