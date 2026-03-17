@@ -1,17 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  MapPin, 
-  Clock, 
-  Phone, 
-  Navigation, 
-  CheckCircle2, 
-  Camera, 
-  LogOut,
-  ChevronRight,
-  ExternalLink,
-  AlertCircle,
-  Play,
-  Check
+import {
+  MapPin, Clock, Phone, Navigation, CheckCircle2,
+  LogOut, ChevronRight, AlertCircle, Play, Check
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useAuth } from './context/AuthContext';
@@ -19,39 +9,29 @@ import { sendWhatsApp } from './lib/whatsapp';
 
 const OperatorView = () => {
   const { user, profile, signOut } = useAuth();
-  const [bookings, setBookings] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('pendientes');
+  const [bookings, setBookings]         = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [activeTab, setActiveTab]       = useState('pendientes');
   const [selectedBooking, setSelectedBooking] = useState(null);
-  const [updatingId, setUpdatingId] = useState(null);
+  const [updatingId, setUpdatingId]     = useState(null);
 
   useEffect(() => {
     if (user) {
       fetchOperatorBookings();
-      
-      // Suscripción en tiempo real para cambios asignados a este operador
       const channel = supabase
         .channel('operator-changes')
-        .on('postgres_changes', { 
-          event: '*', 
-          schema: 'public', 
-          table: 'bookings',
+        .on('postgres_changes', {
+          event: '*', schema: 'public', table: 'bookings',
           filter: `operator_id=eq.${user.id}`
-        }, () => {
-          fetchOperatorBookings();
-        })
+        }, () => { fetchOperatorBookings(); })
         .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
+      return () => { supabase.removeChannel(channel); };
     }
   }, [user]);
 
   const fetchOperatorBookings = async () => {
     try {
       setLoading(true);
-      // Admin ve todas las activas, operador solo las suyas
       let query = supabase.from('bookings').select('*, customer:client_id(full_name, phone)').order('scheduled_date', { ascending: true });
       if (profile?.role !== 'admin') {
         query = query.eq('operator_id', user.id);
@@ -59,7 +39,6 @@ const OperatorView = () => {
         query = query.in('status', ['confirmado', 'en_camino', 'en_proceso', 'finalizado']);
       }
       const { data, error } = await query;
-
       if (error) throw error;
       setBookings(data || []);
     } catch (err) {
@@ -72,23 +51,16 @@ const OperatorView = () => {
   const updateStatus = async (bookingId, newStatus, eventName) => {
     setUpdatingId(bookingId);
     try {
-      // 1. Actualización en Base de Datos
       const { error } = await supabase
         .from('bookings')
-        .update({ 
-          status: newStatus,
-          updated_at: new Date().toISOString()
-        })
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
         .eq('id', bookingId);
-
       if (error) throw error;
 
-      // 2. Actualización Local
-      setBookings(prev => prev.map(b => 
+      setBookings(prev => prev.map(b =>
         b.id === bookingId ? { ...b, status: newStatus } : b
       ));
 
-      // 3. Notificación WhatsApp (Opcional/Blindada)
       const booking = bookings.find(b => b.id === bookingId);
       if (booking && booking.customer?.phone) {
         try {
@@ -104,7 +76,6 @@ const OperatorView = () => {
       if (selectedBooking?.id === bookingId) {
         setSelectedBooking(prev => ({ ...prev, status: newStatus }));
       }
-
     } catch (err) {
       alert(`Error al actualizar estado: ${err.message}`);
     } finally {
@@ -118,43 +89,56 @@ const OperatorView = () => {
     window.open(url, '_blank');
   };
 
-  // FILTROS DE PESTAÑAS (CORREGIDOS SEGÚN ENUM)
-  const pendingServices = bookings.filter(b => b.status === 'confirmado');
-  const activeServices = bookings.filter(b => ['en_camino', 'en_proceso'].includes(b.status));
+  const pendingServices   = bookings.filter(b => b.status === 'confirmado');
+  const activeServices    = bookings.filter(b => ['en_camino', 'en_proceso'].includes(b.status));
   const completedServices = bookings.filter(b => b.status === 'finalizado');
 
+  const currentList = activeTab === 'pendientes' ? pendingServices : activeTab === 'activos' ? activeServices : completedServices;
+
+  const getStatusStyle = (status) => {
+    switch (status) {
+      case 'confirmado': return { bg: '#dbeafe', text: '#1e40af', label: 'Confirmado' };
+      case 'en_camino':  return { bg: '#e0e7ff', text: '#3730a3', label: 'En camino' };
+      case 'en_proceso': return { bg: '#ffedd5', text: '#9a3412', label: 'Lavando' };
+      case 'finalizado': return { bg: '#dcfce7', text: '#166534', label: 'Finalizado' };
+      default:           return { bg: '#f3f4f6', text: '#374151', label: status };
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
-      {/* Header Operador */}
-      <div className="bg-slate-900 text-white px-6 pt-12 pb-8 rounded-b-[40px] shadow-lg">
-        <div className="flex justify-between items-start mb-6">
+    <div style={{ minHeight: '100vh', background: '#f3f4f6', paddingBottom: 80 }}>
+
+      {/* ── Header ── */}
+      <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '32px 24px 28px', borderRadius: '0 0 32px 32px', boxShadow: '0 4px 24px rgba(30,64,175,0.3)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
           <div>
-            <h1 className="text-2xl font-bold">Mis Servicios</h1>
-            <p className="text-slate-400 text-sm">Hola, {user?.user_metadata?.full_name || 'Operador'}</p>
+            <h1 style={{ color: '#fff', fontSize: 22, fontWeight: 700, margin: '0 0 4px' }}>🚗 Mis Servicios</h1>
+            <p style={{ color: '#bfdbfe', fontSize: 13, margin: 0 }}>Hola, {user?.user_metadata?.full_name || 'Operador'}</p>
           </div>
-          <button 
+          <button
             onClick={() => signOut()}
-            className="p-2 bg-slate-800 rounded-full text-slate-300 hover:text-white transition-colors"
+            style={{ background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 10, padding: '8px 10px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center' }}
           >
-            <LogOut className="h-5 w-5" />
+            <LogOut size={16} />
           </button>
         </div>
 
-        {/* Tabs de Navegación */}
-        <div className="flex bg-slate-800/50 p-1 rounded-2xl">
+        {/* Tabs tipo cápsula */}
+        <div style={{ display: 'flex', background: 'rgba(255,255,255,0.15)', padding: 4, borderRadius: 14, gap: 4 }}>
           {[
-            { id: 'pendientes', label: 'Pendientes', count: pendingServices.length },
-            { id: 'activos', label: 'Activos', count: activeServices.length },
-            { id: 'completados', label: 'Historial', count: completedServices.length }
+            { id: 'pendientes',  label: 'Pendientes',  count: pendingServices.length },
+            { id: 'activos',     label: 'Activos',     count: activeServices.length },
+            { id: 'completados', label: 'Historial',   count: completedServices.length },
           ].map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${
-                activeTab === tab.id 
-                ? 'bg-blue-600 text-white shadow-md' 
-                : 'text-slate-400 hover:text-slate-200'
-              }`}
+              style={{
+                flex: 1, padding: '10px 4px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, transition: 'all 0.2s',
+                background: activeTab === tab.id ? '#fff' : 'transparent',
+                color: activeTab === tab.id ? '#1e40af' : '#bfdbfe',
+                boxShadow: activeTab === tab.id ? '0 2px 8px rgba(0,0,0,0.12)' : 'none',
+              }}
             >
               {tab.label} ({tab.count})
             </button>
@@ -162,186 +146,177 @@ const OperatorView = () => {
         </div>
       </div>
 
-      {/* Contenido Principal */}
-      <div className="px-6 -mt-4">
+      {/* ── Contenido ── */}
+      <div style={{ padding: '20px 16px', maxWidth: 600, margin: '0 auto' }}>
         {loading ? (
-          <div className="bg-white p-12 rounded-3xl shadow-sm text-center flex flex-col items-center">
-            <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mb-4"></div>
-            <p className="text-gray-500 font-medium">Cargando tus servicios...</p>
+          <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: 48, textAlign: 'center' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+            <p style={{ color: '#9ca3af', fontWeight: 500 }}>Cargando tus servicios...</p>
+          </div>
+        ) : currentList.length === 0 ? (
+          <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: 48, textAlign: 'center' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
+            <p style={{ color: '#9ca3af', fontWeight: 500 }}>No tienes servicios en esta sección</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {(activeTab === 'pendientes' ? pendingServices : 
-              activeTab === 'activos' ? activeServices : 
-              completedServices).map((booking) => (
-              <div 
-                key={booking.id}
-                onClick={() => setSelectedBooking(booking)}
-                className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 active:scale-[0.98] transition-all"
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-2 py-1 rounded-md">
+          <div style={{ display: 'grid', gap: 12 }}>
+            {currentList.map(booking => {
+              const sc = getStatusStyle(booking.status);
+              return (
+                <div
+                  key={booking.id}
+                  onClick={() => setSelectedBooking(booking)}
+                  style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 18px', cursor: 'pointer', transition: 'transform 0.15s', border: '2px solid transparent' }}
+                >
+                  {/* Folio + status */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', background: '#eff6ff', padding: '3px 10px', borderRadius: 20, letterSpacing: 0.5 }}>
                       {booking.booking_ref}
                     </span>
-                    <h3 className="text-lg font-bold text-gray-900 mt-2">{booking.service_name}</h3>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: sc.bg, color: sc.text }}>
+                      {sc.label}
+                    </span>
                   </div>
-                  <div className="bg-gray-50 p-2 rounded-xl">
-                    <ChevronRight className="h-5 w-5 text-gray-300" />
-                  </div>
-                </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center text-sm text-gray-600">
-                    <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center mr-3">
-                      <Clock className="h-4 w-4 text-blue-500" />
+                  {/* Nombre servicio */}
+                  <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 16, marginBottom: 12 }}>{booking.service_name}</div>
+
+                  {/* Info */}
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151' }}>
+                      <Clock size={14} color="#3b82f6" />
+                      <span style={{ fontWeight: 600 }}>{booking.scheduled_time}</span>
+                      <span style={{ color: '#9ca3af' }}>·</span>
+                      <span style={{ color: '#6b7280' }}>{booking.scheduled_date}</span>
                     </div>
-                    <div>
-                      <p className="font-bold text-gray-900">{booking.scheduled_time}</p>
-                      <p className="text-xs text-gray-400">{booking.scheduled_date}</p>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#6b7280' }}>
+                      <MapPin size={14} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
+                      <span style={{ lineHeight: 1.4 }}>{booking.address_line || 'Ver detalles...'}</span>
                     </div>
                   </div>
 
-                  <div className="flex items-center text-sm text-gray-600">
-                    <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center mr-3">
-                      <MapPin className="h-4 w-4 text-red-500" />
-                    </div>
-                    <p className="flex-1 truncate">{booking.address_line || 'Ver detalles...'}</p>
+                  {/* Botones de acción rápida */}
+                  <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #f3f4f6', display: 'flex', gap: 8 }}>
+                    {booking.status === 'confirmado' && (
+                      <button
+                        onClick={e => { e.stopPropagation(); updateStatus(booking.id, 'en_camino', 'on_the_way'); }}
+                        disabled={updatingId === booking.id}
+                        style={{ flex: 1, background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '11px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, boxShadow: '0 4px 12px rgba(59,130,246,0.3)' }}
+                      >
+                        <Navigation size={14} /> Iniciar Viaje
+                      </button>
+                    )}
+                    {booking.status === 'en_camino' && (
+                      <button
+                        onClick={e => { e.stopPropagation(); updateStatus(booking.id, 'en_proceso', 'washing'); }}
+                        disabled={updatingId === booking.id}
+                        style={{ flex: 1, background: '#f97316', color: '#fff', border: 'none', borderRadius: 10, padding: '11px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, boxShadow: '0 4px 12px rgba(249,115,22,0.3)' }}
+                      >
+                        <Play size={14} /> Empezar Lavado
+                      </button>
+                    )}
                   </div>
                 </div>
-
-                {/* Botones de acción rápida por estado */}
-                <div className="mt-5 pt-4 border-t border-gray-50 flex gap-2">
-                  {booking.status === 'confirmado' && (
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        updateStatus(booking.id, 'en_camino', 'on_the_way');
-                      }}
-                      className="flex-1 bg-blue-600 text-white py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-100"
-                    >
-                      <Navigation className="h-4 w-4" /> Iniciar Viaje
-                    </button>
-                  )}
-                  {booking.status === 'en_camino' && (
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        updateStatus(booking.id, 'en_proceso', 'washing');
-                      }}
-                      className="flex-1 bg-orange-500 text-white py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2"
-                    >
-                      <Play className="h-4 w-4" /> Empezar Lavado
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {/* Empty State */}
-            {(activeTab === 'pendientes' ? pendingServices : 
-              activeTab === 'activos' ? activeServices : 
-              completedServices).length === 0 && (
-              <div className="py-20 text-center">
-                <div className="bg-gray-100 h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <AlertCircle className="h-8 w-8 text-gray-300" />
-                </div>
-                <p className="text-gray-400 font-medium">No tienes servicios en esta sección</p>
-              </div>
-            )}
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Modal Detalle de Servicio (Full Screen Mobile) */}
+      {/* ════ MODAL DETALLE ════ */}
       {selectedBooking && (
-        <div className="fixed inset-0 z-50 bg-white animate-in slide-in-from-bottom duration-300 overflow-y-auto">
-          <div className="p-6">
-            <div className="flex justify-between items-center mb-8">
-              <button 
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: '#f3f4f6', overflowY: 'auto' }}>
+          <div style={{ maxWidth: 600, margin: '0 auto', padding: 20 }}>
+
+            {/* Header modal */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <button
                 onClick={() => setSelectedBooking(null)}
-                className="bg-gray-100 p-2 rounded-xl text-gray-600"
+                style={{ background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: 10, padding: '8px 16px', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}
               >
-                Cerrar
+                ← Cerrar
               </button>
-              <div className="text-center">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Detalle del Servicio</p>
-                <p className="font-bold text-gray-900">{selectedBooking.booking_ref}</p>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 }}>Detalle del Servicio</div>
+                <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 13 }}>{selectedBooking.booking_ref}</div>
               </div>
-              <div className="w-10"></div>
+              <div style={{ width: 80 }} />
             </div>
 
-            <div className="space-y-6">
-              <div className="bg-blue-600 p-6 rounded-[32px] text-white shadow-xl shadow-blue-100">
-                <h2 className="text-2xl font-black mb-1">{selectedBooking.service_name}</h2>
-                <p className="opacity-80 text-sm mb-4">{selectedBooking.car_brand} {selectedBooking.car_model} • {selectedBooking.car_color}</p>
-                <div className="flex items-center gap-4">
-                  <div className="bg-white/20 px-3 py-1 rounded-lg text-xs font-bold">
-                    {selectedBooking.scheduled_time}
-                  </div>
-                  <div className="bg-white/20 px-3 py-1 rounded-lg text-xs font-bold">
-                    ${selectedBooking.total_price || selectedBooking.service_price}
-                  </div>
-                </div>
+            {/* Card principal azul */}
+            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', borderRadius: 20, padding: '20px 22px', color: '#fff', marginBottom: 16, boxShadow: '0 8px 32px rgba(30,64,175,0.3)' }}>
+              <h2 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 4px' }}>{selectedBooking.service_name}</h2>
+              <p style={{ color: '#bfdbfe', fontSize: 13, margin: '0 0 16px' }}>
+                {selectedBooking.vehicle_brand} {selectedBooking.vehicle_model} · {selectedBooking.vehicle_color}
+              </p>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>
+                  🕐 {selectedBooking.scheduled_time}
+                </span>
+                <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>
+                  💰 ${selectedBooking.total_price || selectedBooking.service_price}
+                </span>
               </div>
+            </div>
 
-              <div className="grid grid-cols-1 gap-4">
-                <div className="bg-gray-50 p-5 rounded-3xl">
-                  <p className="text-xs font-bold text-gray-400 uppercase mb-3">Cliente</p>
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="font-bold text-gray-900 text-lg">{selectedBooking.customer?.full_name}</p>
-                      <p className="text-sm text-gray-500">{selectedBooking.customer?.phone}</p>
-                    </div>
-                    <a 
-                      href={`tel:${selectedBooking.customer?.phone}`}
-                      className="bg-green-500 p-3 rounded-2xl text-white shadow-lg shadow-green-100"
-                    >
-                      <Phone className="h-5 w-5" />
-                    </a>
-                  </div>
+            {/* Info cliente */}
+            <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 18px', marginBottom: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Cliente</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 16 }}>{selectedBooking.customer?.full_name}</div>
+                  <div style={{ fontSize: 13, color: '#6b7280', marginTop: 3 }}>{selectedBooking.customer?.phone}</div>
                 </div>
-
-                <div className="bg-gray-50 p-5 rounded-3xl">
-                  <p className="text-xs font-bold text-gray-400 uppercase mb-3">Ubicación</p>
-                  <p className="font-medium text-gray-800 mb-4">{selectedBooking.address_line}</p>
-                  <button 
-                    onClick={() => openInMaps(selectedBooking.address_line)}
-                    className="w-full bg-white border border-gray-200 py-4 rounded-2xl font-bold text-blue-600 flex items-center justify-center gap-2"
-                  >
-                    <Navigation className="h-4 w-4" /> Abrir en Google Maps
-                  </button>
-                </div>
+                <a
+                  href={`tel:${selectedBooking.customer?.phone}`}
+                  style={{ background: '#10b981', padding: '10px 12px', borderRadius: 12, color: '#fff', textDecoration: 'none', display: 'flex', alignItems: 'center', boxShadow: '0 4px 12px rgba(16,185,129,0.3)' }}
+                >
+                  <Phone size={18} />
+                </a>
               </div>
+            </div>
 
-              {/* Botón de acción principal en el modal */}
-              <div className="fixed bottom-8 left-6 right-6">
-                {selectedBooking.status === 'confirmado' && (
-                  <button 
-                    onClick={() => updateStatus(selectedBooking.id, 'en_camino', 'on_the_way')}
-                    className="w-full bg-blue-600 text-white py-5 rounded-[24px] font-black text-lg shadow-2xl shadow-blue-200 flex items-center justify-center gap-3"
-                    disabled={updatingId === selectedBooking.id}
-                  >
-                    {updatingId === selectedBooking.id ? 'Cargando...' : 'INICIAR VIAJE AHORA'}
-                  </button>
-                )}
-                {selectedBooking.status === 'en_camino' && (
-                  <button 
-                    onClick={() => updateStatus(selectedBooking.id, 'en_proceso', 'washing')}
-                    className="w-full bg-orange-500 text-white py-5 rounded-[24px] font-black text-lg shadow-2xl shadow-orange-200 flex items-center justify-center gap-3"
-                  >
-                    LLEGUÉ / EMPEZAR LAVADO
-                  </button>
-                )}
-                {selectedBooking.status === 'en_proceso' && (
-                  <button 
-                    onClick={() => updateStatus(selectedBooking.id, 'finalizado', 'done')}
-                    className="w-full bg-green-500 text-white py-5 rounded-[24px] font-black text-lg shadow-2xl shadow-green-200 flex items-center justify-center gap-3"
-                  >
-                    <Check className="h-6 w-6" /> FINALIZAR SERVICIO
-                  </button>
-                )}
-              </div>
+            {/* Ubicación */}
+            <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 18px', marginBottom: 100 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Ubicación</div>
+              <p style={{ fontWeight: 500, color: '#1f2937', fontSize: 14, margin: '0 0 14px', lineHeight: 1.5 }}>{selectedBooking.address_line}</p>
+              <button
+                onClick={() => openInMaps(selectedBooking.address_line)}
+                style={{ width: '100%', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 10, padding: '12px 0', fontSize: 13, fontWeight: 700, color: '#1e40af', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+              >
+                <Navigation size={14} /> Abrir en Google Maps
+              </button>
+            </div>
+
+            {/* Botón de acción principal */}
+            <div style={{ position: 'fixed', bottom: 24, left: 20, right: 20 }}>
+              {selectedBooking.status === 'confirmado' && (
+                <button
+                  onClick={() => updateStatus(selectedBooking.id, 'en_camino', 'on_the_way')}
+                  disabled={updatingId === selectedBooking.id}
+                  style={{ width: '100%', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 8px 32px rgba(59,130,246,0.4)' }}
+                >
+                  {updatingId === selectedBooking.id ? '⏳ Cargando...' : <><Navigation size={18} /> INICIAR VIAJE AHORA</>}
+                </button>
+              )}
+              {selectedBooking.status === 'en_camino' && (
+                <button
+                  onClick={() => updateStatus(selectedBooking.id, 'en_proceso', 'washing')}
+                  disabled={updatingId === selectedBooking.id}
+                  style={{ width: '100%', background: '#f97316', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 8px 32px rgba(249,115,22,0.4)' }}
+                >
+                  <Play size={18} /> LLEGUÉ / EMPEZAR LAVADO
+                </button>
+              )}
+              {selectedBooking.status === 'en_proceso' && (
+                <button
+                  onClick={() => updateStatus(selectedBooking.id, 'finalizado', 'done')}
+                  disabled={updatingId === selectedBooking.id}
+                  style={{ width: '100%', background: '#10b981', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 8px 32px rgba(16,185,129,0.4)' }}
+                >
+                  <Check size={18} /> FINALIZAR SERVICIO
+                </button>
+              )}
             </div>
           </div>
         </div>
