@@ -1,7 +1,4 @@
 // src/lib/whatsapp.js
-// Helper para enviar notificaciones WhatsApp desde el frontend
-// Llama a la Edge Function de Supabase que se comunica con Twilio
-
 import { supabase } from './supabase'
 
 /**
@@ -21,11 +18,17 @@ export async function sendWhatsApp(event, phone, booking) {
       body: { event, phone, booking }
     })
 
-    if (error) throw error
+    // Si la función devuelve un error (como el 500 de Twilio), lo capturamos aquí
+    if (error) {
+      console.warn(`⚠️ Twilio Límite/Error [${event}]:`, error.message)
+      return { success: false, error: error.message }
+    }
+
     console.log(`✅ WhatsApp enviado [${event}] a ${phone}`)
     return data
   } catch (err) {
     // No lanzar error — las notificaciones nunca deben bloquear el flujo principal
-    console.error(`⚠️ WhatsApp falló [${event}]:`, err.message)
+    console.error(`⚠️ Error crítico en invocación [${event}]:`, err.message)
+    return { success: false, error: err.message }
   }
 }

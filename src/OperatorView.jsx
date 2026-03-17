@@ -4,6 +4,8 @@ import { useAuth } from './context/AuthContext'
 import { sendWhatsApp } from './lib/whatsapp'
 
 const STATUS_FLOW = [
+  // Agregamos este para que coincida con el status 'pendiente' de tu DB
+  { key: 'pendiente',   label: 'Pendiente',  icon: '⏳', color: '#f59e0b' }, 
   { key: 'confirmado',  label: 'Confirmado', icon: '📋', color: '#6b7280' },
   { key: 'en_camino',   label: 'En camino',  icon: '🚗', color: '#3b82f6' },
   { key: 'en_proceso',  label: 'Lavando',    icon: '🧽', color: '#8b5cf6' },
@@ -129,7 +131,7 @@ export default function OperatorView() {
   }
 
   const pendingList = bookings.filter(b =>
-    b.status === 'confirmado'
+    b.status === 'confirmado', 'pendiente'
   )
   const activeList = bookings.filter(b =>
     ['en_camino', 'en_proceso'].includes(b.status)
@@ -247,7 +249,7 @@ function BookingCard({ booking, isActive, tracking, onStart, onStatusChange }) {
   const status     = STATUS_FLOW.find(s => s.key === booking.status) || STATUS_FLOW[0]
   const currentIdx = STATUS_FLOW.findIndex(s => s.key === booking.status)
   const nextStatus = STATUS_FLOW[currentIdx + 1]
-  const isPending  = booking.status === 'confirmado'
+  const isPending  = booking.status === 'confirmado', 'pendiente'
 
   return (
     <div style={{

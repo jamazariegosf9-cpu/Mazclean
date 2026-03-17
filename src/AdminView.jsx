@@ -143,6 +143,7 @@ export default function AdminView({ onNavigate }) {
     setAssigning(bookingId)
 
     try {
+      // 1. ACTUALIZACIÓN DE BASE DE DATOS (Prioridad)
       const { error } = await supabase
         .from('bookings')
         .update({
@@ -155,17 +156,22 @@ export default function AdminView({ onNavigate }) {
       if (error) {
         console.error('Error de Supabase:', error.message)
         alert(`Error al asignar: ${error.message}`)
-      } else {
-        // Actualización local inmediata
-        setBookings(prev => prev.map(b =>
-          b.id === bookingId ? { ...b, operator_id: operatorId, status: 'confirmado' } : b
-        ))
-        
-        // WhatsApp (Lógica original conservada)
-        const booking  = bookings.find(b => b.id === bookingId)
-        const operator = operators.find(o => o.id === operatorId)
-        if (booking && booking.profiles?.phone) {
-          sendWhatsApp('operator_assigned', booking.profiles.phone, {
+        return; // Si falla la DB, no seguimos
+      }
+
+      // Actualización local inmediata para que la UI responda
+      setBookings(prev => prev.map(b =>
+        b.id === bookingId ? { ...b, operator_id: operatorId, status: 'confirmado' } : b
+      ))
+      
+      // 2. ENVÍO DE WHATSAPP (En bloque independiente para evitar bloqueos)
+      const booking  = bookings.find(b => b.id === bookingId)
+      const operator = operators.find(o => o.id === operatorId)
+      
+      if (booking && booking.profiles?.phone) {
+        try {
+          // Usamos await pero dentro de un try/catch local
+          await sendWhatsApp('operator_assigned', booking.profiles.phone, {
             booking_ref:    booking.booking_ref,
             service_name:   booking.service_name,
             scheduled_date: booking.scheduled_date,
@@ -173,8 +179,13 @@ export default function AdminView({ onNavigate }) {
             total_price:    booking.total_price || booking.service_price,
             operator_name:  operator?.full_name || 'nuestro operador',
           })
+        } catch (wsErr) {
+          // Si Twilio falla (error 500/límite), solo lo logueamos. 
+          // No lanzamos alerta para que el usuario no crea que falló la asignación.
+          console.warn('WhatsApp no enviado (Límite Twilio alcanzado):', wsErr)
         }
       }
+
     } catch (err) {
       console.error('Error inesperado:', err)
     } finally {
