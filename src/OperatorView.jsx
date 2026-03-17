@@ -18,7 +18,7 @@ import { useAuth } from './context/AuthContext';
 import { sendWhatsApp } from './lib/whatsapp';
 
 const OperatorView = () => {
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('pendientes');
@@ -51,14 +51,14 @@ const OperatorView = () => {
   const fetchOperatorBookings = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('bookings')
-        .select(`
-          *,
-          customer:customer_id(full_name, phone)
-        `)
-        .eq('operator_id', user.id)
-        .order('scheduled_date', { ascending: true });
+      // Admin ve todas las activas, operador solo las suyas
+      let query = supabase.from('bookings').select('*').order('scheduled_date', { ascending: true });
+      if (profile?.role !== 'admin') {
+        query = query.eq('operator_id', user.id);
+      } else {
+        query = query.in('status', ['confirmado', 'en_camino', 'en_proceso', 'finalizado']);
+      }
+      const { data, error } = await query;
 
       if (error) throw error;
       setBookings(data || []);
