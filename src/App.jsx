@@ -110,7 +110,7 @@ function AppInner() {
   const { profile } = useAuth()
   const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
-  const initializedRef            = useRef(false)
+  const prevProfileRef            = useRef(null)
 
   useEffect(() => {
     const style = document.createElement('style')
@@ -119,13 +119,20 @@ function AppInner() {
     return () => document.head.removeChild(style)
   }, [])
 
-  // Redirigir al panel correcto solo la primera vez que carga el perfil
+  // Redirigir solo cuando el usuario ACABA de iniciar sesión (de null a tener perfil)
   useEffect(() => {
-    if (!initializedRef.current && profile) {
-      initializedRef.current = true
+    const wasLoggedOut = prevProfileRef.current === null
+    const isNowLoggedIn = profile !== null
+    if (wasLoggedOut && isNowLoggedIn) {
       if (profile.role === 'admin') setView('admin')
       else if (profile.role === 'operador') setView('operator')
+      else setView('home')
     }
+    // Si cerró sesión, volver al inicio
+    if (!isNowLoggedIn && prevProfileRef.current !== null) {
+      setView('home')
+    }
+    prevProfileRef.current = profile
   }, [profile])
 
   return (
