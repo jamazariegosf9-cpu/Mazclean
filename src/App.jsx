@@ -1,7 +1,7 @@
 import ClientView from './ClientView'
 import OperatorView from './OperatorView'
 import AdminView from './AdminView'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthModal from './components/auth/AuthModal'
 import BookingView from './BookingView'
@@ -108,9 +108,9 @@ function HomeView({ setView }) {
 
 function AppInner() {
   const { profile } = useAuth()
-  const [view, setView]               = useState('home')
-  const [authModal, setAuthModal]     = useState(null)
-  const [initialized, setInitialized] = useState(false)
+  const [view, setView]           = useState('home')
+  const [authModal, setAuthModal] = useState(null)
+  const initializedRef            = useRef(false)
 
   useEffect(() => {
     const style = document.createElement('style')
@@ -121,12 +121,12 @@ function AppInner() {
 
   // Redirigir al panel correcto solo la primera vez que carga el perfil
   useEffect(() => {
-    if (!initialized && profile) {
-      setInitialized(true)
+    if (!initializedRef.current && profile) {
+      initializedRef.current = true
       if (profile.role === 'admin') setView('admin')
       else if (profile.role === 'operador') setView('operator')
     }
-  }, [profile, initialized])
+  }, [profile])
 
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>
