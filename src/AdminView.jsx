@@ -48,8 +48,12 @@ function StatusBadge({ status }) {
 // Verifica si un error de Supabase es ignorable (el update sí se aplicó)
 function isIgnorableError(error) {
   if (!error) return true
+  console.log('Error detalle:', JSON.stringify(error))
   const msg = error.message || ''
-  return msg.includes('409') || msg.includes('Conflict') || error.code === '23505'
+  const code = error.code || ''
+  const status = error.status || 0
+  return msg.includes('409') || msg.includes('Conflict') || 
+         code === '23505' || status === 409
 }
 
 export default function AdminView({ onNavigate }) {
