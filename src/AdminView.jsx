@@ -55,24 +55,29 @@ export default function AdminView({ onNavigate }) {
 
   const loadAll = async () => {
     setLoading(true)
-    const [b, o, c] = await Promise.all([
-      supabase
-        .from('bookings')
-        .select('*')
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('profiles')
-        .select('*')
-        .eq('role', 'operador'),
-      supabase
-        .from('profiles')
-        .select('*')
-        .eq('role', 'cliente'),
-    ])
-    if (b.data) setBookings(b.data)
-    if (o.data) setOperators(o.data)
-    if (c.data) setClients(c.data)
-    setLoading(false)
+    try {
+      const [b, o, c] = await Promise.all([
+        supabase
+          .from('bookings')
+          .select('*')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('role', 'operador'),
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('role', 'cliente'),
+      ])
+      if (b.data) setBookings(b.data)
+      if (o.data) setOperators(o.data)
+      if (c.data) setClients(c.data)
+    } catch (err) {
+      console.error('Error cargando datos:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const assignOperator = async (bookingId, operatorId) => {
@@ -86,22 +91,24 @@ export default function AdminView({ onNavigate }) {
         b.id === bookingId ? { ...b, operator_id: operatorId, status: 'confirmado' } : b
       ))
 
-      // Notificación WhatsApp al cliente
+      // Notificación WhatsApp al cliente — no bloqueante
       const booking   = bookings.find(b => b.id === bookingId)
       const operator  = operators.find(o => o.id === operatorId)
       if (booking) {
-        const { data: clientProfile } = await supabase
-          .from('profiles').select('phone').eq('id', booking.client_id).single()
-        if (clientProfile?.phone) {
-          await sendWhatsApp('operator_assigned', clientProfile.phone, {
-            booking_ref:    booking.booking_ref,
-            service_name:   booking.service_name,
-            scheduled_date: booking.scheduled_date,
-            scheduled_time: booking.scheduled_time,
-            total_price:    booking.total_price || booking.service_price,
-            operator_name:  operator?.full_name || 'nuestro operador',
+        supabase.from('profiles').select('phone').eq('id', booking.client_id).single()
+          .then(({ data: clientProfile }) => {
+            if (clientProfile?.phone) {
+              sendWhatsApp('operator_assigned', clientProfile.phone, {
+                booking_ref:    booking.booking_ref,
+                service_name:   booking.service_name,
+                scheduled_date: booking.scheduled_date,
+                scheduled_time: booking.scheduled_time,
+                total_price:    booking.total_price || booking.service_price,
+                operator_name:  operator?.full_name || 'nuestro operador',
+              })
+            }
           })
-        }
+          .catch(() => {})
       }
     }
     setAssigning(null)
@@ -253,8 +260,13 @@ export default function AdminView({ onNavigate }) {
 
                   <div style={{ display: 'flex', gap: 10, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.06)', flexWrap: 'wrap', alignItems: 'center' }}>
                     <select
-                      defaultValue={b.operator_id || ''}
-                      onChange={e => e.target.value && assignOperator(b.id, e.target.value)}
+                      value={b.operator_id || ''}
+                      onChange={e => {
+                        const newOpId = e.target.value
+                        if (newOpId && newOpId !== b.operator_id) {
+                          assignOperator(b.id, newOpId)
+                        }
+                      }}
                       disabled={assigning === b.id}
                       style={{ flex: 1, minWidth: 180, padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', background: '#0D1F3C', color: '#F0F6FF', fontSize: 13, cursor: 'pointer' }}
                     >
