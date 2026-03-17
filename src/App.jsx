@@ -9,7 +9,6 @@ import BookingView from './BookingView'
 function Navbar({ view, setView, onShowAuth }) {
   const { user, profile, signOut } = useAuth()
 
-  // Construir links según rol — sin duplicados
   const navLinks = [
     ['home',     'Inicio'],
     ['booking',  'Reservar'],
@@ -23,7 +22,6 @@ function Navbar({ view, setView, onShowAuth }) {
     navLinks.push(['admin',    'Admin'])
   }
 
-  // Badge de rol visible en navbar
   const roleBadge = {
     admin:    { label: 'Admin',    color: '#10b981' },
     operador: { label: 'Operador', color: '#3b82f6' },
@@ -37,13 +35,11 @@ function Navbar({ view, setView, onShowAuth }) {
       borderBottom: '1px solid rgba(255,255,255,0.06)',
       padding: '0 24px', display: 'flex', alignItems: 'center', height: 64, gap: 12,
     }}>
-      {/* Logo */}
       <button onClick={() => setView('home')} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', color: '#F0F6FF' }}>
         <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>💧</div>
         <span style={{ fontWeight: 800, fontSize: 18 }}>Maz Clean</span>
       </button>
 
-      {/* Links */}
       <div style={{ display: 'flex', gap: 4, flex: 1, flexWrap: 'wrap' }}>
         {navLinks.map(([id, label]) => (
           <button
@@ -61,7 +57,6 @@ function Navbar({ view, setView, onShowAuth }) {
         ))}
       </div>
 
-      {/* Usuario */}
       {user ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {roleBadge && (
@@ -112,8 +107,10 @@ function HomeView({ setView }) {
 }
 
 function AppInner() {
-  const [view, setView]       = useState('home')
-  const [authModal, setAuthModal] = useState(null)
+  const { profile } = useAuth()
+  const [view, setView]               = useState('home')
+  const [authModal, setAuthModal]     = useState(null)
+  const [initialized, setInitialized] = useState(false)
 
   useEffect(() => {
     const style = document.createElement('style')
@@ -121,6 +118,15 @@ function AppInner() {
     document.head.appendChild(style)
     return () => document.head.removeChild(style)
   }, [])
+
+  // Redirigir al panel correcto solo la primera vez que carga el perfil
+  useEffect(() => {
+    if (!initialized && profile) {
+      setInitialized(true)
+      if (profile.role === 'admin') setView('admin')
+      else if (profile.role === 'operador') setView('operator')
+    }
+  }, [profile, initialized])
 
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>
