@@ -88,7 +88,8 @@ export default function AdminView({ onNavigate }) {
   const loadAll = async () => {
     setLoading(true)
     try {
-      // CARGA DE DATOS CORREGIDA: Se traen perfiles por rol exacto (ajustar si es 'operator' o 'operador' según tu DB)
+      // CARGA DE DATOS CORREGIDA:
+      // Ahora consultamos la tabla 'operators' unida con 'profiles' para evitar el error 23503
       const [b, o, c] = await Promise.all([
         supabase
           .from('bookings')
@@ -100,17 +101,35 @@ export default function AdminView({ onNavigate }) {
             )
           `)
           .order('created_at', { ascending: false }),
+        
         supabase
-          .from('profiles')
-          .select('*')
-          .eq('role', 'operador'),
+          .from('operators')
+          .select(`
+            id,
+            profiles (
+              full_name,
+              phone
+            )
+          `),
+
         supabase
           .from('profiles')
           .select('*')
           .eq('role', 'cliente'),
       ])
+
       if (b.data) setBookings(b.data)
-      if (o.data) setOperators(o.data)
+      
+      // Mapeo dinámico de operadores reales de la base de datos
+      if (o.data) {
+        const formattedOperators = o.data.map(op => ({
+          id: op.id,
+          full_name: op.profiles?.full_name || 'Sin nombre',
+          phone: op.profiles?.phone
+        }))
+        setOperators(formattedOperators)
+      }
+
       if (c.data) setClients(c.data)
     } catch (err) {
       console.error('Error cargando datos:', err)
@@ -124,7 +143,6 @@ export default function AdminView({ onNavigate }) {
     setAssigning(bookingId)
 
     try {
-      // ACTUALIZACIÓN ROBUSTA: Incluye updated_at y maneja el error de foreign key si existiera
       const { error } = await supabase
         .from('bookings')
         .update({
@@ -194,7 +212,7 @@ export default function AdminView({ onNavigate }) {
     return null
   }
 
-  // Métricas (Usando normalizeStatus para que sean reales)
+  // Métricas
   const total       = bookings.length
   const pendientes  = bookings.filter(b => normalizeStatus(b.status) === 'pendiente').length
   const activos     = bookings.filter(b => ['confirmado','en_camino','en_proceso'].includes(normalizeStatus(b.status))).length
@@ -248,7 +266,7 @@ export default function AdminView({ onNavigate }) {
                   { label: 'Total',       value: total,       color: '#00C8FF', icon: '📋' },
                   { label: 'Hoy',         value: hoy,         color: '#A78BFA', icon: '📅' },
                   { label: 'Pendientes',  value: pendientes,  color: '#FFD166', icon: '⏳' },
-                  { label: 'En curso',    value: activos,     color: '#F97316', icon: '🔵' },
+                  { label: 'En curso',     value: activos,     color: '#F97316', icon: '🔵' },
                   { label: 'Finalizados', value: finalizados, color: '#00E5C8', icon: '✅' },
                   { label: 'Ingresos',    value: `$${ingresos.toLocaleString()}`, color: '#00E5C8', icon: '💰' },
                 ].map(s => (
@@ -311,13 +329,15 @@ export default function AdminView({ onNavigate }) {
                     >
                       🗑️ Eliminar
                     </button>
+                    
+                    {/* SELECTOR CORREGIDO: Muestra operadores reales de la DB */}
                     <select
                       value={b.operator_id || ''}
                       onChange={e => assignOperator(b.id, e.target.value)}
                       disabled={assigning === b.id}
                       style={{ flex: 1, minWidth: 180, padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', background: '#0D1F3C', color: '#F0F6FF', fontSize: 13, cursor: 'pointer' }}
                     >
-                      <option value=''>— Asignar operador —</option>
+                      <option value=''>— Seleccionar Operador Real —</option>
                       {operators.map(op => (
                         <option key={op.id} value={op.id}>{op.full_name}</option>
                       ))}
