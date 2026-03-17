@@ -52,7 +52,7 @@ const OperatorView = () => {
     try {
       setLoading(true);
       // Admin ve todas las activas, operador solo las suyas
-      let query = supabase.from('bookings').select('*').order('scheduled_date', { ascending: true });
+      let query = supabase.from('bookings').select('*, customer:client_id(full_name, phone)').order('scheduled_date', { ascending: true });
       if (profile?.role !== 'admin') {
         query = query.eq('operator_id', user.id);
       } else {
@@ -92,7 +92,7 @@ const OperatorView = () => {
       const booking = bookings.find(b => b.id === bookingId);
       if (booking && booking.customer?.phone) {
         try {
-          await sendWhatsApp(eventName, booking.customer.phone, {
+          await sendWhatsApp(eventName, booking.customer?.phone, {
             booking_ref: booking.booking_ref,
             service_name: booking.service_name
           });
