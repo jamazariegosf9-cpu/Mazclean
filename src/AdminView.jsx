@@ -48,12 +48,8 @@ function StatusBadge({ status }) {
 // Verifica si un error de Supabase es ignorable (el update sí se aplicó)
 function isIgnorableError(error) {
   if (!error) return true
-  console.log('Error detalle:', JSON.stringify(error))
   const msg = error.message || ''
-  const code = error.code || ''
-  const status = error.status || 0
-  return msg.includes('409') || msg.includes('Conflict') || 
-         code === '23505' || status === 409
+  return msg.includes('409') || msg.includes('Conflict') || error.code === '23505'
 }
 
 export default function AdminView({ onNavigate }) {
@@ -283,6 +279,12 @@ export default function AdminView({ onNavigate }) {
                   </div>
 
                   <div style={{ display: 'flex', gap: 10, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.06)', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <button
+                      onClick={() => deleteBooking(b.id)}
+                      style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.1)', color: '#F87171', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                    >
+                      🗑️ Eliminar
+                    </button>
                     <select
                       value={b.operator_id || ''}
                       onChange={e => {
