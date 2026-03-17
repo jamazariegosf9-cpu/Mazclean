@@ -105,7 +105,7 @@ export default function AdminView({ onNavigate }) {
       .from('bookings')
       .update({ operator_id: operatorId, status: 'confirmado' })
       .eq('id', bookingId)
-      .select('id')
+
     if (isIgnorableError(error)) {
       setBookings(prev => prev.map(b =>
         b.id === bookingId ? { ...b, operator_id: operatorId, status: 'confirmado' } : b
@@ -138,7 +138,7 @@ export default function AdminView({ onNavigate }) {
       .from('bookings')
       .update({ status: newStatus })
       .eq('id', bookingId)
-      .select('id')
+
     if (isIgnorableError(error)) {
       setBookings(prev => prev.map(b =>
         b.id === bookingId ? { ...b, status: newStatus } : b

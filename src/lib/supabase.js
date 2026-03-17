@@ -18,6 +18,11 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     detectSessionInUrl: true,
     lock: (name, acquireTimeout, fn) => fn(),
   },
+  global: {
+    headers: {
+      Prefer: 'return=minimal',
+    },
+  },
 })
 
 export default supabase
