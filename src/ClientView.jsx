@@ -161,13 +161,13 @@ export default function ClientView() {
 
               <div style={{ textAlign: 'center', marginBottom: 20 }}>
                 <p style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 12 }}>¿Cómo calificarías el servicio?</p>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
                   {[1,2,3,4,5].map(star => (
                     <button key={star}
                       onClick={() => setRatingValue(star)}
                       onMouseEnter={() => setRatingHover(star)}
                       onMouseLeave={() => setRatingHover(0)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 36, transition: 'transform 0.1s', transform: (ratingHover || ratingValue) >= star ? 'scale(1.2)' : 'scale(1)' }}>
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 28, transition: 'transform 0.1s', transform: (ratingHover || ratingValue) >= star ? 'scale(1.2)' : 'scale(1)' }}>
                       {(ratingHover || ratingValue) >= star ? '⭐' : '☆'}
                     </button>
                   ))}

@@ -460,7 +460,7 @@ const AdminView = () => {
                   const delayed = isDelayed(booking);
                   return (
                     <div key={booking.id} style={{ background: delayed ? '#fef2f2' : '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 20px', border: delayed ? '2px solid #ef4444' : urgent ? '2px solid #f97316' : '2px solid transparent' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 16, alignItems: 'center' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16, alignItems: 'center' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                             {delayed && <span title="⚠️ Servicio retrasado más de 30 min">🔴</span>}
