@@ -1,377 +1,391 @@
-// ============================================================
-// MAZ CLEAN — AdminView.jsx
-// Panel de administración conectado a Supabase
-// ============================================================
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
 import { sendWhatsApp } from './lib/whatsapp'
 
-const STATUS_COLORS = {
-  pendiente:   '#FFD166',
-  confirmado:  '#00C8FF',
-  en_camino:   '#A78BFA',
-  en_proceso:  '#F97316',
-  finalizado:  '#00E5C8',
-  cancelado:   '#F87171',
+const GOOGLE_MAPS_API_KEY = 'AIzaSyA0k4Rg_XowxjDGUsLD3BldhpTINFMihjw'
+
+const SERVICES = [
+  { id: '00131559-0491-479f-a295-664a68c3a222', name: 'Lavado Exterior',  description: 'Lavado completo de carrocería, llantas y cristales',            icon: '🚿', duration: '45 min', prices: { sedan: 199, suv: 249, pickup: 299, van: 299 } },
+  { id: 'e85c4c06-9d09-4828-98f2-86401a4481ee', name: 'Lavado Interior',  description: 'Aspirado, limpieza de tablero, tapetes y vidrios interiores',    icon: '🪣', duration: '60 min', prices: { sedan: 249, suv: 299, pickup: 349, van: 349 } },
+  { id: 'a539c1f0-73ee-4b22-b477-f1f826601d19', name: 'Lavado Completo',  description: 'Exterior + Interior en un solo servicio',                        icon: '✨', duration: '90 min', prices: { sedan: 399, suv: 499, pickup: 599, van: 599 } },
+  { id: '69d83cc5-c32d-4e63-bf4f-bacad6a259a4', name: 'Encerado Premium', description: 'Aplicación de cera protectora de alta duración',                 icon: '💎', duration: '2 hrs',  prices: { sedan: 599, suv: 749, pickup: 899, van: 899 } },
+  { id: 'd4d732ae-11a1-4bb8-b84f-8e8dbdacfb51', name: 'Detallado Total',  description: 'Servicio completo con pulido, descontaminación y sellador',      icon: '🏆', duration: '3 hrs',  prices: { sedan: 999, suv: 1299, pickup: 1499, van: 1499 } },
+]
+
+const VEHICLE_TYPES = [
+  { id: 'sedan',  name: 'Sedán / Compacto', icon: '🚗', priceKey: 'sedan'  },
+  { id: 'suv',    name: 'SUV / Camioneta',  icon: '🚙', priceKey: 'suv'    },
+  { id: 'pickup', name: 'Pickup',           icon: '🛻', priceKey: 'pickup' },
+  { id: 'van',    name: 'Van / Minivan',    icon: '🚐', priceKey: 'van'    },
+]
+
+function loadGoogleMapsScript(apiKey) {
+  return new Promise((resolve, reject) => {
+    if (window.google && window.google.maps) { resolve(window.google.maps); return }
+    const existing = document.getElementById('google-maps-script')
+    if (existing) { existing.addEventListener('load', () => resolve(window.google.maps)); existing.addEventListener('error', reject); return }
+    const script = document.createElement('script')
+    script.id = 'google-maps-script'
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+    script.async = true; script.defer = true
+    script.onload = () => resolve(window.google.maps); script.onerror = reject
+    document.head.appendChild(script)
+  })
 }
 
-const STATUS_LABELS = {
-  pendiente:   'Pendiente',
-  confirmado:  'Confirmado',
-  en_camino:   'En camino',
-  en_proceso:  'En proceso',
-  finalizado:  'Finalizado',
-  cancelado:   'Cancelado',
+function generateRef() {
+  return 'MCL-' + Math.random().toString(36).substring(2, 8).toUpperCase()
 }
 
-function StatusBadge({ status }) {
-  const color = STATUS_COLORS[status] || '#8CA0BF'
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: '3px 10px', borderRadius: 100,
-      background: `${color}20`, color, fontSize: 11, fontWeight: 600,
-    }}>
-      <span style={{ width: 5, height: 5, borderRadius: '50%', background: color, display: 'inline-block' }}/>
-      {STATUS_LABELS[status] || status}
-    </span>
-  )
-}
+export default function BookingView() {
+  const { user } = useAuth()
+  const [step, setStep]       = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [success, setSuccess] = useState(false)
+  const [error, setError]     = useState('')
+  const [mapsLoaded, setMapsLoaded] = useState(false)
 
-export default function AdminView({ onNavigate }) {
-  const { user, profile } = useAuth()
-  const [tab, setTab]             = useState('dashboard')
-  const [bookings, setBookings]   = useState([])
-  const [operators, setOperators] = useState([])
-  const [clients, setClients]     = useState([])
-  const [loading, setLoading]     = useState(true)
-  const [assigning, setAssigning] = useState(null)
+  const [selectedService, setSelectedService] = useState(null)
+  const [vehicleType, setVehicleType]         = useState('')
+  const [vehicleBrand, setVehicleBrand]       = useState('')
+  const [vehicleColor, setVehicleColor]       = useState('')
+
+  const [address, setAddress]               = useState('')
+  const [addressDetails, setAddressDetails] = useState(null)
+  const [mapError, setMapError]             = useState('')
+  const mapRef = useRef(null); const mapInstanceRef = useRef(null)
+  const markerRef = useRef(null); const autocompleteRef = useRef(null); const inputRef = useRef(null)
+
+  const [date, setDate]   = useState('')
+  const [time, setTime]   = useState('')
+  const [notes, setNotes] = useState('')
+
+  const getPrice = useCallback(() => {
+    if (!selectedService || !vehicleType) return null
+    const service = SERVICES.find(s => s.id === selectedService)
+    const vehicle = VEHICLE_TYPES.find(v => v.id === vehicleType)
+    return service?.prices?.[vehicle?.priceKey] ?? null
+  }, [selectedService, vehicleType])
 
   useEffect(() => {
-    if (!user) return
-    loadAll()
-  }, [user])
+    loadGoogleMapsScript(GOOGLE_MAPS_API_KEY).then(() => setMapsLoaded(true)).catch(() => setMapError('No se pudo cargar Google Maps.'))
+  }, [])
 
-  const loadAll = async () => {
-    setLoading(true)
+  useEffect(() => {
+    if (step !== 2 || !mapsLoaded) return
+    const t = setTimeout(() => { initMap(); initAutocomplete() }, 100)
+    return () => clearTimeout(t)
+  }, [step, mapsLoaded])
+
+  const initMap = useCallback(() => {
+    if (!mapRef.current || mapInstanceRef.current) return
+    const center = { lat: 19.4326, lng: -99.1332 }
+    const map = new window.google.maps.Map(mapRef.current, { center, zoom: 13, mapTypeControl: false, streetViewControl: false, fullscreenControl: false })
+    mapInstanceRef.current = map
+    const marker = new window.google.maps.Marker({ position: center, map, draggable: true, animation: window.google.maps.Animation.DROP })
+    markerRef.current = marker
+    marker.addListener('dragend', async (e) => await reverseGeocode(e.latLng.lat(), e.latLng.lng()))
+    map.addListener('click', async (e) => { marker.setPosition(e.latLng); await reverseGeocode(e.latLng.lat(), e.latLng.lng()) })
+  }, [])
+
+  const initAutocomplete = useCallback(() => {
+    if (!inputRef.current || autocompleteRef.current) return
+    const ac = new window.google.maps.places.Autocomplete(inputRef.current, { componentRestrictions: { country: 'mx' }, fields: ['geometry', 'formatted_address'] })
+    autocompleteRef.current = ac
+    ac.addListener('place_changed', () => {
+      const place = ac.getPlace(); if (!place.geometry) return
+      const lat = place.geometry.location.lat(); const lng = place.geometry.location.lng(); const formatted = place.formatted_address
+      setAddress(formatted); setAddressDetails({ lat, lng, formatted }); setMapError('')
+      if (mapInstanceRef.current && markerRef.current) { mapInstanceRef.current.setCenter({ lat, lng }); mapInstanceRef.current.setZoom(16); markerRef.current.setPosition({ lat, lng }) }
+    })
+  }, [])
+
+  const reverseGeocode = async (lat, lng) => {
     try {
-      const [b, o, c] = await Promise.all([
-        supabase
-          .from('bookings')
-          .select('*')
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('profiles')
-          .select('*')
-          .eq('role', 'operador'),
-        supabase
-          .from('profiles')
-          .select('*')
-          .eq('role', 'cliente'),
-      ])
-      if (b.data) setBookings(b.data)
-      if (o.data) setOperators(o.data)
-      if (c.data) setClients(c.data)
+      const result = await new window.google.maps.Geocoder().geocode({ location: { lat, lng } })
+      if (result.results[0]) { const f = result.results[0].formatted_address; setAddress(f); setAddressDetails({ lat, lng, formatted: f }); if (inputRef.current) inputRef.current.value = f }
+    } catch (e) { console.error(e) }
+  }
+
+  const handleUseMyLocation = () => {
+    if (!navigator.geolocation) { setMapError('Tu navegador no soporta geolocalización.'); return }
+    setMapError('')
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const lat = pos.coords.latitude; const lng = pos.coords.longitude
+      if (mapInstanceRef.current && markerRef.current) { mapInstanceRef.current.setCenter({ lat, lng }); mapInstanceRef.current.setZoom(16); markerRef.current.setPosition({ lat, lng }) }
+      await reverseGeocode(lat, lng)
+    }, () => setMapError('No se pudo obtener tu ubicación. Verifica los permisos.'))
+  }
+
+  const canGoNext = () => {
+    if (step === 1) return selectedService && vehicleType && vehicleBrand && vehicleColor
+    if (step === 2) return addressDetails !== null
+    if (step === 3) return date && time
+    return true
+  }
+
+  const handleSubmit = async () => {
+    if (!user) return
+    setLoading(true); setError('')
+    try {
+      const service    = SERVICES.find(s => s.id === selectedService)
+      const price      = getPrice()
+      const bookingRef = generateRef()
+
+      const { error: insertError } = await supabase.from('bookings').insert({
+        booking_ref:     bookingRef,
+        client_id:       user.id,
+        service_id:      service.id,
+        address_line:    addressDetails.formatted,
+        address_lat:     addressDetails.lat,
+        address_lng:     addressDetails.lng,
+        address_notes:   notes || null,
+        scheduled_date:  date,
+        scheduled_time:  time + ':00',
+        base_price:      price,
+        discount_amount: 0,
+        total_price:     price,
+        payment_method:  'efectivo',
+        payment_status:  'pendiente',
+        status:          'pendiente',
+        has_incident:    false,
+        service_name:    service.name,
+        service_price:   price,
+        vehicle_type:    vehicleType,
+        vehicle_brand:   vehicleBrand,
+        vehicle_color:   vehicleColor,
+        created_at:      new Date().toISOString(),
+        updated_at:      new Date().toISOString(),
+      })
+
+      if (insertError) throw insertError
+
+      // Reservacion guardada exitosamente
+      setSuccess(true)
+
+      // WhatsApp desacoplado — nunca bloquea el flujo principal
+      try {
+        const { data: profileData } = await supabase
+          .from('profiles').select('phone').eq('id', user.id).single()
+        if (profileData?.phone) {
+          sendWhatsApp('booking_created', profileData.phone, {
+            booking_ref:    bookingRef,
+            service_name:   service.name,
+            scheduled_date: date,
+            scheduled_time: time,
+            total_price:    price,
+          })
+        }
+      } catch (_) {}
     } catch (err) {
-      console.error('Error cargando datos:', err)
+      console.error('Error al guardar reservación:', err)
+      setError('Hubo un error al guardar. Intenta de nuevo.')
     } finally {
       setLoading(false)
     }
   }
 
-  const assignOperator = async (bookingId, operatorId) => {
-    setAssigning(bookingId)
-    const { error } = await supabase
-      .from('bookings')
-      .update({ operator_id: operatorId, status: 'confirmado' })
-      .eq('id', bookingId)
-    if (!error) {
-      setBookings(prev => prev.map(b =>
-        b.id === bookingId ? { ...b, operator_id: operatorId, status: 'confirmado' } : b
-      ))
-
-      // Notificación WhatsApp al cliente — no bloqueante
-      const booking   = bookings.find(b => b.id === bookingId)
-      const operator  = operators.find(o => o.id === operatorId)
-      if (booking) {
-        supabase.from('profiles').select('phone').eq('id', booking.client_id).single()
-          .then(({ data: clientProfile }) => {
-            if (clientProfile?.phone) {
-              sendWhatsApp('operator_assigned', clientProfile.phone, {
-                booking_ref:    booking.booking_ref,
-                service_name:   booking.service_name,
-                scheduled_date: booking.scheduled_date,
-                scheduled_time: booking.scheduled_time,
-                total_price:    booking.total_price || booking.service_price,
-                operator_name:  operator?.full_name || 'nuestro operador',
-              })
-            }
-          })
-          .catch(() => {})
-      }
-    }
-    setAssigning(null)
+  const resetForm = () => {
+    setStep(1); setSuccess(false); setError('')
+    setSelectedService(null); setVehicleType(''); setVehicleBrand(''); setVehicleColor('')
+    setAddress(''); setAddressDetails(null); setDate(''); setTime(''); setNotes('')
+    mapInstanceRef.current = null
+    markerRef.current = null
+    autocompleteRef.current = null
+    if (inputRef.current) inputRef.current.value = ''
   }
 
-  const updateStatus = async (bookingId, newStatus) => {
-    const { error } = await supabase
-      .from('bookings')
-      .update({ status: newStatus })
-      .eq('id', bookingId)
-    if (!error) {
-      setBookings(prev => prev.map(b =>
-        b.id === bookingId ? { ...b, status: newStatus } : b
-      ))
-    }
-  }
+  const price   = getPrice()
+  const service = SERVICES.find(s => s.id === selectedService)
+  const vehicle = VEHICLE_TYPES.find(v => v.id === vehicleType)
 
-  if (!user || !profile) {
+  if (success) {
     return (
-      <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: '#8CA0BF' }}>Cargando...</p>
+      <div style={styles.container}>
+        <div style={styles.successCard}>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: '#065f46', margin: '0 0 12px' }}>¡Reservación confirmada!</h2>
+          <p style={{ fontSize: 16, color: '#374151', margin: '0 0 8px' }}>Tu lavado está agendado para el <strong>{date}</strong> a las <strong>{time}</strong> hrs.</p>
+          <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 8px' }}>📍 {addressDetails?.formatted}</p>
+          <p style={{ fontSize: 13, color: '#9ca3af', margin: '0 0 24px' }}>Te notificaremos cuando un operador sea asignado.</p>
+          <button onClick={resetForm} style={styles.btnPrimary}>Nueva reservación</button>
+        </div>
       </div>
     )
   }
-
-  if (profile.role !== 'admin') {
-    return (
-      <div style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, textAlign: 'center', padding: 40 }}>
-        <div style={{ fontSize: 48 }}>🔐</div>
-        <h3 style={{ fontWeight: 800, fontSize: 24 }}>Acceso solo para administradores</h3>
-        <p style={{ color: '#8CA0BF' }}>Tu cuenta no tiene permisos de administrador.</p>
-        <button onClick={() => onNavigate('home')} style={{ padding: '12px 28px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, cursor: 'pointer' }}>
-          Ir al inicio
-        </button>
-      </div>
-    )
-  }
-
-  // ── Métricas ──────────────────────────────────────────────
-  const total       = bookings.length
-  const pendientes  = bookings.filter(b => b.status === 'pending').length
-  const activos     = bookings.filter(b => ['confirmado','en_camino','en_proceso'].includes(b.status)).length
-  const finalizados = bookings.filter(b => b.status === 'finalizado').length
-  const ingresos    = bookings.filter(b => b.status === 'finalizado').reduce((s, b) => s + (b.service_price || b.total_price || 0), 0)
-  const today       = new Date().toISOString().split('T')[0]
-  const hoy         = bookings.filter(b => b.scheduled_date === today).length
-
-  const tabs = [
-    ['dashboard', '📊 Dashboard'],
-    ['bookings',  '📋 Reservaciones'],
-    ['operators', '🧹 Operadores'],
-    ['clients',   '👥 Clientes'],
-  ]
 
   return (
-    <div style={{ minHeight: '100vh', padding: '32px 24px', maxWidth: 1000, margin: '0 auto' }}>
+    <div style={styles.container}>
+      <div style={styles.card}>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28, flexWrap: 'wrap' }}>
-        <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>⚙️</div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ fontWeight: 800, fontSize: 22, marginBottom: 2 }}>Panel Admin</h2>
-          <p style={{ color: '#8CA0BF', fontSize: 14 }}>{profile?.full_name}</p>
+        <div style={styles.header}>
+          <h1 style={styles.title}>🚗 Reservar Lavado</h1>
+          <div style={styles.stepsBar}>
+            {[1,2,3,4].map(s => (
+              <div key={s} style={{ display:'flex', alignItems:'center' }}>
+                <div style={{ ...styles.stepDot, background: s <= step ? '#3b82f6' : '#e5e7eb', color: s <= step ? '#fff' : '#9ca3af' }}>{s < step ? '✓' : s}</div>
+                {s < 4 && <div style={{ ...styles.stepLine, background: s < step ? '#3b82f6' : '#e5e7eb' }} />}
+              </div>
+            ))}
+          </div>
+          <div style={styles.stepLabel}>{step===1?'Servicio y vehículo':step===2?'Ubicación':step===3?'Fecha y hora':'Confirmar'}</div>
         </div>
-        <button onClick={loadAll} style={{ padding: '10px 20px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'none', color: '#8CA0BF', cursor: 'pointer', fontSize: 13 }}>
-          Actualizar
-        </button>
-      </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: 4, marginBottom: 28, gap: 4, flexWrap: 'wrap' }}>
-        {tabs.map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} style={{
-            flex: 1, minWidth: 120, padding: '10px 8px', borderRadius: 10, border: 'none', cursor: 'pointer',
-            background: tab === k ? 'rgba(0,200,255,0.15)' : 'transparent',
-            color: tab === k ? '#00C8FF' : '#8CA0BF',
-            fontWeight: 600, fontSize: 13,
-          }}>{l}</button>
-        ))}
-      </div>
-
-      {loading ? (
-        <p style={{ color: '#8CA0BF', textAlign: 'center', padding: 60 }}>Cargando datos...</p>
-      ) : (
-        <>
-          {/* ── DASHBOARD ── */}
-          {tab === 'dashboard' && (
-            <div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 14, marginBottom: 28 }}>
-                {[
-                  { label: 'Total',       value: total,       color: '#00C8FF', icon: '📋' },
-                  { label: 'Hoy',         value: hoy,         color: '#A78BFA', icon: '📅' },
-                  { label: 'Pendientes',  value: pendientes,  color: '#FFD166', icon: '⏳' },
-                  { label: 'En curso',    value: activos,     color: '#F97316', icon: '🔵' },
-                  { label: 'Finalizados', value: finalizados, color: '#00E5C8', icon: '✅' },
-                  { label: 'Ingresos',    value: `$${ingresos.toLocaleString()}`, color: '#00E5C8', icon: '💰' },
-                ].map(s => (
-                  <div key={s.label} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '18px 16px', textAlign: 'center' }}>
-                    <div style={{ fontSize: 24, marginBottom: 8 }}>{s.icon}</div>
-                    <div style={{ fontWeight: 800, fontSize: 22, color: s.color }}>{s.value}</div>
-                    <div style={{ color: '#8CA0BF', fontSize: 12, marginTop: 4 }}>{s.label}</div>
-                  </div>
-                ))}
-              </div>
-
-              <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 14, color: '#8CA0BF' }}>Últimas reservaciones</h3>
-              <div style={{ display: 'grid', gap: 10 }}>
-                {bookings.slice(0, 5).map(b => (
-                  <div key={b.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: 22 }}>🚗</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>{b.service_name}</div>
-                      <div style={{ color: '#8CA0BF', fontSize: 12 }}>{b.scheduled_date} · {b.scheduled_time}</div>
+        {step === 1 && (
+          <div style={styles.body}>
+            <h3 style={styles.sectionTitle}>¿Qué servicio necesitas?</h3>
+            <div style={styles.serviceGrid}>
+              {SERVICES.map(s => {
+                const p = vehicleType ? s.prices[VEHICLE_TYPES.find(v=>v.id===vehicleType)?.priceKey] : s.prices.sedan
+                return (
+                  <div key={s.id} onClick={() => setSelectedService(s.id)} style={{ ...styles.serviceCard, border: selectedService===s.id ? '2px solid #3b82f6' : '2px solid #e5e7eb', background: selectedService===s.id ? '#eff6ff' : '#fff' }}>
+                    <div style={{ fontSize:22, marginBottom:4 }}>{s.icon}</div>
+                    <div style={{ fontWeight:600, fontSize:13, color:'#1f2937' }}>{s.name}</div>
+                    <div style={{ fontSize:11, color:'#6b7280', marginTop:2 }}>{s.description}</div>
+                    <div style={{ display:'flex', justifyContent:'space-between', marginTop:8, alignItems:'center' }}>
+                      <span style={{ fontWeight:700, color:'#3b82f6', fontSize:14 }}>${p}</span>
+                      <span style={{ fontSize:10, color:'#9ca3af' }}>⏱ {s.duration}</span>
                     </div>
-                    <StatusBadge status={b.status} />
-                    <div style={{ color: '#00C8FF', fontWeight: 700 }}>${b.service_price || b.total_price || 0} MXN</div>
                   </div>
-                ))}
-              </div>
+                )
+              })}
             </div>
-          )}
 
-          {/* ── RESERVACIONES ── */}
-          {tab === 'bookings' && (
-            <div style={{ display: 'grid', gap: 14 }}>
-              {bookings.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 60, color: '#8CA0BF' }}>
-                  <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
-                  <p>No hay reservaciones aún.</p>
-                </div>
-              ) : bookings.map(b => (
-                <div key={b.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 20 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                      <div style={{ fontSize: 28 }}>🚗</div>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 3 }}>{b.service_name}</div>
-                        <div style={{ color: '#8CA0BF', fontSize: 13 }}>🚙 {b.vehicle_brand} {b.vehicle_color}</div>
-                        <div style={{ color: '#8CA0BF', fontSize: 13 }}>📍 {b.address}</div>
-                        <div style={{ color: '#8CA0BF', fontSize: 13 }}>📅 {b.scheduled_date} · {b.scheduled_time}</div>
-                        {b.notes && <div style={{ color: '#8CA0BF', fontSize: 12, marginTop: 2 }}>📝 {b.notes}</div>}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <StatusBadge status={b.status} />
-                      <div style={{ color: '#00C8FF', fontWeight: 800, fontSize: 17, marginTop: 6 }}>${b.service_price || b.total_price || 0} MXN</div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 10, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.06)', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <select
-                      defaultValue={b.operator_id || ''}
-                      onChange={e => e.target.value && assignOperator(b.id, e.target.value)}
-                      disabled={assigning === b.id}
-                      style={{ flex: 1, minWidth: 180, padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', background: '#0D1F3C', color: '#F0F6FF', fontSize: 13, cursor: 'pointer' }}
-                    >
-                      <option value=''>— Asignar operador —</option>
-                      {operators.map(op => (
-                        <option key={op.id} value={op.id}>{op.full_name}</option>
-                      ))}
-                    </select>
-
-                    <select
-                      value={b.status}
-                      onChange={e => updateStatus(b.id, e.target.value)}
-                      style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', background: '#0D1F3C', color: '#F0F6FF', fontSize: 13, cursor: 'pointer' }}
-                    >
-                      {Object.entries(STATUS_LABELS).map(([k, v]) => (
-                        <option key={k} value={k}>{v}</option>
-                      ))}
-                    </select>
-                  </div>
+            <h3 style={{ ...styles.sectionTitle, marginTop:20 }}>Tipo de vehículo</h3>
+            <div style={styles.vehicleGrid}>
+              {VEHICLE_TYPES.map(v => (
+                <div key={v.id} onClick={() => setVehicleType(v.id)} style={{ ...styles.vehicleCard, border: vehicleType===v.id ? '2px solid #3b82f6' : '2px solid #e5e7eb', background: vehicleType===v.id ? '#eff6ff' : '#fff' }}>
+                  <span style={{ fontSize:26 }}>{v.icon}</span>
+                  <span style={{ fontSize:10, color:'#374151', textAlign:'center', fontWeight:500 }}>{v.name}</span>
                 </div>
               ))}
             </div>
-          )}
 
-          {/* ── OPERADORES ── */}
-          {tab === 'operators' && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <h3 style={{ fontWeight: 700, fontSize: 16 }}>Operadores ({operators.length})</h3>
+            {selectedService && vehicleType && (
+              <div style={styles.pricePreview}>💰 Precio para tu vehículo: <strong>${price} MXN</strong></div>
+            )}
+
+            <div style={styles.row}>
+              <div style={styles.field}>
+                <label style={styles.label}>Marca / Modelo</label>
+                <input style={styles.input} placeholder="Ej: Toyota Corolla" value={vehicleBrand} onChange={e => setVehicleBrand(e.target.value)} />
               </div>
-              {operators.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 60 }}>
-                  <div style={{ fontSize: 48, marginBottom: 16 }}>🧹</div>
-                  <p style={{ color: '#8CA0BF' }}>No hay operadores registrados aún.</p>
-                  <p style={{ color: '#8CA0BF', fontSize: 13, marginTop: 8 }}>Para agregar un operador, regístralo como usuario y cambia su rol a "operador" en la base de datos.</p>
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gap: 12 }}>
-                  {operators.map(op => {
-                    const asignados   = bookings.filter(b => b.operator_id === op.id && !['finalizado','cancelado'].includes(b.status)).length
-                    const completados = bookings.filter(b => b.operator_id === op.id && b.status === 'finalizado').length
-                    return (
-                      <div key={op.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-                        <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#1A3A6B,#0D1F3C)', border: '2px solid rgba(0,229,200,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16, color: '#00E5C8', flexShrink: 0 }}>
-                          {op.full_name?.charAt(0)}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 700, fontSize: 15 }}>{op.full_name}</div>
-                          <div style={{ color: '#8CA0BF', fontSize: 13 }}>{op.phone || 'Sin teléfono'}</div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 20, textAlign: 'center' }}>
-                          <div>
-                            <div style={{ fontWeight: 800, fontSize: 18, color: '#FFD166' }}>{asignados}</div>
-                            <div style={{ color: '#8CA0BF', fontSize: 11 }}>Activos</div>
-                          </div>
-                          <div>
-                            <div style={{ fontWeight: 800, fontSize: 18, color: '#00E5C8' }}>{completados}</div>
-                            <div style={{ color: '#8CA0BF', fontSize: 11 }}>Completados</div>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+              <div style={styles.field}>
+                <label style={styles.label}>Color</label>
+                <input style={styles.input} placeholder="Ej: Blanco" value={vehicleColor} onChange={e => setVehicleColor(e.target.value)} />
+              </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* ── CLIENTES ── */}
-          {tab === 'clients' && (
-            <div>
-              <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 16 }}>Clientes ({clients.length})</h3>
-              {clients.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 60, color: '#8CA0BF' }}>
-                  <div style={{ fontSize: 48, marginBottom: 16 }}>👥</div>
-                  <p>No hay clientes registrados aún.</p>
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gap: 10 }}>
-                  {clients.map(c => {
-                    const totalServicios = bookings.filter(b => b.client_id === c.id).length
-                    const gasto = bookings.filter(b => b.client_id === c.id && b.status === 'finalizado').reduce((s, b) => s + (b.service_price || b.total_price || 0), 0)
-                    return (
-                      <div key={c.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-                        <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#1A3A6B,#0D1F3C)', border: '2px solid rgba(0,200,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, color: '#00C8FF', flexShrink: 0 }}>
-                          {c.full_name?.charAt(0)}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 600, fontSize: 14 }}>{c.full_name}</div>
-                          <div style={{ color: '#8CA0BF', fontSize: 12 }}>{c.phone || 'Sin teléfono'}</div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 20, textAlign: 'center' }}>
-                          <div>
-                            <div style={{ fontWeight: 700, fontSize: 16, color: '#00C8FF' }}>{totalServicios}</div>
-                            <div style={{ color: '#8CA0BF', fontSize: 11 }}>Servicios</div>
-                          </div>
-                          <div>
-                            <div style={{ fontWeight: 700, fontSize: 16, color: '#00E5C8' }}>${gasto.toLocaleString()}</div>
-                            <div style={{ color: '#8CA0BF', fontSize: 11 }}>Gastado</div>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+        {step === 2 && (
+          <div style={styles.body}>
+            <h3 style={styles.sectionTitle}>¿Dónde está tu vehículo?</h3>
+            <div style={{ position:'relative', marginBottom:12 }}>
+              <input ref={inputRef} style={{ ...styles.input, paddingLeft:40 }} placeholder="Busca tu dirección..." defaultValue={address} onChange={e => { if (!e.target.value) { setAddress(''); setAddressDetails(null) } }} />
+              <span style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', fontSize:16 }}>🔍</span>
             </div>
-          )}
-        </>
-      )}
+            <button onClick={handleUseMyLocation} style={styles.btnLocation}>📍 Usar mi ubicación actual</button>
+            {mapError && <p style={{ color:'#dc2626', fontSize:13, marginBottom:8 }}>{mapError}</p>}
+            {!mapsLoaded ? <div style={styles.mapPlaceholder}>Cargando mapa...</div> : <div ref={mapRef} style={styles.mapContainer} />}
+            {addressDetails && <div style={styles.addressConfirm}>✅ <strong>Dirección:</strong> {addressDetails.formatted}</div>}
+            <p style={{ fontSize:12, color:'#9ca3af', margin:'4px 0 0' }}>💡 Arrastra el pin o haz clic en el mapa para ajustar la ubicación exacta.</p>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div style={styles.body}>
+            <h3 style={styles.sectionTitle}>¿Cuándo lo necesitas?</h3>
+            <div style={styles.row}>
+              <div style={styles.field}>
+                <label style={styles.label}>Fecha</label>
+                <input type="date" style={styles.input} value={date} min={new Date().toISOString().split('T')[0]} onChange={e => setDate(e.target.value)} />
+              </div>
+              <div style={styles.field}>
+                <label style={styles.label}>Hora</label>
+                <select style={styles.input} value={time} onChange={e => setTime(e.target.value)}>
+                  <option value="">Selecciona hora</option>
+                  {['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00'].map(t => <option key={t} value={t}>{t} hrs</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={styles.field}>
+              <label style={styles.label}>Notas adicionales (opcional)</label>
+              <textarea style={{ ...styles.input, height:80, resize:'vertical' }} placeholder="Ej: El coche está en la cochera, tocar el timbre..." value={notes} onChange={e => setNotes(e.target.value)} />
+            </div>
+          </div>
+        )}
+
+        {step === 4 && (
+          <div style={styles.body}>
+            <h3 style={styles.sectionTitle}>Resumen de tu reservación</h3>
+            <div style={{ background:'#f9fafb', borderRadius:12, border:'1px solid #e5e7eb', overflow:'hidden' }}>
+              <SummaryRow icon={service?.icon||'🧽'} label="Servicio"    value={service?.name}  sub={`⏱ ${service?.duration}`} />
+              <SummaryRow icon={vehicle?.icon||'🚗'} label="Vehículo"    value={`${vehicleBrand} · ${vehicleColor}`} sub={vehicle?.name} />
+              <SummaryRow icon="📍"                  label="Dirección"   value={addressDetails?.formatted} />
+              <SummaryRow icon="📅"                  label="Fecha y hora" value={`${date} a las ${time} hrs`} />
+              {notes && <SummaryRow icon="📝"        label="Notas"       value={notes} />}
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 16px', background:'#eff6ff', fontWeight:600, fontSize:15, color:'#1e40af' }}>
+                <span>Total a pagar</span>
+                <span style={{ fontSize:20, fontWeight:700, color:'#1d4ed8' }}>${price} MXN</span>
+              </div>
+            </div>
+            {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', marginTop:12, color:'#dc2626', fontSize:13 }}>⚠️ {error}</div>}
+          </div>
+        )}
+
+        <div style={styles.footer}>
+          {step > 1 && <button onClick={() => setStep(s => s-1)} style={styles.btnSecondary}>← Atrás</button>}
+          {step < 4
+            ? <button onClick={() => setStep(s => s+1)} disabled={!canGoNext()} style={{ ...styles.btnPrimary, opacity: canGoNext()?1:0.5 }}>Siguiente →</button>
+            : <button onClick={handleSubmit} disabled={loading} style={{ ...styles.btnPrimary, background: loading?'#9ca3af':'#10b981' }}>{loading ? '⏳ Guardando...' : '✅ Confirmar reservación'}</button>
+          }
+        </div>
+      </div>
     </div>
   )
+}
+
+function SummaryRow({ icon, label, value, sub }) {
+  return (
+    <div style={{ display:'flex', gap:12, padding:'14px 16px', borderBottom:'1px solid #f3f4f6', alignItems:'flex-start' }}>
+      <span style={{ fontSize:20, flexShrink:0, marginTop:2 }}>{icon}</span>
+      <div>
+        <div style={{ fontSize:11, color:'#9ca3af', textTransform:'uppercase', letterSpacing:0.5 }}>{label}</div>
+        <div style={{ fontSize:14, color:'#1f2937', fontWeight:500, marginTop:2 }}>{value}</div>
+        {sub && <div style={{ fontSize:12, color:'#6b7280', marginTop:1 }}>{sub}</div>}
+      </div>
+    </div>
+  )
+}
+
+const styles = {
+  container:      { minHeight:'100vh', background:'#f3f4f6', display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'24px 16px' },
+  card:           { background:'#fff', borderRadius:16, boxShadow:'0 4px 24px rgba(0,0,0,0.10)', width:'100%', maxWidth:680, overflow:'hidden' },
+  header:         { background:'linear-gradient(135deg,#1e40af,#3b82f6)', padding:'24px', textAlign:'center' },
+  title:          { color:'#fff', fontSize:22, fontWeight:700, margin:'0 0 16px' },
+  stepsBar:       { display:'flex', alignItems:'center', justifyContent:'center' },
+  stepDot:        { width:32, height:32, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:14, transition:'all 0.3s' },
+  stepLine:       { width:40, height:3, transition:'all 0.3s' },
+  stepLabel:      { color:'#bfdbfe', fontSize:13, marginTop:8 },
+  body:           { padding:24 },
+  footer:         { padding:'16px 24px', borderTop:'1px solid #f3f4f6', display:'flex', justifyContent:'space-between', gap:12 },
+  sectionTitle:   { fontSize:16, fontWeight:600, color:'#1f2937', marginBottom:12, marginTop:0 },
+  serviceGrid:    { display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:10 },
+  serviceCard:    { padding:12, borderRadius:10, cursor:'pointer', transition:'all 0.2s' },
+  vehicleGrid:    { display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, marginBottom:12 },
+  vehicleCard:    { padding:'10px 4px', borderRadius:10, cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:4, transition:'all 0.2s' },
+  pricePreview:   { background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:8, padding:'10px 14px', fontSize:14, color:'#166534', marginBottom:12 },
+  row:            { display:'flex', gap:12 },
+  field:          { flex:1, display:'flex', flexDirection:'column', gap:4, marginBottom:12 },
+  label:          { fontSize:13, fontWeight:500, color:'#374151' },
+  input:          { padding:'10px 12px', borderRadius:8, border:'1.5px solid #e5e7eb', fontSize:14, outline:'none', width:'100%', boxSizing:'border-box', fontFamily:'inherit' },
+  btnLocation:    { background:'#f0f9ff', border:'1.5px solid #bae6fd', borderRadius:8, padding:'8px 14px', cursor:'pointer', fontSize:13, color:'#0369a1', fontWeight:500, marginBottom:12, width:'100%' },
+  mapContainer:   { width:'100%', height:280, borderRadius:12, border:'1.5px solid #e5e7eb', overflow:'hidden', marginBottom:12 },
+  mapPlaceholder: { width:'100%', height:280, borderRadius:12, background:'#f9fafb', display:'flex', alignItems:'center', justifyContent:'center', color:'#9ca3af', fontSize:14, border:'1.5px solid #e5e7eb', marginBottom:12 },
+  addressConfirm: { background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#166534', marginBottom:8 },
+  successCard:    { background:'#fff', borderRadius:16, padding:40, maxWidth:480, margin:'0 auto', textAlign:'center', boxShadow:'0 4px 24px rgba(0,0,0,0.10)' },
+  btnPrimary:     { background:'#3b82f6', color:'#fff', border:'none', borderRadius:8, padding:'11px 24px', cursor:'pointer', fontSize:15, fontWeight:600, flex:1 },
+  btnSecondary:   { background:'#f3f4f6', color:'#374151', border:'none', borderRadius:8, padding:'11px 20px', cursor:'pointer', fontSize:15, fontWeight:500 },
 }

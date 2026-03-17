@@ -13,27 +13,44 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   const loadProfile = async (userId) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
-    if (!error) setProfile(data)
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
+      if (!error && data) {
+        setProfile(data)
+        return data
+      }
+    } catch (err) {
+      console.error('Error cargando perfil:', err)
+    }
+    return null
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) loadProfile(session.user.id)
-      setLoading(false)
-    })
+    // Verificar sesión inicial — esperar a que el perfil esté listo
+    const initAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        setUser(session.user)
+        await loadProfile(session.user.id)
+      }
+      setLoading(false) // Solo apagar loading cuando el perfil está listo
+    }
 
+    initAuth()
+
+    // Escuchar cambios de sesión
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
-        setUser(session?.user ?? null)
+        setLoading(true)
         if (session?.user) {
+          setUser(session.user)
           await loadProfile(session.user.id)
         } else {
+          setUser(null)
           setProfile(null)
         }
         setLoading(false)
@@ -89,13 +106,10 @@ export function AuthProvider({ children }) {
     return { data, error }
   }
 
-  // ── Cerrar sesión ─────────────────────────────────────────
   const signOut = async () => {
     try {
       await supabase.auth.signOut({ scope: 'local' })
-    } catch (e) {
-      // ignorar errores de lock
-    }
+    } catch (e) {}
     setUser(null)
     setProfile(null)
   }

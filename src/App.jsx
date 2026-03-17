@@ -107,7 +107,8 @@ function HomeView({ setView }) {
 }
 
 function AppInner() {
-  const [view, setView]       = useState('home')
+  const { loading } = useAuth()
+  const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
 
   useEffect(() => {
@@ -116,6 +117,13 @@ function AppInner() {
     document.head.appendChild(style)
     return () => document.head.removeChild(style)
   }, [])
+
+  // Mientras AuthContext verifica la sesión y carga el perfil, no renderizar nada
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#050A14' }} />
+    )
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>
