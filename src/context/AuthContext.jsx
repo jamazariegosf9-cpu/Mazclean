@@ -43,19 +43,26 @@ export function AuthProvider({ children }) {
     initAuth()
 
     // Escuchar cambios de sesión
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setLoading(true)
-        if (session?.user) {
-          setUser(session.user)
-          await loadProfile(session.user.id)
-        } else {
-          setUser(null)
-          setProfile(null)
-        }
-        setLoading(false)
+const { data: { subscription } } = supabase.auth.onAuthStateChange(
+  async (event, session) => {
+    if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+      if (session?.user) {
+        setUser(session.user)
+        await loadProfile(session.user.id)
       }
-    )
+      return
+    }
+    setLoading(true)
+    if (session?.user) {
+      setUser(session.user)
+      await loadProfile(session.user.id)
+    } else {
+      setUser(null)
+      setProfile(null)
+    }
+    setLoading(false)
+  }
+)
 
     return () => subscription.unsubscribe()
   }, [])
