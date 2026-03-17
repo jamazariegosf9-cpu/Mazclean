@@ -3,15 +3,15 @@ import {
   Users, Calendar, Clock, MapPin, CheckCircle2, AlertCircle,
   Search, Phone, ChevronRight, RefreshCw, TrendingUp, DollarSign,
   Edit3, Trash2, UserPlus, Activity, AlertTriangle, BarChart2,
-  X, XCircle, Plus, Package, ToggleLeft, ToggleRight, Save
+  X, XCircle, Plus, ToggleLeft, ToggleRight, Save, CheckSquare,
+  Square, Bell, Star
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { sendWhatsApp } from './lib/whatsapp';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-const EMOJI_OPTIONS = ['🚿','🪣','✨','💎','🏆','🚗','🧽','💧','🛻','🚙','⚡','🔧','🪟','🧴','🫧'];
+const EMOJI_OPTIONS     = ['🚿','🪣','✨','💎','🏆','🚗','🧽','💧','🛻','🚙','⚡','🔧','🪟','🧴','🫧'];
 
 const emptyService = {
   name: '', description: '', icon: '🚿', color: '#3b82f6',
@@ -33,8 +33,7 @@ const AdminView = () => {
   const [activeTab, setActiveTab]       = useState('bookings');
 
   const [stats, setStats] = useState({
-    total: 0, pending: 0, active: 0, completed: 0,
-    cancelled: 0, revenue: 0, completionRate: 0
+    total: 0, pending: 0, active: 0, completed: 0, cancelled: 0, revenue: 0, completionRate: 0
   });
 
   const [newOperator, setNewOperator]           = useState({ full_name: '', phone: '', email: '', password: '' });
@@ -47,18 +46,34 @@ const AdminView = () => {
   const [editModal, setEditModal]   = useState(false);
   const [editData, setEditData]     = useState({});
   const [savingEdit, setSavingEdit] = useState(false);
-
   const [photoModal, setPhotoModal] = useState(null);
 
+  // ── Comisiones ──────────────────────────────────────────────────
+  const [commissionModal, setCommissionModal]   = useState(false);
+  const [commissionOp, setCommissionOp]         = useState(null);
+  const [commissionPct, setCommissionPct]       = useState(15);
+  const [savingCommission, setSavingCommission] = useState(false);
+  const [commissionReport, setCommissionReport] = useState(null);
+
+  // ── Incidencias ─────────────────────────────────────────────────
+  const [incidents, setIncidents]     = useState([]);
+  const [incidentsTab, setIncidentsTab] = useState(false);
+
   // ── Catálogo ─────────────────────────────────────────────────────
-  const [services, setServices]         = useState([]);
+  const [services, setServices]           = useState([]);
   const [loadingServices, setLoadingServices] = useState(false);
-  const [serviceModal, setServiceModal] = useState(false);
-  const [serviceForm, setServiceForm]   = useState(emptyService);
+  const [serviceModal, setServiceModal]   = useState(false);
+  const [serviceForm, setServiceForm]     = useState(emptyService);
   const [editingService, setEditingService] = useState(null);
-  const [savingService, setSavingService]   = useState(false);
-  const [serviceError, setServiceError]     = useState('');
+  const [savingService, setSavingService] = useState(false);
+  const [serviceError, setServiceError]   = useState('');
   const [serviceSuccess, setServiceSuccess] = useState('');
+
+  // ── Checklist del catálogo ───────────────────────────────────────
+  const [checklistItems, setChecklistItems]   = useState([]);
+  const [newChecklistItem, setNewChecklistItem] = useState('');
+  const [savingChecklist, setSavingChecklist] = useState(false);
+  const [checklistServiceId, setChecklistServiceId] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -71,6 +86,7 @@ const AdminView = () => {
 
   useEffect(() => {
     if (activeTab === 'catalog') fetchServices();
+    if (activeTab === 'operators') fetchIncidents();
   }, [activeTab]);
 
   const fetchData = async () => {
@@ -92,9 +108,7 @@ const AdminView = () => {
       const total     = bookingsData.length;
       const completed = bookingsData.filter(b => b.status === 'finalizado').length;
       const cancelled = bookingsData.filter(b => b.status === 'cancelado').length;
-      const revenue   = bookingsData
-        .filter(b => b.status === 'finalizado')
-        .reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
+      const revenue   = bookingsData.filter(b => b.status === 'finalizado').reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
 
       setStats({
         total, completed, cancelled,
@@ -110,13 +124,53 @@ const AdminView = () => {
     }
   };
 
+  const fetchIncidents = async () => {
+    const { data } = await supabase
+      .from('incidents')
+      .select('*, operator:operator_id(full_name)')
+      .eq('status', 'open')
+      .order('created_at', { ascending: false });
+    setIncidents(data || []);
+  };
+
+  const resolveIncident = async (incidentId) => {
+    await supabase.from('incidents').update({ status: 'resolved', resolved_at: new Date().toISOString() }).eq('id', incidentId);
+    fetchIncidents();
+  };
+
+  // ── Comisiones ──────────────────────────────────────────────────
+  const openCommissionModal = (op) => {
+    setCommissionOp(op);
+    setCommissionPct(op.commission_pct || 15);
+    const opBookings = bookings.filter(b => b.operator_id === op.id && b.status === 'finalizado');
+    const totalRevenue = opBookings.reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
+    const commission = totalRevenue * ((op.commission_pct || 15) / 100);
+    setCommissionReport({ bookings: opBookings, totalRevenue, commission, services: opBookings.length });
+    setCommissionModal(true);
+  };
+
+  const saveCommission = async () => {
+    setSavingCommission(true);
+    const { error } = await supabase.from('profiles').update({ commission_pct: parseFloat(commissionPct) }).eq('id', commissionOp.id);
+    if (error) { alert(error.message); setSavingCommission(false); return; }
+    setOperators(prev => prev.map(o => o.id === commissionOp.id ? { ...o, commission_pct: parseFloat(commissionPct) } : o));
+    setSavingCommission(false);
+    setCommissionModal(false);
+  };
+
+  // ── Alerta de retraso ───────────────────────────────────────────
+  const isDelayed = (booking) => {
+    if (!['confirmado','en_camino','en_proceso'].includes(booking.status)) return false;
+    const scheduled = new Date(`${booking.scheduled_date}T${booking.scheduled_time}`);
+    const now = new Date();
+    return now > scheduled && (now - scheduled) > 30 * 60 * 1000; // más de 30 min de retraso
+  };
+
+  // ── Catálogo ─────────────────────────────────────────────────────
   const fetchServices = async () => {
     setLoadingServices(true);
     try {
-      const { data, error } = await supabase
-        .from('services')
-        .select('*')
-        .order('sort_order', { ascending: true });
+      const { data, error } = await supabase.from('services').select('*').order('sort_order', { ascending: true });
       if (error) throw error;
       setServices(data || []);
     } catch (err) {
@@ -126,67 +180,61 @@ const AdminView = () => {
     }
   };
 
+  const loadChecklist = async (serviceId) => {
+    setChecklistServiceId(serviceId);
+    const { data } = await supabase.from('service_checklist').select('*').eq('service_id', serviceId).order('sort_order', { ascending: true });
+    setChecklistItems(data || []);
+  };
+
+  const addChecklistItem = async (serviceId) => {
+    if (!newChecklistItem.trim()) return;
+    setSavingChecklist(true);
+    const { data, error } = await supabase.from('service_checklist').insert({
+      service_id: serviceId, item: newChecklistItem.trim(), sort_order: checklistItems.length + 1
+    }).select().single();
+    if (!error) { setChecklistItems(prev => [...prev, data]); setNewChecklistItem(''); }
+    setSavingChecklist(false);
+  };
+
+  const deleteChecklistItem = async (itemId) => {
+    await supabase.from('service_checklist').delete().eq('id', itemId);
+    setChecklistItems(prev => prev.filter(i => i.id !== itemId));
+  };
+
   const openNewService = () => {
-    setEditingService(null);
-    setServiceForm(emptyService);
-    setServiceError('');
-    setServiceSuccess('');
+    setEditingService(null); setServiceForm(emptyService);
+    setServiceError(''); setServiceSuccess(''); setChecklistItems([]); setChecklistServiceId(null);
     setServiceModal(true);
   };
 
-  const openEditService = (service) => {
+  const openEditService = async (service) => {
     setEditingService(service.id);
     setServiceForm({
-      name:             service.name            || '',
-      description:      service.description     || '',
-      icon:             service.icon            || '🚿',
-      color:            service.color           || '#3b82f6',
-      price_sedan:      service.price_sedan     || '',
-      price_suv:        service.price_suv       || '',
-      price_truck:      service.price_truck     || '',
-      price_van:        service.price_van       || '',
-      duration_min:     service.duration_min    || '',
-      duration_sedan:   service.duration_sedan  || '',
-      duration_suv:     service.duration_suv    || '',
-      duration_pickup:  service.duration_pickup || '',
-      duration_van:     service.duration_van    || '',
-      supplies_notes:   service.supplies_notes  || '',
-      is_active:        service.is_active ?? true,
-      sort_order:       service.sort_order      || 99,
+      name: service.name || '', description: service.description || '', icon: service.icon || '🚿', color: service.color || '#3b82f6',
+      price_sedan: service.price_sedan || '', price_suv: service.price_suv || '', price_truck: service.price_truck || '', price_van: service.price_van || '',
+      duration_min: service.duration_min || '', duration_sedan: service.duration_sedan || '', duration_suv: service.duration_suv || '',
+      duration_pickup: service.duration_pickup || '', duration_van: service.duration_van || '',
+      supplies_notes: service.supplies_notes || '', is_active: service.is_active ?? true, sort_order: service.sort_order || 99,
     });
-    setServiceError('');
-    setServiceSuccess('');
+    setServiceError(''); setServiceSuccess('');
+    await loadChecklist(service.id);
     setServiceModal(true);
   };
 
   const saveService = async () => {
     setServiceError('');
-    if (!serviceForm.name || !serviceForm.price_sedan) {
-      setServiceError('Nombre y precio Sedán son requeridos.');
-      return;
-    }
+    if (!serviceForm.name || !serviceForm.price_sedan) { setServiceError('Nombre y precio Sedán son requeridos.'); return; }
     setSavingService(true);
     try {
       const payload = {
-        name:            serviceForm.name,
-        description:     serviceForm.description,
-        icon:            serviceForm.icon,
-        color:           serviceForm.color,
-        price_sedan:     parseFloat(serviceForm.price_sedan)  || null,
-        price_suv:       parseFloat(serviceForm.price_suv)    || null,
-        price_truck:     parseFloat(serviceForm.price_truck)  || null,
-        price_van:       parseFloat(serviceForm.price_van)    || null,
-        duration_min:    parseInt(serviceForm.duration_min)   || null,
-        duration_sedan:  parseInt(serviceForm.duration_sedan) || null,
-        duration_suv:    parseInt(serviceForm.duration_suv)   || null,
-        duration_pickup: parseInt(serviceForm.duration_pickup)|| null,
-        duration_van:    parseInt(serviceForm.duration_van)   || null,
-        supplies_notes:  serviceForm.supplies_notes           || null,
-        is_active:       serviceForm.is_active,
-        sort_order:      parseInt(serviceForm.sort_order)     || 99,
-        updated_at:      new Date().toISOString(),
+        name: serviceForm.name, description: serviceForm.description, icon: serviceForm.icon, color: serviceForm.color,
+        price_sedan: parseFloat(serviceForm.price_sedan) || null, price_suv: parseFloat(serviceForm.price_suv) || null,
+        price_truck: parseFloat(serviceForm.price_truck) || null, price_van: parseFloat(serviceForm.price_van) || null,
+        duration_min: parseInt(serviceForm.duration_min) || null, duration_sedan: parseInt(serviceForm.duration_sedan) || null,
+        duration_suv: parseInt(serviceForm.duration_suv) || null, duration_pickup: parseInt(serviceForm.duration_pickup) || null,
+        duration_van: parseInt(serviceForm.duration_van) || null, supplies_notes: serviceForm.supplies_notes || null,
+        is_active: serviceForm.is_active, sort_order: parseInt(serviceForm.sort_order) || 99, updated_at: new Date().toISOString(),
       };
-
       if (editingService) {
         const { error } = await supabase.from('services').update(payload).eq('id', editingService);
         if (error) throw error;
@@ -206,16 +254,13 @@ const AdminView = () => {
   };
 
   const toggleServiceStatus = async (service) => {
-    const { error } = await supabase
-      .from('services')
-      .update({ is_active: !service.is_active, updated_at: new Date().toISOString() })
-      .eq('id', service.id);
+    const { error } = await supabase.from('services').update({ is_active: !service.is_active, updated_at: new Date().toISOString() }).eq('id', service.id);
     if (error) { alert(error.message); return; }
     setServices(prev => prev.map(s => s.id === service.id ? { ...s, is_active: !s.is_active } : s));
   };
 
   const deleteService = async (serviceId) => {
-    if (!confirm('¿Eliminar este servicio? Esta acción no se puede deshacer.')) return;
+    if (!confirm('¿Eliminar este servicio?')) return;
     const { error } = await supabase.from('services').delete().eq('id', serviceId);
     if (error) { alert(error.message); return; }
     setServices(prev => prev.filter(s => s.id !== serviceId));
@@ -223,8 +268,7 @@ const AdminView = () => {
 
   const applyDateFilter = (b) => {
     if (dateFilter === 'all') return true;
-    const date  = new Date(b.scheduled_date);
-    const today = new Date(); today.setHours(0,0,0,0);
+    const date = new Date(b.scheduled_date); const today = new Date(); today.setHours(0,0,0,0);
     if (dateFilter === 'today') return date.toDateString() === today.toDateString();
     if (dateFilter === 'week')  { const w = new Date(today); w.setDate(today.getDate()-7); return date >= w; }
     if (dateFilter === 'month') { const m = new Date(today); m.setMonth(today.getMonth()-1); return date >= m; }
@@ -237,10 +281,7 @@ const AdminView = () => {
   };
 
   const filteredBookings = bookings.filter(b => {
-    const matchSearch =
-      b.booking_ref?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      b.customer?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      b.service_name?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchSearch = b.booking_ref?.toLowerCase().includes(searchTerm.toLowerCase()) || b.customer?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) || b.service_name?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchStatus = statusFilter === 'all' || b.status === statusFilter;
     return matchSearch && matchStatus && applyDateFilter(b);
   });
@@ -249,35 +290,16 @@ const AdminView = () => {
     if (!operatorId) return;
     setAssigning(bookingId);
     try {
-      const { error } = await supabase
-        .from('bookings')
-        .update({ operator_id: operatorId, status: 'confirmado', updated_at: new Date().toISOString() })
-        .eq('id', bookingId);
+      const { error } = await supabase.from('bookings').update({ operator_id: operatorId, status: 'confirmado', updated_at: new Date().toISOString() }).eq('id', bookingId);
       if (error) { alert(`Error al asignar: ${error.message}`); return; }
-      setBookings(prev => prev.map(b =>
-        b.id === bookingId ? { ...b, operator_id: operatorId, status: 'confirmado' } : b
-      ));
-      const booking  = bookings.find(b => b.id === bookingId);
-      const operator = operators.find(o => o.id === operatorId);
-      const phone    = booking?.customer?.phone;
+      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, operator_id: operatorId, status: 'confirmado' } : b));
+      const booking = bookings.find(b => b.id === bookingId); const operator = operators.find(o => o.id === operatorId); const phone = booking?.customer?.phone;
       if (booking && phone) {
-        try {
-          await sendWhatsApp('operator_assigned', phone, {
-            booking_ref:    booking.booking_ref,
-            service_name:   booking.service_name,
-            scheduled_date: booking.scheduled_date,
-            scheduled_time: booking.scheduled_time,
-            total_price:    booking.total_price || booking.service_price,
-            operator_name:  operator?.full_name || 'nuestro operador',
-          });
-        } catch (wsErr) { console.warn('WhatsApp omitido:', wsErr.message); }
+        try { await sendWhatsApp('operator_assigned', phone, { booking_ref: booking.booking_ref, service_name: booking.service_name, scheduled_date: booking.scheduled_date, scheduled_time: booking.scheduled_time, total_price: booking.total_price || booking.service_price, operator_name: operator?.full_name || 'nuestro operador' }); }
+        catch (wsErr) { console.warn('WhatsApp omitido:', wsErr.message); }
       }
       setIsModalOpen(false);
-    } catch (err) {
-      alert('Error inesperado al asignar.');
-    } finally {
-      setAssigning(null);
-    }
+    } catch (err) { alert('Error inesperado al asignar.'); } finally { setAssigning(null); }
   };
 
   const deleteBooking = async (bookingId) => {
@@ -290,42 +312,25 @@ const AdminView = () => {
   const saveEdit = async () => {
     setSavingEdit(true);
     try {
-      const { error } = await supabase
-        .from('bookings')
-        .update({ scheduled_date: editData.scheduled_date, scheduled_time: editData.scheduled_time, address_line: editData.address_line, updated_at: new Date().toISOString() })
-        .eq('id', editData.id);
+      const { error } = await supabase.from('bookings').update({ scheduled_date: editData.scheduled_date, scheduled_time: editData.scheduled_time, address_line: editData.address_line, updated_at: new Date().toISOString() }).eq('id', editData.id);
       if (error) throw error;
       setBookings(prev => prev.map(b => b.id === editData.id ? { ...b, ...editData } : b));
       setEditModal(false);
-    } catch (err) {
-      alert(`Error al guardar: ${err.message}`);
-    } finally {
-      setSavingEdit(false);
-    }
+    } catch (err) { alert(`Error al guardar: ${err.message}`); } finally { setSavingEdit(false); }
   };
 
   const createOperator = async () => {
     setOperatorError(''); setOperatorSuccess('');
-    if (!newOperator.email || !newOperator.password || !newOperator.full_name) {
-      setOperatorError('Nombre, email y contraseña son requeridos.'); return;
-    }
+    if (!newOperator.email || !newOperator.password || !newOperator.full_name) { setOperatorError('Nombre, email y contraseña son requeridos.'); return; }
     setCreatingOperator(true);
     try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/create-operator`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-        body: JSON.stringify(newOperator)
-      });
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/create-operator`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }, body: JSON.stringify(newOperator) });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setOperatorSuccess(`Operador ${newOperator.full_name} creado exitosamente.`);
       setNewOperator({ full_name: '', phone: '', email: '', password: '' });
       fetchData();
-    } catch (err) {
-      setOperatorError(err.message);
-    } finally {
-      setCreatingOperator(false);
-    }
+    } catch (err) { setOperatorError(err.message); } finally { setCreatingOperator(false); }
   };
 
   const getOperatorStatus = (operatorId) => {
@@ -337,10 +342,7 @@ const AdminView = () => {
   };
 
   const fetchOperatorHistory = async (operatorId) => {
-    let query = supabase.from('bookings')
-      .select('*, customer:client_id(full_name)')
-      .eq('operator_id', operatorId).eq('status', 'finalizado')
-      .order('scheduled_date', { ascending: false });
+    let query = supabase.from('bookings').select('*, customer:client_id(full_name)').eq('operator_id', operatorId).eq('status', 'finalizado').order('scheduled_date', { ascending: false });
     if (historyFilter.from) query = query.gte('scheduled_date', historyFilter.from);
     if (historyFilter.to)   query = query.lte('scheduled_date', historyFilter.to);
     const { data, error } = await query;
@@ -362,10 +364,11 @@ const AdminView = () => {
 
   const getPhotoUrl = (booking) => {
     if (!booking.photo_url) return null;
-    return booking.photo_url.startsWith('http')
-      ? booking.photo_url
-      : `${SUPABASE_URL}/storage/v1/object/public/service-photos/${booking.photo_url}`;
+    return booking.photo_url.startsWith('http') ? booking.photo_url : `${SUPABASE_URL}/storage/v1/object/public/service-photos/${booking.photo_url}`;
   };
+
+  const inputStyle = { padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937' };
+  const labelStyle = { fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 5, display: 'block' };
 
   const statCards = [
     { label: 'Total',        value: stats.total,                          icon: '📋', color: '#6b7280' },
@@ -377,9 +380,6 @@ const AdminView = () => {
     { label: '% Completado', value: `${stats.completionRate}%`,           icon: '📈', color: '#7c3aed' },
   ];
 
-  const inputStyle = { padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937' };
-  const labelStyle = { fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 5, display: 'block' };
-
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6', paddingBottom: 48 }}>
 
@@ -387,10 +387,8 @@ const AdminView = () => {
       <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '28px 24px 24px', textAlign: 'center' }}>
         <h1 style={{ color: '#fff', fontSize: 22, fontWeight: 700, margin: '0 0 4px' }}>🛠 Dashboard de Administración</h1>
         <p style={{ color: '#bfdbfe', fontSize: 13, margin: 0 }}>Gestión integral de MazClean</p>
-        <button
-          onClick={fetchData}
-          style={{ marginTop: 16, background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 8, padding: '8px 20px', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-        >
+        <button onClick={fetchData}
+          style={{ marginTop: 16, background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 8, padding: '8px 20px', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           ↻ Actualizar
         </button>
       </div>
@@ -412,20 +410,11 @@ const AdminView = () => {
         <div style={{ display: 'flex', gap: 4, marginTop: 24, background: '#e5e7eb', padding: 4, borderRadius: 12, width: 'fit-content', flexWrap: 'wrap' }}>
           {[
             { id: 'bookings',  label: '📋 Reservaciones' },
-            { id: 'operators', label: '👷 Operadores' },
+            { id: 'operators', label: `👷 Operadores${incidents.length > 0 ? ` ⚠️${incidents.length}` : ''}` },
             { id: 'catalog',   label: '🛎 Catálogo' },
           ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                padding: '8px 20px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
-                background: activeTab === tab.id ? '#fff' : 'transparent',
-                color: activeTab === tab.id ? '#1e40af' : '#6b7280',
-                boxShadow: activeTab === tab.id ? '0 2px 8px rgba(0,0,0,0.08)' : 'none',
-                transition: 'all 0.2s'
-              }}
-            >
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              style={{ padding: '8px 20px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, background: activeTab === tab.id ? '#fff' : 'transparent', color: activeTab === tab.id ? '#1e40af' : '#6b7280', boxShadow: activeTab === tab.id ? '0 2px 8px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.2s' }}>
               {tab.label}
             </button>
           ))}
@@ -437,8 +426,7 @@ const AdminView = () => {
             <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 20px', marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
               <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
                 <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 14 }}>🔍</span>
-                <input type="text" placeholder="Buscar folio, cliente o servicio..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                  style={{ ...inputStyle, paddingLeft: 36 }} />
+                <input type="text" placeholder="Buscar folio, cliente o servicio..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ ...inputStyle, paddingLeft: 36 }} />
               </div>
               <select value={dateFilter} onChange={e => setDateFilter(e.target.value)}
                 style={{ padding: '9px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 13, background: '#fff', cursor: 'pointer', fontFamily: 'inherit', color: '#1f2937' }}>
@@ -449,9 +437,8 @@ const AdminView = () => {
               </select>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {[
-                  { id: 'all', label: 'Todos' }, { id: 'pendiente', label: 'Pendientes' },
-                  { id: 'confirmado', label: 'Confirmados' }, { id: 'en_camino', label: 'En Camino' },
-                  { id: 'en_proceso', label: 'Lavando' }, { id: 'finalizado', label: 'Listos' }, { id: 'cancelado', label: 'Cancelados' },
+                  { id: 'all', label: 'Todos' }, { id: 'pendiente', label: 'Pendientes' }, { id: 'confirmado', label: 'Confirmados' },
+                  { id: 'en_camino', label: 'En Camino' }, { id: 'en_proceso', label: 'Lavando' }, { id: 'finalizado', label: 'Listos' }, { id: 'cancelado', label: 'Cancelados' },
                 ].map(f => (
                   <button key={f.id} onClick={() => setStatusFilter(f.id)}
                     style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none', transition: 'all 0.2s', background: statusFilter === f.id ? '#3b82f6' : '#f3f4f6', color: statusFilter === f.id ? '#fff' : '#6b7280' }}>
@@ -468,19 +455,24 @@ const AdminView = () => {
             ) : (
               <div style={{ display: 'grid', gap: 12 }}>
                 {filteredBookings.map(booking => {
-                  const sc     = getStatusStyle(booking.status);
-                  const urgent = isUrgent(booking);
+                  const sc      = getStatusStyle(booking.status);
+                  const urgent  = isUrgent(booking);
+                  const delayed = isDelayed(booking);
                   return (
-                    <div key={booking.id} style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 20px', border: urgent ? '2px solid #ef4444' : '2px solid transparent' }}>
+                    <div key={booking.id} style={{ background: delayed ? '#fef2f2' : '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 20px', border: delayed ? '2px solid #ef4444' : urgent ? '2px solid #f97316' : '2px solid transparent' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 16, alignItems: 'center' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                            {urgent && <span title="¡Servicio retrasado!">⚠️</span>}
+                            {delayed && <span title="⚠️ Servicio retrasado más de 30 min">🔴</span>}
+                            {urgent && !delayed && <span title="¡Fuera de horario!">⚠️</span>}
                             <span style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', background: '#eff6ff', padding: '2px 8px', borderRadius: 20, letterSpacing: 0.5 }}>{booking.booking_ref}</span>
                           </div>
                           <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }}>{booking.service_name}</div>
                           <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{booking.customer?.full_name || '—'}</div>
                           <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>📞 {booking.customer?.phone || '—'}</div>
+                          {booking.client_rating && (
+                            <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>{'⭐'.repeat(booking.client_rating)}</div>
+                          )}
                         </div>
                         <div>
                           <div style={{ fontSize: 13, color: '#374151' }}>📅 {booking.scheduled_date}</div>
@@ -491,6 +483,7 @@ const AdminView = () => {
                           <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>
                             {booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('_',' ')}
                           </span>
+                          {delayed && <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 700, marginTop: 4 }}>⚠️ RETRASADO</div>}
                           {getPhotoUrl(booking) && (
                             <button onClick={() => setPhotoModal(getPhotoUrl(booking))} style={{ display: 'block', marginTop: 8, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>
                               <img src={getPhotoUrl(booking)} alt="foto" style={{ height: 40, width: 40, borderRadius: 8, objectFit: 'cover', border: '1.5px solid #e5e7eb' }} />
@@ -523,14 +516,43 @@ const AdminView = () => {
         {/* ════════════════ TAB: OPERADORES ════════════════ */}
         {activeTab === 'operators' && (
           <div style={{ marginTop: 20, display: 'grid', gap: 20 }}>
+
+            {/* Incidencias abiertas */}
+            {incidents.length > 0 && (
+              <div style={{ background: '#fef2f2', borderRadius: 16, border: '2px solid #fecaca', padding: '20px 24px' }}>
+                <h2 style={{ fontSize: 16, fontWeight: 700, color: '#991b1b', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  ⚠️ Incidencias Abiertas ({incidents.length})
+                </h2>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {incidents.map(inc => (
+                    <div key={inc.id} style={{ background: '#fff', borderRadius: 10, padding: '12px 16px', border: '1px solid #fecaca', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: '#1f2937' }}>👷 {inc.operator?.full_name || 'Operador'}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3 }}>{inc.description}</div>
+                        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>{new Date(inc.created_at).toLocaleString('es-MX')}</div>
+                      </div>
+                      <button onClick={() => resolveIncident(inc.id)}
+                        style={{ padding: '6px 14px', background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 8, color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>
+                        ✅ Resolver
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Status en tiempo real */}
             <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '20px 24px' }}>
               <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1f2937', margin: '0 0 16px' }}>🟢 Estado en Tiempo Real</h2>
               {operators.length === 0 ? (
                 <p style={{ color: '#9ca3af', fontSize: 14, fontStyle: 'italic' }}>No hay operadores registrados.</p>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 12 }}>
                   {operators.map(op => {
                     const status = getOperatorStatus(op.id);
+                    const opBookings = bookings.filter(b => b.operator_id === op.id && b.status === 'finalizado');
+                    const totalRev = opBookings.reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
+                    const commission = totalRev * ((op.commission_pct || 15) / 100);
                     return (
                       <div key={op.id} style={{ background: '#f9fafb', borderRadius: 12, border: '1.5px solid #e5e7eb', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -546,10 +568,27 @@ const AdminView = () => {
                             {status.label}
                           </span>
                         </div>
-                        <button onClick={() => fetchOperatorHistory(op.id)}
-                          style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                          📊 Ver Historial
-                        </button>
+                        {/* Mini reporte de comisión */}
+                        <div style={{ background: '#fff', borderRadius: 8, padding: '8px 12px', border: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 }}>Comisión ({op.commission_pct || 15}%)</div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: '#059669' }}>${commission.toFixed(2)}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 }}>Servicios</div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: '#1f2937' }}>{opBookings.length}</div>
+                          </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                          <button onClick={() => fetchOperatorHistory(op.id)}
+                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            📊 Historial
+                          </button>
+                          <button onClick={() => openCommissionModal(op)}
+                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            💰 Comisión
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -557,6 +596,7 @@ const AdminView = () => {
               )}
             </div>
 
+            {/* Historial */}
             {operatorHistory && (
               <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '20px 24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -598,14 +638,15 @@ const AdminView = () => {
               </div>
             )}
 
+            {/* Alta de Operador */}
             <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '20px 24px' }}>
               <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1f2937', margin: '0 0 16px' }}>➕ Dar de Alta Operador</h2>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14 }}>
                 {[
-                  { key: 'full_name', label: 'Nombre completo *', placeholder: 'Juan Pérez',         type: 'text'     },
-                  { key: 'phone',     label: 'Teléfono',          placeholder: '5512345678',          type: 'tel'      },
-                  { key: 'email',     label: 'Email *',           placeholder: 'op@mazclean.mx',      type: 'email'    },
-                  { key: 'password',  label: 'Contraseña *',      placeholder: 'Mínimo 8 caracteres', type: 'password' },
+                  { key: 'full_name', label: 'Nombre completo *', placeholder: 'Juan Pérez', type: 'text' },
+                  { key: 'phone', label: 'Teléfono', placeholder: '5512345678', type: 'tel' },
+                  { key: 'email', label: 'Email *', placeholder: 'op@mazclean.mx', type: 'email' },
+                  { key: 'password', label: 'Contraseña *', placeholder: 'Mínimo 8 caracteres', type: 'password' },
                 ].map(field => (
                   <div key={field.key}>
                     <label style={labelStyle}>{field.label}</label>
@@ -631,7 +672,7 @@ const AdminView = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: 0 }}>🛎 Catálogo de Servicios</h2>
-                <p style={{ fontSize: 13, color: '#9ca3af', margin: '4px 0 0' }}>Administra los servicios que ofreces a tus clientes</p>
+                <p style={{ fontSize: 13, color: '#9ca3af', margin: '4px 0 0' }}>Administra los servicios y sus checklists</p>
               </div>
               <button onClick={openNewService}
                 style={{ padding: '10px 20px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 4px 12px rgba(59,130,246,0.3)' }}>
@@ -645,7 +686,6 @@ const AdminView = () => {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 16 }}>
                 {services.map(service => (
                   <div key={service.id} style={{ background: '#fff', borderRadius: 20, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', overflow: 'hidden', border: service.is_active ? '2px solid transparent' : '2px solid #e5e7eb', opacity: service.is_active ? 1 : 0.7 }}>
-                    {/* Card header con color del servicio */}
                     <div style={{ background: `linear-gradient(135deg, ${service.color}22, ${service.color}11)`, borderBottom: `2px solid ${service.color}33`, padding: '16px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <span style={{ fontSize: 28 }}>{service.icon}</span>
@@ -654,64 +694,31 @@ const AdminView = () => {
                           <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{service.description}</div>
                         </div>
                       </div>
-                      <button onClick={() => toggleServiceStatus(service)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
-                        title={service.is_active ? 'Desactivar' : 'Activar'}>
-                        {service.is_active
-                          ? <ToggleRight size={28} color="#10b981" />
-                          : <ToggleLeft size={28} color="#9ca3af" />}
+                      <button onClick={() => toggleServiceStatus(service)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }} title={service.is_active ? 'Desactivar' : 'Activar'}>
+                        {service.is_active ? <ToggleRight size={28} color="#10b981" /> : <ToggleLeft size={28} color="#9ca3af" />}
                       </button>
                     </div>
-
-                    {/* Precios */}
                     <div style={{ padding: '12px 18px', borderBottom: '1px solid #f3f4f6' }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Precios</div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6 }}>
-                        {[
-                          { label: '🚗 Sedán', value: service.price_sedan },
-                          { label: '🚙 SUV',   value: service.price_suv },
-                          { label: '🛻 Pick',  value: service.price_truck },
-                          { label: '🚐 Van',   value: service.price_van },
-                        ].map((p, i) => (
+                        {[{ label: '🚗', value: service.price_sedan }, { label: '🚙', value: service.price_suv }, { label: '🛻', value: service.price_truck }, { label: '🚐', value: service.price_van }].map((p, i) => (
                           <div key={i} style={{ textAlign: 'center', background: '#f9fafb', borderRadius: 8, padding: '6px 4px' }}>
-                            <div style={{ fontSize: 10, color: '#9ca3af' }}>{p.label}</div>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: '#1e40af' }}>${p.value || '—'}</div>
+                            <div style={{ fontSize: 12 }}>{p.label}</div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: '#1e40af' }}>${p.value || '—'}</div>
                           </div>
                         ))}
                       </div>
                     </div>
-
-                    {/* Duraciones */}
-                    <div style={{ padding: '12px 18px', borderBottom: '1px solid #f3f4f6' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Duración (min)</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6 }}>
-                        {[
-                          { label: 'Sedán', value: service.duration_sedan  || service.duration_min },
-                          { label: 'SUV',   value: service.duration_suv    || service.duration_min },
-                          { label: 'Pick',  value: service.duration_pickup || service.duration_min },
-                          { label: 'Van',   value: service.duration_van    || service.duration_min },
-                        ].map((d, i) => (
-                          <div key={i} style={{ textAlign: 'center', background: '#f0f9ff', borderRadius: 8, padding: '6px 4px' }}>
-                            <div style={{ fontSize: 10, color: '#9ca3af' }}>{d.label}</div>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: '#0369a1' }}>{d.value || '—'}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Insumos */}
                     {service.supplies_notes && (
                       <div style={{ padding: '10px 18px', borderBottom: '1px solid #f3f4f6', background: '#fefce8' }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>🧴 Insumos</div>
                         <div style={{ fontSize: 12, color: '#854d0e' }}>{service.supplies_notes}</div>
                       </div>
                     )}
-
-                    {/* Acciones */}
                     <div style={{ padding: '12px 18px', display: 'flex', gap: 8 }}>
                       <button onClick={() => openEditService(service)}
                         style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                        ✏️ Editar
+                        ✏️ Editar y Checklist
                       </button>
                       <button onClick={() => deleteService(service.id)}
                         style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#991b1b', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
@@ -781,15 +788,14 @@ const AdminView = () => {
             </div>
             <div style={{ padding: 20, display: 'grid', gap: 14 }}>
               {[
-                { key: 'scheduled_date', label: 'Fecha',     type: 'date' },
-                { key: 'scheduled_time', label: 'Hora',      type: 'time' },
-                { key: 'address_line',   label: 'Dirección', type: 'text' },
+                { key: 'scheduled_date', label: 'Fecha', type: 'date' },
+                { key: 'scheduled_time', label: 'Hora', type: 'time' },
+                { key: 'address_line', label: 'Dirección', type: 'text' },
               ].map(f => (
                 <div key={f.key}>
                   <label style={labelStyle}>{f.label}</label>
                   <input type={f.type} value={f.key === 'scheduled_time' ? editData[f.key]?.slice(0,5) || '' : editData[f.key] || ''}
-                    onChange={e => setEditData(p => ({...p,[f.key]:e.target.value}))}
-                    style={inputStyle} />
+                    onChange={e => setEditData(p => ({...p,[f.key]:e.target.value}))} style={inputStyle} />
                 </div>
               ))}
             </div>
@@ -803,26 +809,67 @@ const AdminView = () => {
         </div>
       )}
 
-      {/* ════ MODAL: CREAR / EDITAR SERVICIO ════ */}
+      {/* ════ MODAL: COMISIÓN ════ */}
+      {commissionModal && commissionOp && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 20, boxShadow: '0 8px 40px rgba(0,0,0,0.2)', maxWidth: 460, width: '100%', overflow: 'hidden' }}>
+            <div style={{ background: 'linear-gradient(135deg,#059669,#10b981)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>💰 Comisiones — {commissionOp.full_name}</h3>
+              <button onClick={() => setCommissionModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a7f3d0', fontSize: 22 }}>×</button>
+            </div>
+            <div style={{ padding: 20 }}>
+              {commissionReport && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 20 }}>
+                  {[
+                    { label: 'Servicios finalizados', value: commissionReport.services, color: '#1e40af' },
+                    { label: 'Ingresos generados', value: `$${commissionReport.totalRevenue.toFixed(2)}`, color: '#059669' },
+                    { label: 'Comisión a pagar', value: `$${(commissionReport.totalRevenue * (commissionPct / 100)).toFixed(2)}`, color: '#7c3aed' },
+                  ].map((s, i) => (
+                    <div key={i} style={{ background: '#f9fafb', borderRadius: 10, padding: '12px 10px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
+                      <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{s.label}</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: s.color }}>{s.value}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div>
+                <label style={labelStyle}>Porcentaje de comisión (%)</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <input type="number" min="0" max="100" step="0.5" value={commissionPct}
+                    onChange={e => setCommissionPct(e.target.value)}
+                    style={{ ...inputStyle, width: 100 }} />
+                  <span style={{ fontSize: 13, color: '#6b7280' }}>
+                    = ${(( commissionReport?.totalRevenue || 0) * (commissionPct / 100)).toFixed(2)} MXN
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setCommissionModal(false)} style={{ padding: '9px 20px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={saveCommission} disabled={savingCommission}
+                style={{ padding: '9px 24px', background: savingCommission ? '#9ca3af' : '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                {savingCommission ? '⏳ Guardando...' : '💾 Guardar %'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════ MODAL: CREAR/EDITAR SERVICIO + CHECKLIST ════ */}
       {serviceModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto' }}>
-          <div style={{ background: '#fff', borderRadius: 20, boxShadow: '0 8px 40px rgba(0,0,0,0.20)', maxWidth: 600, width: '100%', overflow: 'hidden', margin: 'auto' }}>
+          <div style={{ background: '#fff', borderRadius: 20, boxShadow: '0 8px 40px rgba(0,0,0,0.20)', maxWidth: 640, width: '100%', overflow: 'hidden', margin: 'auto' }}>
             <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 17, margin: 0 }}>
-                {editingService ? '✏️ Editar Servicio' : '➕ Nuevo Servicio'}
-              </h3>
+              <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 17, margin: 0 }}>{editingService ? '✏️ Editar Servicio' : '➕ Nuevo Servicio'}</h3>
               <button onClick={() => setServiceModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#bfdbfe', fontSize: 22 }}>×</button>
             </div>
-
             <div style={{ padding: 24, maxHeight: '75vh', overflowY: 'auto' }}>
 
-              {/* Nombre y descripción */}
               <div style={{ display: 'grid', gap: 14, marginBottom: 20 }}>
                 <div>
                   <label style={labelStyle}>Nombre del servicio *</label>
                   <input type="text" placeholder="Ej: Lavado de Motor" value={serviceForm.name}
-                    onChange={e => setServiceForm(p => ({...p, name: e.target.value}))}
-                    style={inputStyle} />
+                    onChange={e => setServiceForm(p => ({...p, name: e.target.value}))} style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelStyle}>Descripción</label>
@@ -832,7 +879,6 @@ const AdminView = () => {
                 </div>
               </div>
 
-              {/* Icono y color */}
               <div style={{ marginBottom: 20 }}>
                 <label style={labelStyle}>Icono del servicio</label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -845,54 +891,37 @@ const AdminView = () => {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <label style={{ ...labelStyle, margin: 0 }}>Color:</label>
-                  <input type="color" value={serviceForm.color}
-                    onChange={e => setServiceForm(p => ({...p, color: e.target.value}))}
+                  <input type="color" value={serviceForm.color} onChange={e => setServiceForm(p => ({...p, color: e.target.value}))}
                     style={{ width: 40, height: 32, borderRadius: 6, border: '1.5px solid #e5e7eb', cursor: 'pointer', padding: 2 }} />
-                  <span style={{ fontSize: 12, color: '#6b7280' }}>{serviceForm.color}</span>
                 </div>
               </div>
 
-              {/* Precios por tipo de vehículo */}
               <div style={{ marginBottom: 20 }}>
                 <label style={labelStyle}>Precios por tipo de vehículo (MXN)</label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
-                  {[
-                    { key: 'price_sedan',  label: '🚗 Sedán / Compacto *' },
-                    { key: 'price_suv',    label: '🚙 SUV / Camioneta' },
-                    { key: 'price_truck',  label: '🛻 Pickup' },
-                    { key: 'price_van',    label: '🚐 Van / Minivan' },
-                  ].map(f => (
+                  {[{ key: 'price_sedan', label: '🚗 Sedán *' }, { key: 'price_suv', label: '🚙 SUV' }, { key: 'price_truck', label: '🛻 Pickup' }, { key: 'price_van', label: '🚐 Van' }].map(f => (
                     <div key={f.key}>
                       <label style={{ ...labelStyle, fontSize: 11 }}>{f.label}</label>
                       <input type="number" placeholder="0" value={serviceForm[f.key]}
-                        onChange={e => setServiceForm(p => ({...p, [f.key]: e.target.value}))}
-                        style={inputStyle} />
+                        onChange={e => setServiceForm(p => ({...p, [f.key]: e.target.value}))} style={inputStyle} />
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Duraciones por tipo de vehículo */}
               <div style={{ marginBottom: 20 }}>
                 <label style={labelStyle}>Duración por tipo de vehículo (minutos)</label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
-                  {[
-                    { key: 'duration_sedan',  label: '🚗 Sedán' },
-                    { key: 'duration_suv',    label: '🚙 SUV' },
-                    { key: 'duration_pickup', label: '🛻 Pickup' },
-                    { key: 'duration_van',    label: '🚐 Van' },
-                  ].map(f => (
+                  {[{ key: 'duration_sedan', label: '🚗 Sedán' }, { key: 'duration_suv', label: '🚙 SUV' }, { key: 'duration_pickup', label: '🛻 Pickup' }, { key: 'duration_van', label: '🚐 Van' }].map(f => (
                     <div key={f.key}>
                       <label style={{ ...labelStyle, fontSize: 11 }}>{f.label}</label>
                       <input type="number" placeholder="45" value={serviceForm[f.key]}
-                        onChange={e => setServiceForm(p => ({...p, [f.key]: e.target.value}))}
-                        style={inputStyle} />
+                        onChange={e => setServiceForm(p => ({...p, [f.key]: e.target.value}))} style={inputStyle} />
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Insumos estimados */}
               <div style={{ marginBottom: 20 }}>
                 <label style={labelStyle}>🧴 Insumos estimados (opcional)</label>
                 <textarea placeholder="Ej: 1L shampoo, 200ml cera, 2 microfibras..." value={serviceForm.supplies_notes}
@@ -900,13 +929,40 @@ const AdminView = () => {
                   style={{ ...inputStyle, height: 60, resize: 'vertical' }} />
               </div>
 
-              {/* Orden y estado */}
+              {/* ── Checklist del servicio ── */}
+              {editingService && (
+                <div style={{ marginBottom: 20 }}>
+                  <label style={labelStyle}>✅ Checklist de calidad</label>
+                  <div style={{ display: 'grid', gap: 8, marginBottom: 10 }}>
+                    {checklistItems.map(item => (
+                      <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <CheckSquare size={16} color="#10b981" />
+                          <span style={{ fontSize: 13, color: '#374151' }}>{item.item}</span>
+                        </div>
+                        <button onClick={() => deleteChecklistItem(item.id)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 16 }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input type="text" placeholder="Agregar ítem al checklist..." value={newChecklistItem}
+                      onChange={e => setNewChecklistItem(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && addChecklistItem(editingService)}
+                      style={{ ...inputStyle, flex: 1 }} />
+                    <button onClick={() => addChecklistItem(editingService)} disabled={savingChecklist}
+                      style={{ padding: '10px 16px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>
+                      + Agregar
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <div>
                   <label style={labelStyle}>Orden de aparición</label>
                   <input type="number" placeholder="1" value={serviceForm.sort_order}
-                    onChange={e => setServiceForm(p => ({...p, sort_order: e.target.value}))}
-                    style={inputStyle} />
+                    onChange={e => setServiceForm(p => ({...p, sort_order: e.target.value}))} style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelStyle}>Estado</label>
@@ -925,7 +981,7 @@ const AdminView = () => {
               <button onClick={() => setServiceModal(false)} style={{ padding: '10px 22px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>Cancelar</button>
               <button onClick={saveService} disabled={savingService}
                 style={{ padding: '10px 28px', background: savingService ? '#9ca3af' : '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Save size={15} /> {savingService ? 'Guardando...' : editingService ? 'Actualizar Servicio' : 'Crear Servicio'}
+                <Save size={15} /> {savingService ? 'Guardando...' : editingService ? 'Actualizar' : 'Crear Servicio'}
               </button>
             </div>
           </div>
