@@ -63,14 +63,17 @@ export default function AdminView({ onNavigate }) {
 
   useEffect(() => {
     if (!user) return
+    if (profile && profile.role !== 'admin') {
+      onNavigate('home')
+      return
+    }
     loadAll()
-    // Recargar cuando el usuario regresa a esta pestaña
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') loadAll()
     }
     document.addEventListener('visibilitychange', handleVisibility)
     return () => document.removeEventListener('visibilitychange', handleVisibility)
-  }, [user])
+  }, [user, profile])
 
   const loadAll = async () => {
     setLoading(true)
