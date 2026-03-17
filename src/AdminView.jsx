@@ -8,28 +8,20 @@ import { useAuth } from './context/AuthContext'
 import { sendWhatsApp } from './lib/whatsapp'
 
 const STATUS_COLORS = {
-  pending:     '#FFD166',
-  assigned:    '#8CA0BF',
+  pendiente:   '#FFD166',
   confirmado:  '#00C8FF',
-  on_the_way:  '#A78BFA',
-  arrived:     '#F97316',
-  washing:     '#F97316',
-  done:        '#00E5C8',
+  en_camino:   '#A78BFA',
+  en_proceso:  '#F97316',
   finalizado:  '#00E5C8',
-  cancelled:   '#F87171',
   cancelado:   '#F87171',
 }
 
 const STATUS_LABELS = {
-  pending:     'Pendiente',
-  assigned:    'Asignado',
+  pendiente:   'Pendiente',
   confirmado:  'Confirmado',
-  on_the_way:  'En camino',
-  arrived:     'Llegó',
-  washing:     'Lavando',
-  done:        'Completado',
+  en_camino:   'En camino',
+  en_proceso:  'En proceso',
   finalizado:  'Finalizado',
-  cancelled:   'Cancelado',
   cancelado:   'Cancelado',
 }
 
@@ -87,11 +79,11 @@ export default function AdminView({ onNavigate }) {
     setAssigning(bookingId)
     const { error } = await supabase
       .from('bookings')
-      .update({ operator_id: operatorId, status: 'assigned' })
+      .update({ operator_id: operatorId, status: 'confirmado' })
       .eq('id', bookingId)
     if (!error) {
       setBookings(prev => prev.map(b =>
-        b.id === bookingId ? { ...b, operator_id: operatorId, status: 'assigned' } : b
+        b.id === bookingId ? { ...b, operator_id: operatorId, status: 'confirmado' } : b
       ))
 
       // Notificación WhatsApp al cliente
@@ -151,9 +143,9 @@ export default function AdminView({ onNavigate }) {
   // ── Métricas ──────────────────────────────────────────────
   const total       = bookings.length
   const pendientes  = bookings.filter(b => b.status === 'pending').length
-  const activos     = bookings.filter(b => ['assigned','confirmado','on_the_way','arrived','washing'].includes(b.status)).length
-  const finalizados = bookings.filter(b => ['done','finalizado'].includes(b.status)).length
-  const ingresos    = bookings.filter(b => ['done','finalizado'].includes(b.status)).reduce((s, b) => s + (b.service_price || b.total_price || 0), 0)
+  const activos     = bookings.filter(b => ['confirmado','en_camino','en_proceso'].includes(b.status)).length
+  const finalizados = bookings.filter(b => b.status === 'finalizado').length
+  const ingresos    = bookings.filter(b => b.status === 'finalizado').reduce((s, b) => s + (b.service_price || b.total_price || 0), 0)
   const today       = new Date().toISOString().split('T')[0]
   const hoy         = bookings.filter(b => b.scheduled_date === today).length
 
@@ -302,8 +294,8 @@ export default function AdminView({ onNavigate }) {
               ) : (
                 <div style={{ display: 'grid', gap: 12 }}>
                   {operators.map(op => {
-                    const asignados   = bookings.filter(b => b.operator_id === op.id && !['done','finalizado','cancelled','cancelado'].includes(b.status)).length
-                    const completados = bookings.filter(b => b.operator_id === op.id && ['done','finalizado'].includes(b.status)).length
+                    const asignados   = bookings.filter(b => b.operator_id === op.id && !['finalizado','cancelado'].includes(b.status)).length
+                    const completados = bookings.filter(b => b.operator_id === op.id && b.status === 'finalizado').length
                     return (
                       <div key={op.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                         <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#1A3A6B,#0D1F3C)', border: '2px solid rgba(0,229,200,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16, color: '#00E5C8', flexShrink: 0 }}>
@@ -344,7 +336,7 @@ export default function AdminView({ onNavigate }) {
                 <div style={{ display: 'grid', gap: 10 }}>
                   {clients.map(c => {
                     const totalServicios = bookings.filter(b => b.client_id === c.id).length
-                    const gasto = bookings.filter(b => b.client_id === c.id && ['done','finalizado'].includes(b.status)).reduce((s, b) => s + (b.service_price || b.total_price || 0), 0)
+                    const gasto = bookings.filter(b => b.client_id === c.id && b.status === 'finalizado').reduce((s, b) => s + (b.service_price || b.total_price || 0), 0)
                     return (
                       <div key={c.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
                         <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#1A3A6B,#0D1F3C)', border: '2px solid rgba(0,200,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, color: '#00C8FF', flexShrink: 0 }}>

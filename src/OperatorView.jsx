@@ -4,11 +4,10 @@ import { useAuth } from './context/AuthContext'
 import { sendWhatsApp } from './lib/whatsapp'
 
 const STATUS_FLOW = [
-  { key: 'assigned',    label: 'Asignado',   icon: '📋', color: '#6b7280' },
-  { key: 'on_the_way',  label: 'En camino',  icon: '🚗', color: '#3b82f6' },
-  { key: 'arrived',     label: 'Llegué',     icon: '📍', color: '#f59e0b' },
-  { key: 'washing',     label: 'Lavando',    icon: '🧽', color: '#8b5cf6' },
-  { key: 'done',        label: 'Terminado',  icon: '✅', color: '#10b981' },
+  { key: 'confirmado',  label: 'Confirmado', icon: '📋', color: '#6b7280' },
+  { key: 'en_camino',   label: 'En camino',  icon: '🚗', color: '#3b82f6' },
+  { key: 'en_proceso',  label: 'Lavando',    icon: '🧽', color: '#8b5cf6' },
+  { key: 'finalizado',  label: 'Terminado',  icon: '✅', color: '#10b981' },
 ]
 
 export default function OperatorView() {
@@ -38,7 +37,7 @@ export default function OperatorView() {
       setBookings(data || [])
 
       const active = (data || []).find(b =>
-        ['on_the_way', 'arrived', 'washing'].includes(b.status)
+        ['en_camino', 'en_proceso'].includes(b.status)
       )
       if (active) {
         setActiveBooking(active)
@@ -87,7 +86,7 @@ export default function OperatorView() {
     }
     setActiveBooking(booking)
     setTracking(true)
-    await updateBookingStatus(booking.id, 'on_the_way')
+    await updateBookingStatus(booking.id, 'en_camino')
     startGPS(booking)
   }
 
@@ -108,11 +107,11 @@ export default function OperatorView() {
 
     // Notificación WhatsApp al cliente según el nuevo estado
     const booking = bookings.find(b => b.id === bookingId)
-    if (booking && ['on_the_way', 'arrived', 'washing', 'done'].includes(newStatus)) {
+    if (booking && ['en_camino', 'en_proceso', 'finalizado'].includes(newStatus)) {
       const { data: clientProfile } = await supabase
         .from('profiles').select('phone').eq('id', booking.client_id).single()
       if (clientProfile?.phone) {
-        await sendWhatsApp(newStatus, clientProfile.phone, {
+        await sendWhatsApp(newStatus === 'en_camino' ? 'on_the_way' : newStatus === 'en_proceso' ? 'washing' : newStatus === 'finalizado' ? 'done' : newStatus, clientProfile.phone, {
           booking_ref:    booking.booking_ref,
           service_name:   booking.service_name,
           scheduled_date: booking.scheduled_date,
@@ -123,20 +122,20 @@ export default function OperatorView() {
       }
     }
 
-    if (newStatus === 'done') {
+    if (newStatus === 'finalizado') {
       stopTracking()
       setActiveBooking(null)
     }
   }
 
   const pendingList = bookings.filter(b =>
-    ['pending', 'assigned', 'confirmado'].includes(b.status)
+    b.status === 'confirmado'
   )
   const activeList = bookings.filter(b =>
-    ['on_the_way', 'arrived', 'washing'].includes(b.status)
+    ['en_camino', 'en_proceso'].includes(b.status)
   )
   const doneList = bookings.filter(b =>
-    ['done', 'finalizado'].includes(b.status)
+    b.status === 'finalizado'
   )
   const currentList = tab === 'pending' ? pendingList
                     : tab === 'active'  ? activeList
@@ -248,7 +247,7 @@ function BookingCard({ booking, isActive, tracking, onStart, onStatusChange }) {
   const status     = STATUS_FLOW.find(s => s.key === booking.status) || STATUS_FLOW[0]
   const currentIdx = STATUS_FLOW.findIndex(s => s.key === booking.status)
   const nextStatus = STATUS_FLOW[currentIdx + 1]
-  const isPending  = ['pending', 'assigned', 'confirmado'].includes(booking.status)
+  const isPending  = booking.status === 'confirmado'
 
   return (
     <div style={{
@@ -312,7 +311,7 @@ function BookingCard({ booking, isActive, tracking, onStart, onStatusChange }) {
             {nextStatus.icon} Marcar: {nextStatus.label}
           </button>
         )}
-        {isActive && tracking && booking.status === 'washing' && (
+        {isActive && tracking && booking.status === 'en_proceso' && (
           <button
             onClick={() => onStatusChange('done')}
             style={{ ...styles.btnAction, background: '#10b981' }}
