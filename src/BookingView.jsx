@@ -190,7 +190,10 @@ export default function BookingView() {
     setStep(1); setSuccess(false); setError('')
     setSelectedService(null); setVehicleType(''); setVehicleBrand(''); setVehicleColor('')
     setAddress(''); setAddressDetails(null); setDate(''); setTime(''); setNotes('')
-    mapInstanceRef.current = null; markerRef.current = null; autocompleteRef.current = null
+    mapInstanceRef.current = null
+    markerRef.current = null
+    autocompleteRef.current = null
+    if (inputRef.current) inputRef.current.value = ''
   }
 
   const price   = getPrice()
