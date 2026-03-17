@@ -125,11 +125,11 @@ function AppInner() {
   }, [loading, user])
 
   // Mientras AuthContext verifica la sesión y carga el perfil, no renderizar nada
-  if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', background: '#050A14' }} />
-    )
-  }
+  if (loading && !user) {
+  return (
+    <div style={{ minHeight: '100vh', background: '#050A14' }} />
+  )
+}
 
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>
