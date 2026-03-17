@@ -76,7 +76,7 @@ const AdminView = () => {
       const { data: operatorsData, error: oError } = await supabase
         .from('profiles')
         .select('*')
-        .eq('role', 'operator');
+        .eq('role', 'operador');
 
       if (oError) throw oError;
 
