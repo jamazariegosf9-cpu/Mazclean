@@ -408,7 +408,13 @@ const OperatorView = () => {
                       </button>
                     )}
                     {booking.status === 'en_camino' && (
-                      <button onClick={e => { e.stopPropagation(); setPhotoBooking(booking); setPhotoType('before'); setPhotoModal(true); updateStatus(booking.id, 'en_proceso', 'washing'); }}
+                      <button onClick={async e => {
+                          e.stopPropagation();
+                          await updateStatus(booking.id, 'en_proceso', 'washing');
+                          setPhotoBooking(booking);
+                          setPhotoType('before');
+                          setPhotoModal(true);
+                        }}
                         disabled={updatingId === booking.id}
                         style={{ flex: 1, background: '#f97316', color: '#fff', border: 'none', borderRadius: 10, padding: '11px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                         <Play size={14} /> Empezar Lavado
@@ -529,7 +535,12 @@ const OperatorView = () => {
                 </button>
               )}
               {selectedBooking.status === 'en_camino' && (
-                <button onClick={() => { setPhotoBooking(selectedBooking); setPhotoType('before'); setPhotoModal(true); updateStatus(selectedBooking.id, 'en_proceso', 'washing'); }} disabled={updatingId === selectedBooking.id}
+                <button onClick={async () => {
+                    await updateStatus(selectedBooking.id, 'en_proceso', 'washing');
+                    setPhotoBooking(selectedBooking);
+                    setPhotoType('before');
+                    setPhotoModal(true);
+                  }} disabled={updatingId === selectedBooking.id}
                   style={{ width: '100%', background: '#f97316', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 8px 32px rgba(249,115,22,0.4)' }}>
                   <Play size={18} /> LLEGUÉ / EMPEZAR LAVADO
                 </button>
@@ -604,7 +615,7 @@ const OperatorView = () => {
               {[
                 { type: 'before', label: '📷 Foto ANTES del servicio', field: 'photo_before' },
                 { type: 'after',  label: '📷 Foto DESPUÉS del servicio', field: 'photo_after' },
-              ].map(({ type, label, field }) => (
+              ].filter(item => !photoType || item.type === photoType).map(({ type, label, field }) => (
                 <div key={type}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>{label}</div>
                   {getPhotoUrl(photoBooking[field]) ? (
