@@ -55,6 +55,13 @@ const AdminView = () => {
   const [savingCommission, setSavingCommission] = useState(false);
   const [commissionReport, setCommissionReport] = useState(null);
 
+  // ── KPIs de tiempo ──────────────────────────────────────────────
+  const [kpisModal, setKpisModal]   = useState(false);
+  const [kpisOp, setKpisOp]         = useState(null);
+  const [kpisData, setKpisData]     = useState(null);
+  const [kpisTimeline, setKpisTimeline] = useState([]);
+  const [loadingKpis, setLoadingKpis] = useState(false);
+
   // ── Incidencias ─────────────────────────────────────────────────
   const [incidents, setIncidents]     = useState([]);
   const [incidentsTab, setIncidentsTab] = useState(false);
@@ -136,6 +143,59 @@ const AdminView = () => {
   const resolveIncident = async (incidentId) => {
     await supabase.from('incidents').update({ status: 'resolved', resolved_at: new Date().toISOString() }).eq('id', incidentId);
     fetchIncidents();
+  };
+
+  // ── KPIs de tiempo ──────────────────────────────────────────────
+  const fetchOperatorKpis = async (op) => {
+    setKpisOp(op);
+    setLoadingKpis(true);
+    setKpisModal(true);
+    try {
+      // Llamar función PostgreSQL
+      const { data: kpis, error: kError } = await supabase
+        .rpc('get_operator_time_kpis', { p_operator_id: op.id });
+      if (kError) throw kError;
+      setKpisData(kpis?.[0] || null);
+
+      // Timeline: últimos 5 servicios finalizados con sus logs
+      const { data: recentBookings } = await supabase
+        .from('bookings')
+        .select('id, booking_ref, service_name, scheduled_date, scheduled_time, duration_min')
+        .eq('operator_id', op.id)
+        .eq('status', 'finalizado')
+        .order('updated_at', { ascending: false })
+        .limit(5);
+
+      if (recentBookings && recentBookings.length > 0) {
+        const timelines = await Promise.all(recentBookings.map(async (b) => {
+          const { data: logs } = await supabase
+            .from('booking_status_log')
+            .select('status, created_at, duration_seconds')
+            .eq('booking_id', b.id)
+            .order('created_at', { ascending: true });
+          return { ...b, logs: logs || [] };
+        }));
+        setKpisTimeline(timelines);
+      } else {
+        setKpisTimeline([]);
+      }
+    } catch (err) {
+      console.error('Error fetching KPIs:', err);
+    } finally {
+      setLoadingKpis(false);
+    }
+  };
+
+  const formatSeconds = (secs) => {
+    if (!secs) return '—';
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return m > 0 ? `${m} min ${s > 0 ? s + 's' : ''}`.trim() : `${s}s`;
+  };
+
+  const formatTime = (isoStr) => {
+    if (!isoStr) return '—';
+    return new Date(isoStr).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
   };
 
   // ── Comisiones ──────────────────────────────────────────────────
@@ -579,7 +639,7 @@ const AdminView = () => {
                             <div style={{ fontSize: 14, fontWeight: 700, color: '#1f2937' }}>{opBookings.length}</div>
                           </div>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
                           <button onClick={() => fetchOperatorHistory(op.id)}
                             style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                             📊 Historial
@@ -587,6 +647,10 @@ const AdminView = () => {
                           <button onClick={() => openCommissionModal(op)}
                             style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                             💰 Comisión
+                          </button>
+                          <button onClick={() => fetchOperatorKpis(op)}
+                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            ⏱ Tiempos
                           </button>
                         </div>
                       </div>
@@ -804,6 +868,115 @@ const AdminView = () => {
               <button onClick={saveEdit} disabled={savingEdit} style={{ padding: '9px 24px', background: savingEdit ? '#9ca3af' : '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                 {savingEdit ? '⏳ Guardando...' : 'Guardar Cambios'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════ MODAL: KPIs DE TIEMPO ════ */}
+      {kpisModal && kpisOp && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto' }}>
+          <div style={{ background: '#fff', borderRadius: 20, boxShadow: '0 8px 40px rgba(0,0,0,0.2)', maxWidth: 560, width: '100%', overflow: 'hidden', margin: 'auto' }}>
+            <div style={{ background: 'linear-gradient(135deg,#7c3aed,#a78bfa)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>⏱ Rendimiento — {kpisOp.full_name}</h3>
+              <button onClick={() => setKpisModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ede9fe', fontSize: 22 }}>×</button>
+            </div>
+
+            <div style={{ padding: 20, maxHeight: '75vh', overflowY: 'auto' }}>
+              {loadingKpis ? (
+                <div style={{ textAlign: 'center', padding: 40, color: '#9ca3af' }}>⏳ Calculando KPIs...</div>
+              ) : (
+                <>
+                  {/* KPIs principales */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 10, marginBottom: 20 }}>
+                    {[
+                      { label: 'Prom. traslado', value: formatSeconds(Math.round(kpisData?.avg_travel_seconds || 0)),  icon: '🚗', color: '#3b82f6' },
+                      { label: 'Prom. lavado',   value: formatSeconds(Math.round(kpisData?.avg_washing_seconds || 0)), icon: '🧽', color: '#f97316' },
+                      { label: 'Servicios',      value: kpisData?.total_services || 0,                                  icon: '✅', color: '#10b981' },
+                      { label: 'Real vs Est.',   value: kpisData?.avg_real_vs_estimated ? `${Math.round(kpisData.avg_real_vs_estimated)}%` : '—', icon: '📊', color: kpisData?.avg_real_vs_estimated > 110 ? '#ef4444' : '#7c3aed' },
+                    ].map((k, i) => (
+                      <div key={i} style={{ background: '#f9fafb', borderRadius: 12, padding: '12px 10px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
+                        <div style={{ fontSize: 20, marginBottom: 4 }}>{k.icon}</div>
+                        <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{k.label}</div>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: k.color }}>{k.value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Nota real vs estimado */}
+                  {kpisData?.avg_real_vs_estimated && (
+                    <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 20, background: kpisData.avg_real_vs_estimated > 110 ? '#fef2f2' : '#f0fdf4', border: `1px solid ${kpisData.avg_real_vs_estimated > 110 ? '#fecaca' : '#bbf7d0'}` }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: kpisData.avg_real_vs_estimated > 110 ? '#dc2626' : '#166534' }}>
+                        {kpisData.avg_real_vs_estimated > 110
+                          ? `⚠️ El operador tarda ${Math.round(kpisData.avg_real_vs_estimated - 100)}% más de lo estimado en promedio`
+                          : `✅ El operador opera dentro del tiempo estimado`}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Timeline por servicio */}
+                  {kpisTimeline.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 12 }}>📅 Timeline de servicios recientes</div>
+                      <div style={{ display: 'grid', gap: 12 }}>
+                        {kpisTimeline.map(b => (
+                          <div key={b.id} style={{ background: '#f9fafb', borderRadius: 12, padding: '12px 14px', border: '1px solid #e5e7eb' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', background: '#eff6ff', padding: '2px 8px', borderRadius: 20 }}>{b.booking_ref}</span>
+                              <span style={{ fontSize: 11, color: '#6b7280' }}>{b.service_name}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                              {b.logs.map((log, idx) => {
+                                const statusLabels = {
+                                  confirmado: { label: 'Asignado', color: '#3b82f6' },
+                                  en_camino:  { label: 'Salió',    color: '#6366f1' },
+                                  en_proceso: { label: 'Inició',   color: '#f97316' },
+                                  finalizado: { label: 'Terminó',  color: '#10b981' },
+                                };
+                                const info = statusLabels[log.status];
+                                if (!info) return null;
+                                return (
+                                  <React.Fragment key={idx}>
+                                    <div style={{ textAlign: 'center' }}>
+                                      <div style={{ fontSize: 10, fontWeight: 700, color: info.color, background: info.color + '15', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+                                        {info.label}
+                                      </div>
+                                      <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
+                                        {formatTime(log.created_at)}
+                                      </div>
+                                      {log.duration_seconds && (
+                                        <div style={{ fontSize: 9, color: '#d1d5db' }}>
+                                          +{formatSeconds(log.duration_seconds)}
+                                        </div>
+                                      )}
+                                    </div>
+                                    {idx < b.logs.filter(l => statusLabels[l.status]).length - 1 && (
+                                      <div style={{ fontSize: 12, color: '#d1d5db', flexShrink: 0 }}>→</div>
+                                    )}
+                                  </React.Fragment>
+                                );
+                              })}
+                            </div>
+                            {b.duration_min && (
+                              <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 6 }}>
+                                Duración estimada: {b.duration_min} min
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {kpisTimeline.length === 0 && !loadingKpis && (
+                    <p style={{ color: '#9ca3af', fontSize: 13, fontStyle: 'italic', textAlign: 'center' }}>Sin servicios finalizados aún.</p>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', textAlign: 'right' }}>
+              <button onClick={() => setKpisModal(false)} style={{ padding: '9px 24px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>Cerrar</button>
             </div>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   MapPin, Clock, Phone, Navigation, LogOut,
   ChevronRight, AlertCircle, Play, Check, Camera,
@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useAuth } from './context/AuthContext';
-import { sendWhatsApp } from './lib/whatsapp';
+import { sendWhatsApp, updateOperatorLocation } from './lib/whatsapp';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -35,6 +35,10 @@ const OperatorView = () => {
   const [incidentNote, setIncidentNote]     = useState('');
   const [sendingIncident, setSendingIncident] = useState(false);
 
+  // ── GPS Tracking ───────────────────────────────────────────────
+  const gpsWatcherRef = useRef(null);
+  const [trackingBookingId, setTrackingBookingId] = useState(null);
+
   useEffect(() => {
     if (user) {
       fetchOperatorBookings();
@@ -48,6 +52,48 @@ const OperatorView = () => {
       return () => { supabase.removeChannel(channel); };
     }
   }, [user]);
+
+  // ── GPS: iniciar tracking cuando hay servicio en_camino ────────
+  useEffect(() => {
+    const activeBooking = bookings.find(b => b.status === 'en_camino' && b.operator_id === user?.id);
+
+    if (activeBooking && trackingBookingId !== activeBooking.id) {
+      setTrackingBookingId(activeBooking.id);
+
+      if (!navigator.geolocation) return;
+
+      // Limpiar watcher anterior si existe
+      if (gpsWatcherRef.current !== null) {
+        navigator.geolocation.clearWatch(gpsWatcherRef.current);
+      }
+
+      gpsWatcherRef.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          updateOperatorLocation(
+            activeBooking.id,
+            user.id,
+            pos.coords.latitude,
+            pos.coords.longitude
+          );
+        },
+        (err) => console.warn('GPS error:', err.message),
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+      );
+    }
+
+    // Detener tracking si ya no hay servicio en_camino
+    if (!activeBooking && gpsWatcherRef.current !== null) {
+      navigator.geolocation.clearWatch(gpsWatcherRef.current);
+      gpsWatcherRef.current = null;
+      setTrackingBookingId(null);
+    }
+
+    return () => {
+      if (gpsWatcherRef.current !== null) {
+        navigator.geolocation.clearWatch(gpsWatcherRef.current);
+      }
+    };
+  }, [bookings, user]);
 
   const fetchOperatorBookings = async () => {
     try {
