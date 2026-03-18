@@ -143,17 +143,31 @@ const OperatorView = () => {
     const booking = bookings.find(b => b.id === bookingId);
     if (!booking) return;
 
-    const items = await loadChecklist(booking);
-    if (!items) {
-      // Sin checklist, finalizar directo
-      updateStatus(bookingId, 'finalizado', 'done');
-      return;
-    }
-    setChecklist(items);
+    // Primero abrir modal de foto "Después"
+    setPhotoBooking(booking);
+    setPhotoType('after');
+    setPhotoModal(true);
+
+    // Guardar bookingId pendiente para continuar con checklist al cerrar fotos
     setPendingFinalize(bookingId);
-    setChecklistModal(true);
   };
 
+  const closePhotoModal = async () => {
+    setPhotoModal(false);
+    // Si hay una finalización pendiente, continuar con checklist
+    if (pendingFinalize) {
+      const booking = bookings.find(b => b.id === pendingFinalize);
+      if (!booking) { setPendingFinalize(null); return; }
+      const items = await loadChecklist(booking);
+      if (!items) {
+        updateStatus(pendingFinalize, 'finalizado', 'done');
+        setPendingFinalize(null);
+        return;
+      }
+      setChecklist(items);
+      setChecklistModal(true);
+    }
+  };
   const toggleCheckItem = (id) => {
     setChecklist(prev => prev.map(item =>
       item.id === id ? { ...item, checked: !item.checked } : item
@@ -394,7 +408,7 @@ const OperatorView = () => {
                       </button>
                     )}
                     {booking.status === 'en_camino' && (
-                      <button onClick={e => { e.stopPropagation(); updateStatus(booking.id, 'en_proceso', 'washing'); }}
+                      <button onClick={e => { e.stopPropagation(); setPhotoBooking(booking); setPhotoType('before'); setPhotoModal(true); updateStatus(booking.id, 'en_proceso', 'washing'); }}
                         disabled={updatingId === booking.id}
                         style={{ flex: 1, background: '#f97316', color: '#fff', border: 'none', borderRadius: 10, padding: '11px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                         <Play size={14} /> Empezar Lavado
@@ -515,7 +529,7 @@ const OperatorView = () => {
                 </button>
               )}
               {selectedBooking.status === 'en_camino' && (
-                <button onClick={() => updateStatus(selectedBooking.id, 'en_proceso', 'washing')} disabled={updatingId === selectedBooking.id}
+                <button onClick={() => { setPhotoBooking(selectedBooking); setPhotoType('before'); setPhotoModal(true); updateStatus(selectedBooking.id, 'en_proceso', 'washing'); }} disabled={updatingId === selectedBooking.id}
                   style={{ width: '100%', background: '#f97316', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 8px 32px rgba(249,115,22,0.4)' }}>
                   <Play size={18} /> LLEGUÉ / EMPEZAR LAVADO
                 </button>
@@ -584,7 +598,7 @@ const OperatorView = () => {
           <div style={{ background: '#fff', borderRadius: 20, boxShadow: '0 8px 40px rgba(0,0,0,0.2)', maxWidth: 400, width: '100%', overflow: 'hidden' }}>
             <div style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>📸 Evidencia Fotográfica</h3>
-              <button onClick={() => setPhotoModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e0e7ff', fontSize: 22 }}>×</button>
+              <button onClick={closePhotoModal} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e0e7ff', fontSize: 22 }}>×</button>
             </div>
             <div style={{ padding: 20, display: 'grid', gap: 14 }}>
               {[
