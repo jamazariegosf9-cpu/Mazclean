@@ -38,6 +38,7 @@ const OperatorView = () => {
   // ── GPS Tracking ───────────────────────────────────────────────
   const gpsWatcherRef = useRef(null);
   const [trackingBookingId, setTrackingBookingId] = useState(null);
+  const [gpsError, setGpsError] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -69,6 +70,7 @@ const OperatorView = () => {
 
       gpsWatcherRef.current = navigator.geolocation.watchPosition(
         (pos) => {
+          setGpsError('');
           updateOperatorLocation(
             activeBooking.id,
             user.id,
@@ -76,7 +78,14 @@ const OperatorView = () => {
             pos.coords.longitude
           );
         },
-        (err) => console.warn('GPS error:', err.message),
+        (err) => {
+          console.warn('GPS error:', err.message);
+          if (err.code === 1) {
+            setGpsError('⚠️ Ubicación bloqueada. Ve a Configuración > Permisos del sitio > Ubicación y permite el acceso para que el cliente pueda rastrearte.');
+          } else {
+            setGpsError('⚠️ No se pudo obtener tu ubicación. Verifica que el GPS esté activado.');
+          }
+        },
         { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
       );
     }
@@ -312,6 +321,22 @@ const OperatorView = () => {
 
       {/* ── Contenido ── */}
       <div style={{ padding: '20px 16px', maxWidth: 600, margin: '0 auto' }}>
+
+        {/* Banner de error GPS */}
+        {gpsError && (
+          <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <span style={{ fontSize: 20, flexShrink: 0 }}>📍</span>
+            <div>
+              <div style={{ fontWeight: 700, color: '#991b1b', fontSize: 13, marginBottom: 4 }}>Permiso de ubicación requerido</div>
+              <div style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.5 }}>{gpsError}</div>
+              <button
+                onClick={() => window.location.reload()}
+                style={{ marginTop: 8, padding: '6px 14px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                Reintentar
+              </button>
+            </div>
+          </div>
+        )}
         {loading ? (
           <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: 48, textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
