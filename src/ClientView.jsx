@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
+import RatingSlider from './RatingSlider'
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyA0k4Rg_XowxjDGUsLD3BldhpTINFMihjw'
 
@@ -41,7 +42,6 @@ export default function ClientView() {
   const [ratingModal, setRatingModal]       = useState(false)
   const [ratingBooking, setRatingBooking]   = useState(null)
   const [ratingValue, setRatingValue]       = useState(0)
-  const [ratingHover, setRatingHover]       = useState(0)
   const [ratingReview, setRatingReview]     = useState('')
   const [savingRating, setSavingRating]     = useState(false)
 
@@ -159,24 +159,12 @@ export default function ClientView() {
                 <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>📅 {ratingBooking.scheduled_date} · {ratingBooking.scheduled_time}</div>
               </div>
 
-              <div style={{ textAlign: 'center', marginBottom: 20 }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 12 }}>¿Cómo calificarías el servicio?</p>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
-                  {[1,2,3,4,5].map(star => (
-                    <button key={star}
-                      onClick={() => setRatingValue(star)}
-                      onMouseEnter={() => setRatingHover(star)}
-                      onMouseLeave={() => setRatingHover(0)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 28, transition: 'transform 0.1s', transform: (ratingHover || ratingValue) >= star ? 'scale(1.2)' : 'scale(1)' }}>
-                      {(ratingHover || ratingValue) >= star ? '⭐' : '☆'}
-                    </button>
-                  ))}
-                </div>
-                {ratingValue > 0 && (
-                  <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: '#f59e0b' }}>
-                    {['','😞 Muy malo','😕 Malo','😐 Regular','😊 Bueno','🤩 Excelente'][ratingValue]}
-                  </div>
-                )}
+              <div style={{ marginBottom: 20 }}>
+                <p style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 12, textAlign: 'center' }}>¿Cómo calificarías el servicio?</p>
+                <RatingSlider
+                  initialValue={ratingValue}
+                  onRatingChange={(val) => setRatingValue(val)}
+                />
               </div>
 
               <div>
