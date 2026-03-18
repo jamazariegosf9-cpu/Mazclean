@@ -55,7 +55,7 @@ const OperatorView = () => {
 
   // ── GPS: iniciar tracking cuando hay servicio en_camino ────────
   useEffect(() => {
-    const activeBooking = bookings.find(b => b.status === 'en_camino' && b.operator_id === user?.id);
+    const activeBooking = bookings.find(b => b.status === 'en_camino' && (b.operator_id === user?.id || profile?.role === 'admin'));
 
     if (activeBooking && trackingBookingId !== activeBooking.id) {
       setTrackingBookingId(activeBooking.id);
