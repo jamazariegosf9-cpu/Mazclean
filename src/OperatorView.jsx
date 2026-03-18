@@ -191,11 +191,22 @@ const OperatorView = () => {
     if (!file) return;
     setUploadingPhoto(true);
     try {
-      const ext      = file.name.split('.').pop();
-      const path     = `${bookingId}/${type}.${ext}`;
-      const { error: uploadError } = await supabase.storage
+      // Obtener extensión robusta para fotos de cámara móvil
+      const mimeToExt = {
+        'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png',
+        'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif',
+      };
+      const ext  = mimeToExt[file.type] || (file.name?.split('.').pop()) || 'jpg';
+      const path = `${bookingId}/${type}.${ext}`;
+      const uploadPromise = supabase.storage
         .from('service-photos')
-        .upload(path, file, { upsert: true });
+        .upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' });
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Tiempo de espera agotado. Verifica tu conexión.')), 30000)
+      );
+
+      const { error: uploadError } = await Promise.race([uploadPromise, timeoutPromise]);
       if (uploadError) throw uploadError;
 
       const column = type === 'before' ? 'photo_before' : 'photo_after';
