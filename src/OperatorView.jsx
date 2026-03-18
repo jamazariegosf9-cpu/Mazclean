@@ -26,7 +26,7 @@ const OperatorView = () => {
   // ── Fotos ──────────────────────────────────────────────────────
   const [photoModal, setPhotoModal]         = useState(false);
   const [photoBooking, setPhotoBooking]     = useState(null);
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(null);
   const [photoType, setPhotoType]           = useState(null);
 
   // ── Incidencia ─────────────────────────────────────────────────
@@ -189,24 +189,18 @@ const OperatorView = () => {
   // ── Upload de fotos ────────────────────────────────────────────
   const handlePhotoUpload = async (file, bookingId, type) => {
     if (!file) return;
-    setUploadingPhoto(true);
+    setUploadingPhoto(type);
     try {
-      // Obtener extensión robusta para fotos de cámara móvil
       const mimeToExt = {
         'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png',
         'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif',
       };
-      const ext  = mimeToExt[file.type] || (file.name?.split('.').pop()) || 'jpg';
+      const ext  = mimeToExt[file.type] || file.name?.split('.').pop() || 'jpg';
       const path = `${bookingId}/${type}.${ext}`;
-      const uploadPromise = supabase.storage
+
+      const { error: uploadError } = await supabase.storage
         .from('service-photos')
         .upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' });
-
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Tiempo de espera agotado. Verifica tu conexión.')), 30000)
-      );
-
-      const { error: uploadError } = await Promise.race([uploadPromise, timeoutPromise]);
       if (uploadError) throw uploadError;
 
       const column = type === 'before' ? 'photo_before' : 'photo_after';
@@ -226,7 +220,7 @@ const OperatorView = () => {
     } catch (err) {
       alert(`Error al subir foto: ${err.message}`);
     } finally {
-      setUploadingPhoto(false);
+      setUploadingPhoto(null);
     }
   };
 
@@ -433,7 +427,7 @@ const OperatorView = () => {
                     )}
                     {booking.status === 'en_proceso' && (
                       <>
-                        <button onClick={e => { e.stopPropagation(); setPhotoBooking(booking); setPhotoModal(true); }}
+                        <button onClick={e => { e.stopPropagation(); setPhotoBooking(booking); setPhotoType(null); setPhotoModal(true); }}
                           style={{ flex: 1, background: '#6366f1', color: '#fff', border: 'none', borderRadius: 10, padding: '11px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                           <Camera size={14} /> Fotos
                         </button>
@@ -504,7 +498,7 @@ const OperatorView = () => {
                         </div>
                       )}
                       <label style={{ display: 'block', padding: '8px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                        {uploadingPhoto ? '⏳' : label}
+                        {uploadingPhoto === type ? '⏳' : label}
                         <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
                           onChange={e => handlePhotoUpload(e.target.files[0], selectedBooking.id, type)} />
                       </label>
@@ -637,7 +631,7 @@ const OperatorView = () => {
                     </div>
                   ) : null}
                   <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 0', borderRadius: 10, border: '1.5px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                    <Upload size={14} /> {uploadingPhoto ? 'Subiendo...' : getPhotoUrl(photoBooking[field]) ? 'Cambiar foto' : 'Subir foto'}
+                    <Upload size={14} /> {uploadingPhoto === type ? 'Subiendo...' : getPhotoUrl(photoBooking[field]) ? 'Cambiar foto' : 'Subir foto'}
                     <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
                       onChange={e => handlePhotoUpload(e.target.files[0], photoBooking.id, type)} />
                   </label>
