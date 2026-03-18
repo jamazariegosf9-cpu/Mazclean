@@ -231,15 +231,13 @@ const OperatorView = () => {
 
   // ── updateStatus ───────────────────────────────────────────────
   const updateStatus = async (bookingId, newStatus, eventName) => {
-    setUpdatingId(bookingId);
-
-    // Solicitar GPS directamente desde la acción del usuario al iniciar viaje
+    // Solicitar GPS como primera acción síncrona antes de cualquier await
     if (newStatus === 'en_camino' && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         () => { setGpsError(''); },
         (err) => {
           if (err.code === 1) {
-            setGpsError('⚠️ Ubicación bloqueada. Ve a Configuración > Permisos del sitio > Ubicación y permite el acceso para que el cliente pueda rastrearte.');
+            setGpsError('⚠️ Ubicación bloqueada. Ve a Configuración > Permisos del sitio > Ubicación y permite el acceso.');
           } else {
             setGpsError('⚠️ No se pudo obtener tu ubicación. Verifica que el GPS esté activado.');
           }
@@ -247,6 +245,7 @@ const OperatorView = () => {
         { enableHighAccuracy: true, timeout: 10000 }
       );
     }
+    setUpdatingId(bookingId);
     try {
       const { error } = await supabase
         .from('bookings')
