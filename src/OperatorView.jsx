@@ -215,7 +215,7 @@ const OperatorView = () => {
     if (!incidentNote.trim()) { alert('Describe el problema antes de enviar.'); return; }
     setSendingIncident(true);
     try {
-      const { error } = await supabase.from('incidents').insert({ booking_id: incidentBooking.id, operator_id: user.id, description: incidentNote, status: 'open', created_at: new Date().toISOString() });
+      const { error } = await supabase.from('incidents').insert({ booking_id: incidentBooking.id, operator_id: user.id, description: incidentNote, status: 'abierto', created_at: new Date().toISOString() });
       if (error) throw error;
       alert('⚠️ Incidencia reportada al administrador.');
       setIncidentModal(false); setIncidentNote(''); setIncidentBooking(null);

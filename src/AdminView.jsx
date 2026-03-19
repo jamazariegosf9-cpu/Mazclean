@@ -135,13 +135,13 @@ const AdminView = () => {
     const { data } = await supabase
       .from('incidents')
       .select('*, operator:operator_id(full_name)')
-      .eq('status', 'open')
+      .eq('status', 'abierto')
       .order('created_at', { ascending: false });
     setIncidents(data || []);
   };
 
   const resolveIncident = async (incidentId) => {
-    await supabase.from('incidents').update({ status: 'resolved', resolved_at: new Date().toISOString() }).eq('id', incidentId);
+    await supabase.from('incidents').update({ status: 'resuelto', resolved_at: new Date().toISOString() }).eq('id', incidentId);
     fetchIncidents();
   };
 
