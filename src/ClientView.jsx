@@ -111,6 +111,7 @@ export default function ClientView() {
   const activeList  = bookings.filter(b => ['pendiente','confirmado','en_camino','en_proceso'].includes(b.status))
   const historyList = bookings.filter(b => ['finalizado','cancelado'].includes(b.status))
 
+  if (!user) return null
   if (loading) return <div style={styles.loading}>Cargando tus reservaciones...</div>
 
   return (
