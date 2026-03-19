@@ -1,10 +1,18 @@
 import ClientView from './ClientView'
 import OperatorView from './OperatorView'
 import AdminView from './AdminView'
+import TrackingPublic from './TrackingPublic'
 import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthModal from './components/auth/AuthModal'
 import BookingView from './BookingView'
+
+// ── Detectar ruta /tracking/:id ────────────────────────────────
+function getTrackingId() {
+  const path = window.location.pathname
+  const match = path.match(/^\/tracking\/([a-zA-Z0-9-]+)$/)
+  return match ? match[1] : null
+}
 
 function Navbar({ view, setView, onShowAuth }) {
   const { user, profile, signOut } = useAuth()
@@ -111,6 +119,9 @@ function AppInner() {
   const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
 
+  // Detectar ruta pública /tracking/:id
+  const trackingId = getTrackingId()
+
   useEffect(() => {
     const style = document.createElement('style')
     style.textContent = `* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #050A14; color: #F0F6FF; font-family: sans-serif; }`
@@ -124,12 +135,20 @@ function AppInner() {
     }
   }, [loading, user])
 
-  // Mientras AuthContext verifica la sesión y carga el perfil, no renderizar nada
+  // Si es una ruta de tracking público, mostrar sin navbar ni auth
+  if (trackingId) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f3f4f6' }}>
+        <TrackingPublic bookingId={trackingId} />
+      </div>
+    )
+  }
+
   if (loading && !user) {
-  return (
-    <div style={{ minHeight: '100vh', background: '#050A14' }} />
-  )
-}
+    return (
+      <div style={{ minHeight: '100vh', background: '#050A14' }} />
+    )
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>

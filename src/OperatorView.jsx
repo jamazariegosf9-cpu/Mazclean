@@ -116,7 +116,12 @@ const OperatorView = () => {
       if (error) throw error;
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: newStatus } : b));
       const booking = bookings.find(b => b.id === bookingId);
-      if (booking?.customer?.phone) sendWhatsApp(eventName, booking.customer.phone, { booking_ref: booking.booking_ref, service_name: booking.service_name });
+      if (booking?.customer?.phone) sendWhatsApp(eventName, booking.customer.phone, {
+        booking_ref:  booking.booking_ref,
+        service_name: booking.service_name,
+        booking_id:   bookingId,
+        operator_name: booking.operator?.full_name || 'tu operador',
+      });
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, status: newStatus }));
     } catch (err) {
       alert(`Error al actualizar estado: ${err.message}`);
