@@ -209,19 +209,22 @@ export default function BookingView() {
       setLoading(false)
       setSuccess(true)
 
-      try {
-        const { data: profileData } = await supabase
-          .from('profiles').select('phone').eq('id', user.id).single()
-        if (profileData?.phone) {
-          sendWhatsApp('booking_created', profileData.phone, {
-            booking_ref:    bookingRef,
-            service_name:   service.name,
-            scheduled_date: date,
-            scheduled_time: time,
-            total_price:    price,
+      // WhatsApp en background — no bloquea el render de confirmación
+      setTimeout(() => {
+        supabase.from('profiles').select('phone').eq('id', user.id).single()
+          .then(({ data: profileData }) => {
+            if (profileData?.phone) {
+              sendWhatsApp('booking_created', profileData.phone, {
+                booking_ref:    bookingRef,
+                service_name:   service.name,
+                scheduled_date: date,
+                scheduled_time: time,
+                total_price:    price,
+              })
+            }
           })
-        }
-      } catch (_) {}
+          .catch(() => {})
+      }, 0)
     } catch (err) {
       console.error('Error al guardar reservación:', err)
       setError('Hubo un error al guardar. Intenta de nuevo.')
