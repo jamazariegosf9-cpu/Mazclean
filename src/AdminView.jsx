@@ -397,7 +397,13 @@ const AdminView = () => {
     const active = bookings.find(b => b.operator_id === operatorId && ['en_camino','en_proceso'].includes(b.status));
     if (active) return { label: active.status === 'en_camino' ? 'En camino' : 'Lavando', color: '#f97316', dot: '#f97316' };
     const confirmed = bookings.find(b => b.operator_id === operatorId && b.status === 'confirmado');
-    if (confirmed) return { label: 'Asignado', color: '#3b82f6', dot: '#3b82f6' };
+    if (confirmed) {
+      const scheduledAt = new Date(`${confirmed.scheduled_date}T${confirmed.scheduled_time}`);
+      const now = new Date();
+      const diffHours = (scheduledAt - now) / (1000 * 60 * 60);
+      if (diffHours <= 2) return { label: 'Ocupado próximo', color: '#f59e0b', dot: '#f59e0b' };
+      return { label: 'Asignado', color: '#3b82f6', dot: '#3b82f6' };
+    }
     return { label: 'Libre', color: '#10b981', dot: '#10b981' };
   };
 
