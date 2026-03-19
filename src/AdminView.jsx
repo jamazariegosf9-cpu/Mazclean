@@ -134,7 +134,7 @@ const AdminView = () => {
   const fetchIncidents = async () => {
     const { data } = await supabase
       .from('incidents')
-      .select('*, operator:operator_id(full_name)')
+      .select('*, operator:operator_id(full_name, id)')
       .eq('status', 'abierto')
       .order('created_at', { ascending: false });
     setIncidents(data || []);
