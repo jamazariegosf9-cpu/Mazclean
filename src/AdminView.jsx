@@ -63,8 +63,8 @@ const AdminView = () => {
   const [loadingKpis, setLoadingKpis] = useState(false);
 
   // ── Incidencias ─────────────────────────────────────────────────
-  const [incidents, setIncidents]     = useState([]);
-  const [incidentsTab, setIncidentsTab] = useState(false);
+  const [incidents, setIncidents]           = useState([]);
+  const [incidentsHistory, setIncidentsHistory] = useState([]);
 
   // ── Catálogo ─────────────────────────────────────────────────────
   const [services, setServices]           = useState([]);
@@ -138,6 +138,14 @@ const AdminView = () => {
       .eq('status', 'abierto')
       .order('created_at', { ascending: false });
     setIncidents(data || []);
+
+    const { data: history } = await supabase
+      .from('incidents')
+      .select('*, operator:operator_id(full_name, id)')
+      .eq('status', 'resuelto')
+      .order('resolved_at', { ascending: false })
+      .limit(20);
+    setIncidentsHistory(history || []);
   };
 
   const resolveIncident = async (incidentId) => {
@@ -705,6 +713,32 @@ const AdminView = () => {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Historial de Incidencias Resueltas */}
+            {incidentsHistory.length > 0 && (
+              <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '20px 24px' }}>
+                <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1f2937', margin: '0 0 14px' }}>📋 Historial de Incidencias ({incidentsHistory.length})</h2>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {incidentsHistory.map(inc => (
+                    <div key={inc.id} style={{ background: '#f9fafb', borderRadius: 10, padding: '12px 16px', border: '1px solid #e5e7eb' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981', background: '#f0fdf4', padding: '2px 8px', borderRadius: 20 }}>✅ Resuelta</span>
+                            <span style={{ fontSize: 11, color: '#9ca3af' }}>👷 {inc.operator?.full_name || 'Operador'}</span>
+                          </div>
+                          <div style={{ fontSize: 13, color: '#374151' }}>{inc.description}</div>
+                          <div style={{ display: 'flex', gap: 16, marginTop: 6 }}>
+                            <span style={{ fontSize: 11, color: '#9ca3af' }}>📅 Reportada: {new Date(inc.created_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                            {inc.resolved_at && <span style={{ fontSize: 11, color: '#9ca3af' }}>✅ Resuelta: {new Date(inc.resolved_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
