@@ -231,7 +231,7 @@ const AdminView = () => {
     if (!['confirmado','en_camino','en_proceso'].includes(booking.status)) return false;
     const scheduled = new Date(`${booking.scheduled_date}T${booking.scheduled_time}`);
     const now = new Date();
-    return now > scheduled && (now - scheduled) > 30 * 60 * 1000; // más de 30 min de retraso
+    return now > scheduled && (now - scheduled) > 10 * 60 * 1000; // más de 10 min de retraso
   };
 
   // ── Catálogo ─────────────────────────────────────────────────────
@@ -533,11 +533,20 @@ const AdminView = () => {
                   const urgent  = isUrgent(booking);
                   const delayed = isDelayed(booking);
                   return (
-                    <div key={booking.id} style={{ background: delayed ? '#fef2f2' : '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 20px', border: delayed ? '2px solid #ef4444' : urgent ? '2px solid #f97316' : '2px solid transparent' }}>
+                    <div key={booking.id} style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 20px', border: urgent ? '2px solid #f97316' : '2px solid transparent' }}>
+                      {/* Banner de retraso dentro de la card */}
+                      {delayed && (
+                        <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '8px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 16 }}>⚠️</span>
+                          <div>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: '#854d0e' }}>Servicio con más de 10 min de retraso</span>
+                            <span style={{ fontSize: 11, color: '#92400e', marginLeft: 8 }}>— Programado: {booking.scheduled_time}</span>
+                          </div>
+                        </div>
+                      )}
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16, alignItems: 'center' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                            {delayed && <span title="⚠️ Servicio retrasado más de 30 min">🔴</span>}
                             {urgent && !delayed && <span title="¡Fuera de horario!">⚠️</span>}
                             <span style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', background: '#eff6ff', padding: '2px 8px', borderRadius: 20, letterSpacing: 0.5 }}>{booking.booking_ref}</span>
                           </div>
@@ -557,7 +566,6 @@ const AdminView = () => {
                           <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>
                             {booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('_',' ')}
                           </span>
-                          {delayed && <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 700, marginTop: 4 }}>⚠️ RETRASADO</div>}
                           {getPhotoUrl(booking) && (
                             <button onClick={() => setPhotoModal(getPhotoUrl(booking))} style={{ display: 'block', marginTop: 8, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>
                               <img src={getPhotoUrl(booking)} alt="foto" style={{ height: 40, width: 40, borderRadius: 8, objectFit: 'cover', border: '1.5px solid #e5e7eb' }} />
