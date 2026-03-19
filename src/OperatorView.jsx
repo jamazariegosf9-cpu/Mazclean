@@ -152,13 +152,17 @@ const OperatorView = () => {
     setPhotoSaved(false);
     setPhotoBooking(null);
     if (currentPending) {
-      setPendingFinalize(null);
       const booking = bookings.find(b => b.id === currentPending);
-      if (!booking) return;
+      if (!booking) { setPendingFinalize(null); return; }
       const items = await loadChecklist(booking);
-      if (!items) { await updateStatus(currentPending, 'finalizado', 'done'); return; }
+      if (!items) {
+        setPendingFinalize(null);
+        await updateStatus(currentPending, 'finalizado', 'done');
+        return;
+      }
       setChecklist(items);
       setChecklistModal(true);
+      // pendingFinalize se mantiene para que confirmFinalize lo use
     }
   };
 
