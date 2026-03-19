@@ -226,12 +226,24 @@ const AdminView = () => {
     setCommissionModal(false);
   };
 
-  // ── Alerta de retraso ───────────────────────────────────────────
+  // ── Hora del servidor ──────────────────────────────────────────
+  const [serverNow, setServerNow] = useState(null);
+
+  useEffect(() => {
+    const fetchServerTime = async () => {
+      const { data } = await supabase.rpc('get_server_time');
+      if (data) setServerNow(new Date(data));
+    };
+    fetchServerTime();
+    const interval = setInterval(fetchServerTime, 60000);
+    return () => clearInterval(interval);
+  }, []);
   const isDelayed = (booking) => {
     if (!['confirmado','en_camino','en_proceso'].includes(booking.status)) return false;
-    const scheduled = new Date(`${booking.scheduled_date}T${booking.scheduled_time}`);
-    const now = new Date();
-    return now > scheduled && (now - scheduled) > 10 * 60 * 1000; // más de 10 min de retraso
+    const now = serverNow || new Date();
+    // scheduled_date y scheduled_time están en hora CDMX — convertir a UTC para comparar con serverNow
+    const scheduled = new Date(`${booking.scheduled_date}T${booking.scheduled_time}+00:00`);
+    return now > scheduled && (now - scheduled) > 10 * 60 * 1000;
   };
 
   // ── Catálogo ─────────────────────────────────────────────────────
