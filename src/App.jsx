@@ -42,7 +42,6 @@ function Navbar({ view, setView, onShowAuth }) {
       background: 'rgba(5,10,20,0.95)',
       borderBottom: '1px solid rgba(255,255,255,0.06)',
     }}>
-      {/* Fila principal */}
       <div style={{ padding: '0 24px', display: 'flex', alignItems: 'center', height: 64, gap: 12 }}>
 
         {/* Logo */}
@@ -51,7 +50,7 @@ function Navbar({ view, setView, onShowAuth }) {
           <span style={{ fontWeight: 800, fontSize: 18 }}>Maz Clean</span>
         </button>
 
-        {/* Links — scroll horizontal si no caben */}
+        {/* Links */}
         <div style={{ display: 'flex', gap: 2, flex: 1, overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
           {navLinks.map(([id, label]) => (
             <button
@@ -101,7 +100,9 @@ function Navbar({ view, setView, onShowAuth }) {
   )
 }
 
-function HomeView({ setView }) {
+function HomeView({ setView, onShowAuth }) {
+  const { user } = useAuth()
+
   return (
     <div style={{ minHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 40 }}>
       <h1 style={{ fontWeight: 800, fontSize: 72, lineHeight: 1.05, background: 'linear-gradient(135deg,#F0F6FF 30%,#00C8FF 70%,#00E5C8 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: 24 }}>
@@ -110,14 +111,68 @@ function HomeView({ setView }) {
       <p style={{ color: '#8CA0BF', fontSize: 18, maxWidth: 500, margin: '0 auto 48px', lineHeight: 1.7 }}>
         Reserva un lavado profesional sin salir de casa.
       </p>
-      <button
-        onClick={() => setView('booking')}
-        style={{ padding: '16px 40px', fontSize: 16, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700 }}
-      >
-        Reservar Ahora
-      </button>
+      {user ? (
+        <button
+          onClick={() => setView('booking')}
+          style={{ padding: '16px 40px', fontSize: 16, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700 }}
+        >
+          Reservar Ahora
+        </button>
+      ) : (
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <button
+            onClick={() => onShowAuth('login')}
+            style={{ padding: '16px 40px', fontSize: 16, borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: 'none', color: '#F0F6FF', fontWeight: 700 }}
+          >
+            Iniciar Sesión
+          </button>
+          <button
+            onClick={() => onShowAuth('register')}
+            style={{ padding: '16px 40px', fontSize: 16, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700 }}
+          >
+            Registrarse
+          </button>
+        </div>
+      )}
     </div>
   )
+}
+
+// ── Wrapper de BookingView con protección de login ─────────────
+function BookingViewProtected({ onNavigate, onShowAuth }) {
+  const { user } = useAuth()
+
+  if (!user) {
+    return (
+      <div style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 40 }}>
+        <div style={{ background: 'rgba(0,200,255,0.08)', border: '1.5px solid rgba(0,200,255,0.25)', borderRadius: 20, padding: '40px 48px', maxWidth: 440, width: '100%' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F0F6FF', marginBottom: 10 }}>
+            Necesitas una cuenta
+          </h2>
+          <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 32, lineHeight: 1.6 }}>
+            Para reservar un servicio debes iniciar sesión o crear una cuenta. Es rápido y gratuito.
+          </p>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => onShowAuth('login')}
+              style={{ padding: '12px 32px', fontSize: 15, borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: 'none', color: '#F0F6FF', fontWeight: 600 }}
+            >
+              Iniciar Sesión
+            </button>
+            <button
+              onClick={() => onShowAuth('register')}
+              style={{ padding: '12px 32px', fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700 }}
+            >
+              Registrarse
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return <BookingView onNavigate={onNavigate} />
 }
 
 function AppInner() {
@@ -157,8 +212,8 @@ function AppInner() {
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>
       <Navbar view={view} setView={setView} onShowAuth={(tab) => setAuthModal(tab)} />
-      {view === 'home'     && <HomeView setView={setView} />}
-      {view === 'booking'  && <BookingView onNavigate={setView} />}
+      {view === 'home'     && <HomeView setView={setView} onShowAuth={(tab) => setAuthModal(tab)} />}
+      {view === 'booking'  && <BookingViewProtected onNavigate={setView} onShowAuth={(tab) => setAuthModal(tab)} />}
       {view === 'client'   && <ClientView onNavigate={setView} />}
       {view === 'operator' && <OperatorView onNavigate={setView} />}
       {view === 'admin'    && <AdminView onNavigate={setView} />}
