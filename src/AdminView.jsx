@@ -159,13 +159,11 @@ const AdminView = () => {
     setLoadingKpis(true);
     setKpisModal(true);
     try {
-      // Llamar función PostgreSQL
       const { data: kpis, error: kError } = await supabase
         .rpc('get_operator_time_kpis', { p_operator_id: op.id });
       if (kError) throw kError;
       setKpisData(kpis?.[0] || null);
 
-      // Timeline: últimos 5 servicios finalizados con sus logs
       const { data: recentBookings } = await supabase
         .from('bookings')
         .select('id, booking_ref, service_name, scheduled_date, scheduled_time, duration_min')
@@ -238,10 +236,10 @@ const AdminView = () => {
     const interval = setInterval(fetchServerTime, 60000);
     return () => clearInterval(interval);
   }, []);
+
   const isDelayed = (booking) => {
     if (!['confirmado','en_camino','en_proceso'].includes(booking.status)) return false;
     const now = serverNow || new Date();
-    // scheduled_date y scheduled_time están en hora CDMX — convertir a UTC para comparar con serverNow
     const scheduled = new Date(`${booking.scheduled_date}T${booking.scheduled_time}+00:00`);
     return now > scheduled && (now - scheduled) > 10 * 60 * 1000;
   };
@@ -413,7 +411,34 @@ const AdminView = () => {
     } catch (err) { setOperatorError(err.message); } finally { setCreatingOperator(false); }
   };
 
-  const getOperatorStatus = (operatorId) => {
+  // ── FIXED: getOperatorStatus filtra por fecha y hora del booking a asignar ──
+  const getOperatorStatus = (operatorId, forBooking = null) => {
+    // Si se pasa forBooking, verificar conflicto solo en esa fecha y horario
+    if (forBooking) {
+      const [fH, fM] = forBooking.scheduled_time.split(':').map(Number);
+      const fStart = fH * 60 + fM;
+      // Usar duración estimada de 60 min como fallback conservador
+      const fEnd = fStart + 60;
+
+      const conflict = bookings.find(b => {
+        if (b.operator_id !== operatorId) return false;
+        if (!['confirmado','en_camino','en_proceso'].includes(b.status)) return false;
+        if (b.scheduled_date !== forBooking.scheduled_date) return false;
+        if (b.id === forBooking.id) return false; // ignorar el mismo booking
+        const [bH, bM] = b.scheduled_time.split(':').map(Number);
+        const bStart = bH * 60 + bM;
+        const bEnd = bStart + 60; // fallback 60 min
+        return fStart < bEnd && fEnd > bStart;
+      });
+
+      if (conflict) {
+        const label = conflict.status === 'en_camino' ? 'En camino' : conflict.status === 'en_proceso' ? 'Lavando' : 'Ocupado este horario';
+        return { label, color: '#ef4444', dot: '#ef4444' };
+      }
+      return { label: 'Disponible', color: '#10b981', dot: '#10b981' };
+    }
+
+    // Sin forBooking: comportamiento original para la tarjeta de estado general
     const active = bookings.find(b => b.operator_id === operatorId && ['en_camino','en_proceso'].includes(b.status));
     if (active) return { label: active.status === 'en_camino' ? 'En camino' : 'Lavando', color: '#f97316', dot: '#f97316' };
     const confirmed = bookings.find(b => b.operator_id === operatorId && b.status === 'confirmado');
@@ -546,7 +571,6 @@ const AdminView = () => {
                   const delayed = isDelayed(booking);
                   return (
                     <div key={booking.id} style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 20px', border: urgent ? '2px solid #f97316' : '2px solid transparent' }}>
-                      {/* Banner de retraso dentro de la card */}
                       {delayed && (
                         <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '8px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 16 }}>⚠️</span>
@@ -611,7 +635,6 @@ const AdminView = () => {
         {activeTab === 'operators' && (
           <div style={{ marginTop: 20, display: 'grid', gap: 20 }}>
 
-            {/* Incidencias abiertas */}
             {incidents.length > 0 && (
               <div style={{ background: '#fef2f2', borderRadius: 16, border: '2px solid #fecaca', padding: '20px 24px' }}>
                 <h2 style={{ fontSize: 16, fontWeight: 700, color: '#991b1b', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -635,7 +658,6 @@ const AdminView = () => {
               </div>
             )}
 
-            {/* Status en tiempo real */}
             <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '20px 24px' }}>
               <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1f2937', margin: '0 0 16px' }}>🟢 Estado en Tiempo Real</h2>
               {operators.length === 0 ? (
@@ -662,7 +684,6 @@ const AdminView = () => {
                             {status.label}
                           </span>
                         </div>
-                        {/* Mini reporte de comisión */}
                         <div style={{ background: '#fff', borderRadius: 8, padding: '8px 12px', border: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 }}>Comisión ({op.commission_pct || 15}%)</div>
@@ -694,7 +715,6 @@ const AdminView = () => {
               )}
             </div>
 
-            {/* Historial */}
             {operatorHistory && (
               <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '20px 24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -736,7 +756,6 @@ const AdminView = () => {
               </div>
             )}
 
-            {/* Historial de Incidencias Resueltas */}
             {incidentsHistory.length > 0 && (
               <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '20px 24px' }}>
                 <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1f2937', margin: '0 0 14px' }}>📋 Historial de Incidencias ({incidentsHistory.length})</h2>
@@ -762,7 +781,6 @@ const AdminView = () => {
               </div>
             )}
 
-            {/* Alta de Operador */}
             <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '20px 24px' }}>
               <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1f2937', margin: '0 0 16px' }}>➕ Dar de Alta Operador</h2>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14 }}>
@@ -873,26 +891,31 @@ const AdminView = () => {
                 </div>
                 <div style={{ fontWeight: 700, color: '#1f2937', marginBottom: 6 }}>{selectedBooking.service_name}</div>
                 <div style={{ fontSize: 12, color: '#6b7280' }}>📍 {selectedBooking.address_line || 'Sin dirección'}</div>
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>📅 {selectedBooking.scheduled_date} · 🕐 {selectedBooking.scheduled_time}</div>
               </div>
               <div style={{ maxHeight: 260, overflowY: 'auto', display: 'grid', gap: 8 }}>
                 {operators.length === 0 && <p style={{ color: '#9ca3af', textAlign: 'center', padding: 16, fontSize: 14, fontStyle: 'italic' }}>No hay operadores disponibles.</p>}
-                {operators.map(op => (
-                  <button key={op.id} onClick={() => assignOperator(selectedBooking.id, op.id)} disabled={assigning === selectedBooking.id}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 10, border: selectedBooking.operator_id === op.id ? '2px solid #3b82f6' : '1.5px solid #e5e7eb', background: selectedBooking.operator_id === op.id ? '#eff6ff' : '#fff', cursor: 'pointer', transition: 'all 0.2s' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ height: 38, width: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 16 }}>
-                        {op.full_name?.charAt(0)}
+                {operators.map(op => {
+                  const opStatus = getOperatorStatus(op.id, selectedBooking);
+                  const isAvailable = opStatus.label === 'Disponible';
+                  return (
+                    <button key={op.id} onClick={() => assignOperator(selectedBooking.id, op.id)} disabled={assigning === selectedBooking.id}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 10, border: selectedBooking.operator_id === op.id ? '2px solid #3b82f6' : isAvailable ? '1.5px solid #bbf7d0' : '1.5px solid #fecaca', background: selectedBooking.operator_id === op.id ? '#eff6ff' : isAvailable ? '#f0fdf4' : '#fef2f2', cursor: 'pointer', transition: 'all 0.2s' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ height: 38, width: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 16 }}>
+                          {op.full_name?.charAt(0)}
+                        </div>
+                        <div style={{ textAlign: 'left' }}>
+                          <div style={{ fontWeight: 700, fontSize: 13, color: '#1f2937' }}>{op.full_name}</div>
+                          <div style={{ fontSize: 11, color: opStatus.color, fontWeight: 600 }}>{opStatus.label}</div>
+                        </div>
                       </div>
-                      <div style={{ textAlign: 'left' }}>
-                        <div style={{ fontWeight: 700, fontSize: 13, color: '#1f2937' }}>{op.full_name}</div>
-                        <div style={{ fontSize: 11, color: getOperatorStatus(op.id).color, fontWeight: 600 }}>{getOperatorStatus(op.id).label}</div>
-                      </div>
-                    </div>
-                    <span style={{ color: selectedBooking.operator_id === op.id ? '#3b82f6' : '#d1d5db', fontSize: 18 }}>
-                      {selectedBooking.operator_id === op.id ? '✓' : '›'}
-                    </span>
-                  </button>
-                ))}
+                      <span style={{ color: selectedBooking.operator_id === op.id ? '#3b82f6' : isAvailable ? '#10b981' : '#ef4444', fontSize: 18 }}>
+                        {selectedBooking.operator_id === op.id ? '✓' : isAvailable ? '›' : '✕'}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
             <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', textAlign: 'right' }}>
@@ -941,13 +964,11 @@ const AdminView = () => {
               <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>⏱ Rendimiento — {kpisOp.full_name}</h3>
               <button onClick={() => setKpisModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ede9fe', fontSize: 22 }}>×</button>
             </div>
-
             <div style={{ padding: 20, maxHeight: '75vh', overflowY: 'auto' }}>
               {loadingKpis ? (
                 <div style={{ textAlign: 'center', padding: 40, color: '#9ca3af' }}>⏳ Calculando KPIs...</div>
               ) : (
                 <>
-                  {/* KPIs principales */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 10, marginBottom: 20 }}>
                     {[
                       { label: 'Prom. traslado', value: formatSeconds(Math.round(kpisData?.avg_travel_seconds || 0)),  icon: '🚗', color: '#3b82f6' },
@@ -962,8 +983,6 @@ const AdminView = () => {
                       </div>
                     ))}
                   </div>
-
-                  {/* Nota real vs estimado */}
                   {kpisData?.avg_real_vs_estimated && (
                     <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 20, background: kpisData.avg_real_vs_estimated > 110 ? '#fef2f2' : '#f0fdf4', border: `1px solid ${kpisData.avg_real_vs_estimated > 110 ? '#fecaca' : '#bbf7d0'}` }}>
                       <span style={{ fontSize: 12, fontWeight: 600, color: kpisData.avg_real_vs_estimated > 110 ? '#dc2626' : '#166534' }}>
@@ -973,8 +992,6 @@ const AdminView = () => {
                       </span>
                     </div>
                   )}
-
-                  {/* Timeline por servicio */}
                   {kpisTimeline.length > 0 && (
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 12 }}>📅 Timeline de servicios recientes</div>
@@ -1027,14 +1044,12 @@ const AdminView = () => {
                       </div>
                     </div>
                   )}
-
                   {kpisTimeline.length === 0 && !loadingKpis && (
                     <p style={{ color: '#9ca3af', fontSize: 13, fontStyle: 'italic', textAlign: 'center' }}>Sin servicios finalizados aún.</p>
                   )}
                 </>
               )}
             </div>
-
             <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', textAlign: 'right' }}>
               <button onClick={() => setKpisModal(false)} style={{ padding: '9px 24px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>Cerrar</button>
             </div>
@@ -1072,7 +1087,7 @@ const AdminView = () => {
                     onChange={e => setCommissionPct(e.target.value)}
                     style={{ ...inputStyle, width: 100 }} />
                   <span style={{ fontSize: 13, color: '#6b7280' }}>
-                    = ${(( commissionReport?.totalRevenue || 0) * (commissionPct / 100)).toFixed(2)} MXN
+                    = ${((commissionReport?.totalRevenue || 0) * (commissionPct / 100)).toFixed(2)} MXN
                   </span>
                 </div>
               </div>
@@ -1097,7 +1112,6 @@ const AdminView = () => {
               <button onClick={() => setServiceModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#bfdbfe', fontSize: 22 }}>×</button>
             </div>
             <div style={{ padding: 24, maxHeight: '75vh', overflowY: 'auto' }}>
-
               <div style={{ display: 'grid', gap: 14, marginBottom: 20 }}>
                 <div>
                   <label style={labelStyle}>Nombre del servicio *</label>
@@ -1111,7 +1125,6 @@ const AdminView = () => {
                     style={{ ...inputStyle, height: 70, resize: 'vertical' }} />
                 </div>
               </div>
-
               <div style={{ marginBottom: 20 }}>
                 <label style={labelStyle}>Icono del servicio</label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -1128,7 +1141,6 @@ const AdminView = () => {
                     style={{ width: 40, height: 32, borderRadius: 6, border: '1.5px solid #e5e7eb', cursor: 'pointer', padding: 2 }} />
                 </div>
               </div>
-
               <div style={{ marginBottom: 20 }}>
                 <label style={labelStyle}>Precios por tipo de vehículo (MXN)</label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
@@ -1141,7 +1153,6 @@ const AdminView = () => {
                   ))}
                 </div>
               </div>
-
               <div style={{ marginBottom: 20 }}>
                 <label style={labelStyle}>Duración por tipo de vehículo (minutos)</label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
@@ -1154,15 +1165,12 @@ const AdminView = () => {
                   ))}
                 </div>
               </div>
-
               <div style={{ marginBottom: 20 }}>
                 <label style={labelStyle}>🧴 Insumos estimados (opcional)</label>
                 <textarea placeholder="Ej: 1L shampoo, 200ml cera, 2 microfibras..." value={serviceForm.supplies_notes}
                   onChange={e => setServiceForm(p => ({...p, supplies_notes: e.target.value}))}
                   style={{ ...inputStyle, height: 60, resize: 'vertical' }} />
               </div>
-
-              {/* ── Checklist del servicio ── */}
               {editingService && (
                 <div style={{ marginBottom: 20 }}>
                   <label style={labelStyle}>✅ Checklist de calidad</label>
@@ -1190,7 +1198,6 @@ const AdminView = () => {
                   </div>
                 </div>
               )}
-
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <div>
                   <label style={labelStyle}>Orden de aparición</label>
@@ -1205,11 +1212,9 @@ const AdminView = () => {
                   </button>
                 </div>
               </div>
-
               {serviceError   && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 16, color: '#dc2626', fontSize: 13 }}>⚠️ {serviceError}</div>}
               {serviceSuccess && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', marginTop: 16, color: '#166534', fontSize: 13 }}>✅ {serviceSuccess}</div>}
             </div>
-
             <div style={{ padding: '14px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
               <button onClick={() => setServiceModal(false)} style={{ padding: '10px 22px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>Cancelar</button>
               <button onClick={saveService} disabled={savingService}
