@@ -20,7 +20,19 @@ const emptyService = {
   supplies_notes: '', is_active: true, sort_order: 99
 };
 
+// ── Hook móvil ─────────────────────────────────────────────────
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return isMobile;
+}
+
 const AdminView = () => {
+  const isMobile = useIsMobile();
   const [bookings, setBookings]         = useState([]);
   const [operators, setOperators]       = useState([]);
   const [loading, setLoading]           = useState(true);
@@ -155,30 +167,19 @@ const AdminView = () => {
 
   // ── KPIs de tiempo ──────────────────────────────────────────────
   const fetchOperatorKpis = async (op) => {
-    setKpisOp(op);
-    setLoadingKpis(true);
-    setKpisModal(true);
+    setKpisOp(op); setLoadingKpis(true); setKpisModal(true);
     try {
-      const { data: kpis, error: kError } = await supabase
-        .rpc('get_operator_time_kpis', { p_operator_id: op.id });
+      const { data: kpis, error: kError } = await supabase.rpc('get_operator_time_kpis', { p_operator_id: op.id });
       if (kError) throw kError;
       setKpisData(kpis?.[0] || null);
-
       const { data: recentBookings } = await supabase
         .from('bookings')
         .select('id, booking_ref, service_name, scheduled_date, scheduled_time, duration_min')
-        .eq('operator_id', op.id)
-        .eq('status', 'finalizado')
-        .order('updated_at', { ascending: false })
-        .limit(5);
-
+        .eq('operator_id', op.id).eq('status', 'finalizado')
+        .order('updated_at', { ascending: false }).limit(5);
       if (recentBookings && recentBookings.length > 0) {
         const timelines = await Promise.all(recentBookings.map(async (b) => {
-          const { data: logs } = await supabase
-            .from('booking_status_log')
-            .select('status, created_at, duration_seconds')
-            .eq('booking_id', b.id)
-            .order('created_at', { ascending: true });
+          const { data: logs } = await supabase.from('booking_status_log').select('status, created_at, duration_seconds').eq('booking_id', b.id).order('created_at', { ascending: true });
           return { ...b, logs: logs || [] };
         }));
         setKpisTimeline(timelines);
@@ -194,8 +195,7 @@ const AdminView = () => {
 
   const formatSeconds = (secs) => {
     if (!secs) return '—';
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
+    const m = Math.floor(secs / 60); const s = secs % 60;
     return m > 0 ? `${m} min ${s > 0 ? s + 's' : ''}`.trim() : `${s}s`;
   };
 
@@ -206,8 +206,7 @@ const AdminView = () => {
 
   // ── Comisiones ──────────────────────────────────────────────────
   const openCommissionModal = (op) => {
-    setCommissionOp(op);
-    setCommissionPct(op.commission_pct || 15);
+    setCommissionOp(op); setCommissionPct(op.commission_pct || 15);
     const opBookings = bookings.filter(b => b.operator_id === op.id && b.status === 'finalizado');
     const totalRevenue = opBookings.reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
     const commission = totalRevenue * ((op.commission_pct || 15) / 100);
@@ -220,13 +219,11 @@ const AdminView = () => {
     const { error } = await supabase.from('profiles').update({ commission_pct: parseFloat(commissionPct) }).eq('id', commissionOp.id);
     if (error) { alert(error.message); setSavingCommission(false); return; }
     setOperators(prev => prev.map(o => o.id === commissionOp.id ? { ...o, commission_pct: parseFloat(commissionPct) } : o));
-    setSavingCommission(false);
-    setCommissionModal(false);
+    setSavingCommission(false); setCommissionModal(false);
   };
 
   // ── Hora del servidor ──────────────────────────────────────────
   const [serverNow, setServerNow] = useState(null);
-
   useEffect(() => {
     const fetchServerTime = async () => {
       const { data } = await supabase.rpc('get_server_time');
@@ -251,11 +248,8 @@ const AdminView = () => {
       const { data, error } = await supabase.from('services').select('*').order('sort_order', { ascending: true });
       if (error) throw error;
       setServices(data || []);
-    } catch (err) {
-      console.error('Error fetching services:', err);
-    } finally {
-      setLoadingServices(false);
-    }
+    } catch (err) { console.error('Error fetching services:', err); }
+    finally { setLoadingServices(false); }
   };
 
   const loadChecklist = async (serviceId) => {
@@ -267,9 +261,7 @@ const AdminView = () => {
   const addChecklistItem = async (serviceId) => {
     if (!newChecklistItem.trim()) return;
     setSavingChecklist(true);
-    const { data, error } = await supabase.from('service_checklist').insert({
-      service_id: serviceId, item: newChecklistItem.trim(), sort_order: checklistItems.length + 1
-    }).select().single();
+    const { data, error } = await supabase.from('service_checklist').insert({ service_id: serviceId, item: newChecklistItem.trim(), sort_order: checklistItems.length + 1 }).select().single();
     if (!error) { setChecklistItems(prev => [...prev, data]); setNewChecklistItem(''); }
     setSavingChecklist(false);
   };
@@ -324,11 +316,8 @@ const AdminView = () => {
       }
       await fetchServices();
       setTimeout(() => { setServiceModal(false); setServiceSuccess(''); }, 1200);
-    } catch (err) {
-      setServiceError(err.message);
-    } finally {
-      setSavingService(false);
-    }
+    } catch (err) { setServiceError(err.message); }
+    finally { setSavingService(false); }
   };
 
   const toggleServiceStatus = async (service) => {
@@ -377,7 +366,8 @@ const AdminView = () => {
         catch (wsErr) { console.warn('WhatsApp omitido:', wsErr.message); }
       }
       setIsModalOpen(false);
-    } catch (err) { alert('Error inesperado al asignar.'); } finally { setAssigning(null); }
+    } catch (err) { alert('Error inesperado al asignar.'); }
+    finally { setAssigning(null); }
   };
 
   const deleteBooking = async (bookingId) => {
@@ -394,7 +384,8 @@ const AdminView = () => {
       if (error) throw error;
       setBookings(prev => prev.map(b => b.id === editData.id ? { ...b, ...editData } : b));
       setEditModal(false);
-    } catch (err) { alert(`Error al guardar: ${err.message}`); } finally { setSavingEdit(false); }
+    } catch (err) { alert(`Error al guardar: ${err.message}`); }
+    finally { setSavingEdit(false); }
   };
 
   const createOperator = async () => {
@@ -408,37 +399,32 @@ const AdminView = () => {
       setOperatorSuccess(`Operador ${newOperator.full_name} creado exitosamente.`);
       setNewOperator({ full_name: '', phone: '', email: '', password: '' });
       fetchData();
-    } catch (err) { setOperatorError(err.message); } finally { setCreatingOperator(false); }
+    } catch (err) { setOperatorError(err.message); }
+    finally { setCreatingOperator(false); }
   };
 
   // ── FIXED: getOperatorStatus filtra por fecha y hora del booking a asignar ──
   const getOperatorStatus = (operatorId, forBooking = null) => {
-    // Si se pasa forBooking, verificar conflicto solo en esa fecha y horario
     if (forBooking) {
       const [fH, fM] = forBooking.scheduled_time.split(':').map(Number);
       const fStart = fH * 60 + fM;
-      // Usar duración estimada de 60 min como fallback conservador
       const fEnd = fStart + 60;
-
       const conflict = bookings.find(b => {
         if (b.operator_id !== operatorId) return false;
         if (!['confirmado','en_camino','en_proceso'].includes(b.status)) return false;
         if (b.scheduled_date !== forBooking.scheduled_date) return false;
-        if (b.id === forBooking.id) return false; // ignorar el mismo booking
+        if (b.id === forBooking.id) return false;
         const [bH, bM] = b.scheduled_time.split(':').map(Number);
         const bStart = bH * 60 + bM;
-        const bEnd = bStart + 60; // fallback 60 min
+        const bEnd = bStart + 60;
         return fStart < bEnd && fEnd > bStart;
       });
-
       if (conflict) {
         const label = conflict.status === 'en_camino' ? 'En camino' : conflict.status === 'en_proceso' ? 'Lavando' : 'Ocupado este horario';
         return { label, color: '#ef4444', dot: '#ef4444' };
       }
       return { label: 'Disponible', color: '#10b981', dot: '#10b981' };
     }
-
-    // Sin forBooking: comportamiento original para la tarjeta de estado general
     const active = bookings.find(b => b.operator_id === operatorId && ['en_camino','en_proceso'].includes(b.status));
     if (active) return { label: active.status === 'en_camino' ? 'En camino' : 'Lavando', color: '#f97316', dot: '#f97316' };
     const confirmed = bookings.find(b => b.operator_id === operatorId && b.status === 'confirmado');
@@ -478,8 +464,8 @@ const AdminView = () => {
     return booking.photo_url.startsWith('http') ? booking.photo_url : `${SUPABASE_URL}/storage/v1/object/public/service-photos/${booking.photo_url}`;
   };
 
-  const inputStyle = { padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937' };
-  const labelStyle = { fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 5, display: 'block' };
+  const inputStyle = { padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 };
+  const labelStyle = { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 5, display: 'block' };
 
   const statCards = [
     { label: 'Total',        value: stats.total,                          icon: '📋', color: '#6b7280' },
@@ -495,37 +481,37 @@ const AdminView = () => {
     <div style={{ minHeight: '100vh', background: '#f3f4f6', paddingBottom: 48 }}>
 
       {/* ── Header ── */}
-      <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '28px 24px 24px', textAlign: 'center' }}>
-        <h1 style={{ color: '#fff', fontSize: 22, fontWeight: 700, margin: '0 0 4px' }}>🛠 Dashboard de Administración</h1>
+      <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: isMobile ? '20px 16px' : '28px 24px 24px', textAlign: 'center' }}>
+        <h1 style={{ color: '#fff', fontSize: isMobile ? 18 : 22, fontWeight: 700, margin: '0 0 4px' }}>🛠 Dashboard de Administración</h1>
         <p style={{ color: '#bfdbfe', fontSize: 13, margin: 0 }}>Gestión integral de MazClean</p>
         <button onClick={fetchData}
-          style={{ marginTop: 16, background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 8, padding: '8px 20px', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          style={{ marginTop: 16, background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 8, padding: '10px 20px', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44 }}>
           ↻ Actualizar
         </button>
       </div>
 
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 16px' }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: isMobile ? '0 12px' : '0 16px' }}>
 
         {/* ── Stats ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 12, marginTop: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(auto-fit,minmax(140px,1fr))', gap: isMobile ? 8 : 12, marginTop: 20 }}>
           {statCards.map((s, i) => (
-            <div key={i} style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 18px' }}>
-              <div style={{ fontSize: 22, marginBottom: 6 }}>{s.icon}</div>
-              <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</div>
-              <div style={{ fontSize: 26, fontWeight: 700, color: s.color, marginTop: 2 }}>{s.value}</div>
+            <div key={i} style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? '14px' : '16px 18px' }}>
+              <div style={{ fontSize: isMobile ? 20 : 22, marginBottom: 6 }}>{s.icon}</div>
+              <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</div>
+              <div style={{ fontSize: isMobile ? 22 : 26, fontWeight: 700, color: s.color, marginTop: 2 }}>{s.value}</div>
             </div>
           ))}
         </div>
 
         {/* ── Tabs ── */}
-        <div style={{ display: 'flex', gap: 4, marginTop: 24, background: '#e5e7eb', padding: 4, borderRadius: 12, width: 'fit-content', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 4, marginTop: 20, background: '#e5e7eb', padding: 4, borderRadius: 12, overflowX: 'auto', scrollbarWidth: 'none' }}>
           {[
             { id: 'bookings',  label: '📋 Reservaciones' },
             { id: 'operators', label: `👷 Operadores${incidents.length > 0 ? ` ⚠️${incidents.length}` : ''}` },
             { id: 'catalog',   label: '🛎 Catálogo' },
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              style={{ padding: '8px 20px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, background: activeTab === tab.id ? '#fff' : 'transparent', color: activeTab === tab.id ? '#1e40af' : '#6b7280', boxShadow: activeTab === tab.id ? '0 2px 8px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.2s' }}>
+              style={{ padding: isMobile ? '8px 12px' : '8px 20px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: isMobile ? 12 : 14, fontWeight: 600, whiteSpace: 'nowrap', background: activeTab === tab.id ? '#fff' : 'transparent', color: activeTab === tab.id ? '#1e40af' : '#6b7280', boxShadow: activeTab === tab.id ? '0 2px 8px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.2s', minHeight: 44 }}>
               {tab.label}
             </button>
           ))}
@@ -533,26 +519,26 @@ const AdminView = () => {
 
         {/* ════════════════ TAB: RESERVACIONES ════════════════ */}
         {activeTab === 'bookings' && (
-          <div style={{ marginTop: 20 }}>
-            <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 20px', marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-              <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+          <div style={{ marginTop: 16 }}>
+            <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? '12px' : '16px 20px', marginBottom: 14, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: isMobile ? '100%' : 200 }}>
                 <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 14 }}>🔍</span>
                 <input type="text" placeholder="Buscar folio, cliente o servicio..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ ...inputStyle, paddingLeft: 36 }} />
               </div>
               <select value={dateFilter} onChange={e => setDateFilter(e.target.value)}
-                style={{ padding: '9px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 13, background: '#fff', cursor: 'pointer', fontFamily: 'inherit', color: '#1f2937' }}>
+                style={{ padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, background: '#fff', cursor: 'pointer', fontFamily: 'inherit', color: '#1f2937', minHeight: 48, flex: isMobile ? 1 : 'none' }}>
                 <option value="all">Todas las fechas</option>
                 <option value="today">Hoy</option>
                 <option value="week">Esta semana</option>
                 <option value="month">Este mes</option>
               </select>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
                 {[
                   { id: 'all', label: 'Todos' }, { id: 'pendiente', label: 'Pendientes' }, { id: 'confirmado', label: 'Confirmados' },
                   { id: 'en_camino', label: 'En Camino' }, { id: 'en_proceso', label: 'Lavando' }, { id: 'finalizado', label: 'Listos' }, { id: 'cancelado', label: 'Cancelados' },
                 ].map(f => (
                   <button key={f.id} onClick={() => setStatusFilter(f.id)}
-                    style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none', transition: 'all 0.2s', background: statusFilter === f.id ? '#3b82f6' : '#f3f4f6', color: statusFilter === f.id ? '#fff' : '#6b7280' }}>
+                    style={{ padding: '8px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none', transition: 'all 0.2s', background: statusFilter === f.id ? '#3b82f6' : '#f3f4f6', color: statusFilter === f.id ? '#fff' : '#6b7280', minHeight: 36 }}>
                     {f.label}
                   </button>
                 ))}
@@ -560,19 +546,19 @@ const AdminView = () => {
             </div>
 
             {loading ? (
-              <div style={{ textAlign: 'center', padding: 48, color: '#9ca3af', background: '#fff', borderRadius: 16 }}>Cargando...</div>
+              <div style={{ textAlign: 'center', padding: 48, color: '#9ca3af', background: '#fff', borderRadius: 14 }}>Cargando...</div>
             ) : filteredBookings.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 48, color: '#9ca3af', background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>No se encontraron reservaciones.</div>
+              <div style={{ textAlign: 'center', padding: 48, color: '#9ca3af', background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>No se encontraron reservaciones.</div>
             ) : (
-              <div style={{ display: 'grid', gap: 12 }}>
+              <div style={{ display: 'grid', gap: 10 }}>
                 {filteredBookings.map(booking => {
                   const sc      = getStatusStyle(booking.status);
                   const urgent  = isUrgent(booking);
                   const delayed = isDelayed(booking);
                   return (
-                    <div key={booking.id} style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 20px', border: urgent ? '2px solid #f97316' : '2px solid transparent' }}>
+                    <div key={booking.id} style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? 14 : '16px 20px', border: urgent ? '2px solid #f97316' : '2px solid transparent' }}>
                       {delayed && (
-                        <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '8px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '8px 14px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 16 }}>⚠️</span>
                           <div>
                             <span style={{ fontSize: 12, fontWeight: 700, color: '#854d0e' }}>Servicio con más de 10 min de retraso</span>
@@ -580,45 +566,43 @@ const AdminView = () => {
                           </div>
                         </div>
                       )}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16, alignItems: 'center' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(140px, 1fr))', gap: isMobile ? 10 : 16, alignItems: 'center' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                            {urgent && !delayed && <span title="¡Fuera de horario!">⚠️</span>}
+                            {urgent && !delayed && <span>⚠️</span>}
                             <span style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', background: '#eff6ff', padding: '2px 8px', borderRadius: 20, letterSpacing: 0.5 }}>{booking.booking_ref}</span>
                           </div>
-                          <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }}>{booking.service_name}</div>
-                          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{booking.customer?.full_name || '—'}</div>
-                          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>📞 {booking.customer?.phone || '—'}</div>
-                          {booking.client_rating && (
-                            <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>{'⭐'.repeat(booking.client_rating)}</div>
-                          )}
+                          <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 15 }}>{booking.service_name}</div>
+                          <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>{booking.customer?.full_name || '—'}</div>
+                          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 1 }}>📞 {booking.customer?.phone || '—'}</div>
+                          {booking.client_rating && <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>{'⭐'.repeat(booking.client_rating)}</div>}
                         </div>
                         <div>
-                          <div style={{ fontSize: 13, color: '#374151' }}>📅 {booking.scheduled_date}</div>
-                          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>🕐 {booking.scheduled_time}</div>
-                          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>👷 {booking.operator?.full_name || <span style={{ fontStyle: 'italic' }}>Sin asignar</span>}</div>
+                          <div style={{ fontSize: 14, color: '#374151' }}>📅 {booking.scheduled_date}</div>
+                          <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>🕐 {booking.scheduled_time}</div>
+                          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>👷 {booking.operator?.full_name || <span style={{ fontStyle: 'italic' }}>Sin asignar</span>}</div>
                         </div>
-                        <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>
                             {booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('_',' ')}
                           </span>
                           {getPhotoUrl(booking) && (
-                            <button onClick={() => setPhotoModal(getPhotoUrl(booking))} style={{ display: 'block', marginTop: 8, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>
+                            <button onClick={() => setPhotoModal(getPhotoUrl(booking))} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>
                               <img src={getPhotoUrl(booking)} alt="foto" style={{ height: 40, width: 40, borderRadius: 8, objectFit: 'cover', border: '1.5px solid #e5e7eb' }} />
                             </button>
                           )}
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                           <button onClick={() => { setSelectedBooking(booking); setIsModalOpen(true); }}
-                            style={{ padding: '6px 14px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44, flex: isMobile ? 1 : 'none' }}>
                             👥 Asignar
                           </button>
                           <button onClick={() => { setEditData({ ...booking }); setEditModal(true); }}
-                            style={{ padding: '6px 14px', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44, flex: isMobile ? 1 : 'none' }}>
                             ✏️ Editar
                           </button>
                           <button onClick={() => deleteBooking(booking.id)}
-                            style={{ padding: '6px 14px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#991b1b', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#991b1b', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44, flex: isMobile ? 1 : 'none' }}>
                             🗑 Eliminar
                           </button>
                         </div>
@@ -633,23 +617,23 @@ const AdminView = () => {
 
         {/* ════════════════ TAB: OPERADORES ════════════════ */}
         {activeTab === 'operators' && (
-          <div style={{ marginTop: 20, display: 'grid', gap: 20 }}>
+          <div style={{ marginTop: 16, display: 'grid', gap: 16 }}>
 
             {incidents.length > 0 && (
-              <div style={{ background: '#fef2f2', borderRadius: 16, border: '2px solid #fecaca', padding: '20px 24px' }}>
-                <h2 style={{ fontSize: 16, fontWeight: 700, color: '#991b1b', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ background: '#fef2f2', borderRadius: 14, border: '2px solid #fecaca', padding: isMobile ? '16px' : '20px 24px' }}>
+                <h2 style={{ fontSize: 15, fontWeight: 700, color: '#991b1b', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
                   ⚠️ Incidencias Abiertas ({incidents.length})
                 </h2>
                 <div style={{ display: 'grid', gap: 10 }}>
                   {incidents.map(inc => (
                     <div key={inc.id} style={{ background: '#fff', borderRadius: 10, padding: '12px 16px', border: '1px solid #fecaca', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: 13, color: '#1f2937' }}>👷 {inc.operator?.full_name || 'Operador'}</div>
-                        <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3 }}>{inc.description}</div>
+                        <div style={{ fontWeight: 600, fontSize: 14, color: '#1f2937' }}>👷 {inc.operator?.full_name || 'Operador'}</div>
+                        <div style={{ fontSize: 13, color: '#6b7280', marginTop: 3 }}>{inc.description}</div>
                         <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>{new Date(inc.created_at).toLocaleString('es-MX')}</div>
                       </div>
                       <button onClick={() => resolveIncident(inc.id)}
-                        style={{ padding: '6px 14px', background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 8, color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>
+                        style={{ padding: '8px 14px', background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 8, color: '#166534', fontSize: 13, fontWeight: 600, cursor: 'pointer', flexShrink: 0, minHeight: 44 }}>
                         ✅ Resolver
                       </button>
                     </div>
@@ -658,12 +642,12 @@ const AdminView = () => {
               </div>
             )}
 
-            <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '20px 24px' }}>
-              <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1f2937', margin: '0 0 16px' }}>🟢 Estado en Tiempo Real</h2>
+            <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? '16px' : '20px 24px' }}>
+              <h2 style={{ fontSize: 15, fontWeight: 700, color: '#1f2937', margin: '0 0 16px' }}>🟢 Estado en Tiempo Real</h2>
               {operators.length === 0 ? (
                 <p style={{ color: '#9ca3af', fontSize: 14, fontStyle: 'italic' }}>No hay operadores registrados.</p>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(280px,1fr))', gap: 12 }}>
                   {operators.map(op => {
                     const status = getOperatorStatus(op.id);
                     const opBookings = bookings.filter(b => b.operator_id === op.id && b.status === 'finalizado');
@@ -677,7 +661,7 @@ const AdminView = () => {
                           </div>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }}>{op.full_name}</div>
-                            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{op.phone || 'Sin teléfono'}</div>
+                            <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>{op.phone || 'Sin teléfono'}</div>
                           </div>
                           <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: status.color }}>
                             <span style={{ height: 8, width: 8, borderRadius: '50%', background: status.dot, display: 'inline-block' }}></span>
@@ -696,15 +680,15 @@ const AdminView = () => {
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
                           <button onClick={() => fetchOperatorHistory(op.id)}
-                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            style={{ padding: '10px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 44 }}>
                             📊 Historial
                           </button>
                           <button onClick={() => openCommissionModal(op)}
-                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            style={{ padding: '10px 0', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 44 }}>
                             💰 Comisión
                           </button>
                           <button onClick={() => fetchOperatorKpis(op)}
-                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            style={{ padding: '10px 0', borderRadius: 8, border: '1.5px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 44 }}>
                             ⏱ Tiempos
                           </button>
                         </div>
@@ -716,14 +700,14 @@ const AdminView = () => {
             </div>
 
             {operatorHistory && (
-              <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '20px 24px' }}>
+              <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? '16px' : '20px 24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                  <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1f2937', margin: 0 }}>
+                  <h2 style={{ fontSize: 15, fontWeight: 700, color: '#1f2937', margin: 0 }}>
                     📊 Historial — {operators.find(o => o.id === operatorHistory.operatorId)?.full_name}
                   </h2>
-                  <button onClick={() => setOperatorHistory(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 20 }}>×</button>
+                  <button onClick={() => setOperatorHistory(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 20, minHeight: 44, minWidth: 44 }}>×</button>
                 </div>
-                <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                   {[['from','Desde'],['to','Hasta']].map(([key,label]) => (
                     <div key={key}>
                       <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>{label}</div>
@@ -732,7 +716,7 @@ const AdminView = () => {
                     </div>
                   ))}
                   <button onClick={() => fetchOperatorHistory(operatorHistory.operatorId)}
-                    style={{ padding: '8px 20px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    style={{ padding: '12px 20px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 48 }}>
                     Filtrar
                   </button>
                 </div>
@@ -741,13 +725,13 @@ const AdminView = () => {
                 ) : (
                   <div style={{ display: 'grid', gap: 8 }}>
                     {operatorHistory.data.map(b => (
-                      <div key={b.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 12, padding: '12px 16px', background: '#f9fafb', borderRadius: 10, border: '1px solid #e5e7eb', alignItems: 'center' }}>
+                      <div key={b.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr 1fr auto', gap: 10, padding: '12px 14px', background: '#f9fafb', borderRadius: 10, border: '1px solid #e5e7eb', alignItems: 'center' }}>
                         <div>
                           <div style={{ fontSize: 10, color: '#9ca3af', fontFamily: 'monospace' }}>{b.booking_ref}</div>
                           <div style={{ fontWeight: 600, fontSize: 13, color: '#1f2937' }}>{b.service_name}</div>
                         </div>
                         <div style={{ fontSize: 13, color: '#6b7280' }}>{b.customer?.full_name || '—'}</div>
-                        <div style={{ fontSize: 13, color: '#6b7280' }}>{b.scheduled_date}</div>
+                        {!isMobile && <div style={{ fontSize: 13, color: '#6b7280' }}>{b.scheduled_date}</div>}
                         <div style={{ fontWeight: 700, color: '#059669', fontSize: 14 }}>${b.total_price}</div>
                       </div>
                     ))}
@@ -757,23 +741,19 @@ const AdminView = () => {
             )}
 
             {incidentsHistory.length > 0 && (
-              <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '20px 24px' }}>
-                <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1f2937', margin: '0 0 14px' }}>📋 Historial de Incidencias ({incidentsHistory.length})</h2>
+              <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? '16px' : '20px 24px' }}>
+                <h2 style={{ fontSize: 15, fontWeight: 700, color: '#1f2937', margin: '0 0 14px' }}>📋 Historial de Incidencias ({incidentsHistory.length})</h2>
                 <div style={{ display: 'grid', gap: 10 }}>
                   {incidentsHistory.map(inc => (
                     <div key={inc.id} style={{ background: '#f9fafb', borderRadius: 10, padding: '12px 16px', border: '1px solid #e5e7eb' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981', background: '#f0fdf4', padding: '2px 8px', borderRadius: 20 }}>✅ Resuelta</span>
-                            <span style={{ fontSize: 11, color: '#9ca3af' }}>👷 {inc.operator?.full_name || 'Operador'}</span>
-                          </div>
-                          <div style={{ fontSize: 13, color: '#374151' }}>{inc.description}</div>
-                          <div style={{ display: 'flex', gap: 16, marginTop: 6 }}>
-                            <span style={{ fontSize: 11, color: '#9ca3af' }}>📅 Reportada: {new Date(inc.created_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</span>
-                            {inc.resolved_at && <span style={{ fontSize: 11, color: '#9ca3af' }}>✅ Resuelta: {new Date(inc.resolved_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</span>}
-                          </div>
-                        </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981', background: '#f0fdf4', padding: '2px 8px', borderRadius: 20 }}>✅ Resuelta</span>
+                        <span style={{ fontSize: 11, color: '#9ca3af' }}>👷 {inc.operator?.full_name || 'Operador'}</span>
+                      </div>
+                      <div style={{ fontSize: 13, color: '#374151' }}>{inc.description}</div>
+                      <div style={{ display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, color: '#9ca3af' }}>📅 {new Date(inc.created_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                        {inc.resolved_at && <span style={{ fontSize: 11, color: '#9ca3af' }}>✅ {new Date(inc.resolved_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</span>}
                       </div>
                     </div>
                   ))}
@@ -781,9 +761,9 @@ const AdminView = () => {
               </div>
             )}
 
-            <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '20px 24px' }}>
-              <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1f2937', margin: '0 0 16px' }}>➕ Dar de Alta Operador</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14 }}>
+            <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? '16px' : '20px 24px' }}>
+              <h2 style={{ fontSize: 15, fontWeight: 700, color: '#1f2937', margin: '0 0 16px' }}>➕ Dar de Alta Operador</h2>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit,minmax(200px,1fr))', gap: 12 }}>
                 {[
                   { key: 'full_name', label: 'Nombre completo *', placeholder: 'Juan Pérez', type: 'text' },
                   { key: 'phone', label: 'Teléfono', placeholder: '5512345678', type: 'tel' },
@@ -798,10 +778,10 @@ const AdminView = () => {
                   </div>
                 ))}
               </div>
-              {operatorError   && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 12, color: '#dc2626', fontSize: 13 }}>⚠️ {operatorError}</div>}
-              {operatorSuccess && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', marginTop: 12, color: '#166534', fontSize: 13 }}>✅ {operatorSuccess}</div>}
+              {operatorError   && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 12, color: '#dc2626', fontSize: 14 }}>⚠️ {operatorError}</div>}
+              {operatorSuccess && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', marginTop: 12, color: '#166534', fontSize: 14 }}>✅ {operatorSuccess}</div>}
               <button onClick={createOperator} disabled={creatingOperator}
-                style={{ marginTop: 16, padding: '11px 28px', background: creatingOperator ? '#9ca3af' : '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                style={{ marginTop: 16, padding: '14px 28px', background: creatingOperator ? '#9ca3af' : '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer', minHeight: 52, width: isMobile ? '100%' : 'auto' }}>
                 {creatingOperator ? '⏳ Creando...' : '➕ Crear Operador'}
               </button>
             </div>
@@ -810,38 +790,38 @@ const AdminView = () => {
 
         {/* ════════════════ TAB: CATÁLOGO ════════════════ */}
         {activeTab === 'catalog' && (
-          <div style={{ marginTop: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: 0 }}>🛎 Catálogo de Servicios</h2>
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1f2937', margin: 0 }}>🛎 Catálogo de Servicios</h2>
                 <p style={{ fontSize: 13, color: '#9ca3af', margin: '4px 0 0' }}>Administra los servicios y sus checklists</p>
               </div>
               <button onClick={openNewService}
-                style={{ padding: '10px 20px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 4px 12px rgba(59,130,246,0.3)' }}>
-                <Plus size={16} /> Nuevo Servicio
+                style={{ padding: '10px 16px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 4px 12px rgba(59,130,246,0.3)', minHeight: 44 }}>
+                <Plus size={15} /> Nuevo
               </button>
             </div>
 
             {loadingServices ? (
-              <div style={{ textAlign: 'center', padding: 48, color: '#9ca3af', background: '#fff', borderRadius: 16 }}>Cargando servicios...</div>
+              <div style={{ textAlign: 'center', padding: 48, color: '#9ca3af', background: '#fff', borderRadius: 14 }}>Cargando servicios...</div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(320px,1fr))', gap: 14 }}>
                 {services.map(service => (
-                  <div key={service.id} style={{ background: '#fff', borderRadius: 20, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', overflow: 'hidden', border: service.is_active ? '2px solid transparent' : '2px solid #e5e7eb', opacity: service.is_active ? 1 : 0.7 }}>
-                    <div style={{ background: `linear-gradient(135deg, ${service.color}22, ${service.color}11)`, borderBottom: `2px solid ${service.color}33`, padding: '16px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div key={service.id} style={{ background: '#fff', borderRadius: 18, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', overflow: 'hidden', border: service.is_active ? '2px solid transparent' : '2px solid #e5e7eb', opacity: service.is_active ? 1 : 0.7 }}>
+                    <div style={{ background: `linear-gradient(135deg, ${service.color}22, ${service.color}11)`, borderBottom: `2px solid ${service.color}33`, padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ fontSize: 28 }}>{service.icon}</span>
+                        <span style={{ fontSize: 26 }}>{service.icon}</span>
                         <div>
                           <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 15 }}>{service.name}</div>
                           <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{service.description}</div>
                         </div>
                       </div>
-                      <button onClick={() => toggleServiceStatus(service)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }} title={service.is_active ? 'Desactivar' : 'Activar'}>
+                      <button onClick={() => toggleServiceStatus(service)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, minHeight: 44 }}>
                         {service.is_active ? <ToggleRight size={28} color="#10b981" /> : <ToggleLeft size={28} color="#9ca3af" />}
                       </button>
                     </div>
-                    <div style={{ padding: '12px 18px', borderBottom: '1px solid #f3f4f6' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Precios</div>
+                    <div style={{ padding: '12px 16px', borderBottom: '1px solid #f3f4f6' }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Precios</div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6 }}>
                         {[{ label: '🚗', value: service.price_sedan }, { label: '🚙', value: service.price_suv }, { label: '🛻', value: service.price_truck }, { label: '🚐', value: service.price_van }].map((p, i) => (
                           <div key={i} style={{ textAlign: 'center', background: '#f9fafb', borderRadius: 8, padding: '6px 4px' }}>
@@ -852,18 +832,18 @@ const AdminView = () => {
                       </div>
                     </div>
                     {service.supplies_notes && (
-                      <div style={{ padding: '10px 18px', borderBottom: '1px solid #f3f4f6', background: '#fefce8' }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>🧴 Insumos</div>
+                      <div style={{ padding: '10px 16px', borderBottom: '1px solid #f3f4f6', background: '#fefce8' }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>🧴 Insumos</div>
                         <div style={{ fontSize: 12, color: '#854d0e' }}>{service.supplies_notes}</div>
                       </div>
                     )}
-                    <div style={{ padding: '12px 18px', display: 'flex', gap: 8 }}>
+                    <div style={{ padding: '12px 16px', display: 'flex', gap: 8 }}>
                       <button onClick={() => openEditService(service)}
-                        style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                        style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 48 }}>
                         ✏️ Editar y Checklist
                       </button>
                       <button onClick={() => deleteService(service.id)}
-                        style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#991b1b', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                        style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#991b1b', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 48 }}>
                         🗑 Eliminar
                       </button>
                     </div>
@@ -877,37 +857,37 @@ const AdminView = () => {
 
       {/* ════ MODAL: ASIGNAR OPERADOR ════ */}
       {isModalOpen && selectedBooking && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.20)', maxWidth: 480, width: '100%', overflow: 'hidden' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 16, boxShadow: '0 4px 24px rgba(0,0,0,0.20)', width: '100%', maxWidth: isMobile ? '100%' : 480, overflow: 'hidden' }}>
             <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>Asignar Operador</h3>
-              <button onClick={() => setIsModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#bfdbfe', fontSize: 20 }}>×</button>
+              <button onClick={() => setIsModalOpen(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 20, borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
-            <div style={{ padding: 20 }}>
+            <div style={{ padding: isMobile ? '16px' : 20 }}>
               <div style={{ background: '#f9fafb', borderRadius: 12, border: '1px solid #e5e7eb', padding: '12px 16px', marginBottom: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <span style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', background: '#eff6ff', padding: '2px 8px', borderRadius: 20 }}>{selectedBooking.booking_ref}</span>
                   <span style={{ fontWeight: 700, color: '#1f2937' }}>${selectedBooking.total_price || selectedBooking.service_price}</span>
                 </div>
-                <div style={{ fontWeight: 700, color: '#1f2937', marginBottom: 6 }}>{selectedBooking.service_name}</div>
-                <div style={{ fontSize: 12, color: '#6b7280' }}>📍 {selectedBooking.address_line || 'Sin dirección'}</div>
-                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>📅 {selectedBooking.scheduled_date} · 🕐 {selectedBooking.scheduled_time}</div>
+                <div style={{ fontWeight: 700, color: '#1f2937', marginBottom: 4 }}>{selectedBooking.service_name}</div>
+                <div style={{ fontSize: 13, color: '#6b7280' }}>📍 {selectedBooking.address_line || 'Sin dirección'}</div>
+                <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>📅 {selectedBooking.scheduled_date} · 🕐 {selectedBooking.scheduled_time}</div>
               </div>
-              <div style={{ maxHeight: 260, overflowY: 'auto', display: 'grid', gap: 8 }}>
+              <div style={{ maxHeight: 280, overflowY: 'auto', display: 'grid', gap: 8 }}>
                 {operators.length === 0 && <p style={{ color: '#9ca3af', textAlign: 'center', padding: 16, fontSize: 14, fontStyle: 'italic' }}>No hay operadores disponibles.</p>}
                 {operators.map(op => {
                   const opStatus = getOperatorStatus(op.id, selectedBooking);
                   const isAvailable = opStatus.label === 'Disponible';
                   return (
                     <button key={op.id} onClick={() => assignOperator(selectedBooking.id, op.id)} disabled={assigning === selectedBooking.id}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 10, border: selectedBooking.operator_id === op.id ? '2px solid #3b82f6' : isAvailable ? '1.5px solid #bbf7d0' : '1.5px solid #fecaca', background: selectedBooking.operator_id === op.id ? '#eff6ff' : isAvailable ? '#f0fdf4' : '#fef2f2', cursor: 'pointer', transition: 'all 0.2s' }}>
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px', borderRadius: 10, border: selectedBooking.operator_id === op.id ? '2px solid #3b82f6' : isAvailable ? '1.5px solid #bbf7d0' : '1.5px solid #fecaca', background: selectedBooking.operator_id === op.id ? '#eff6ff' : isAvailable ? '#f0fdf4' : '#fef2f2', cursor: 'pointer', minHeight: 56 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ height: 38, width: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 16 }}>
+                        <div style={{ height: 40, width: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 16 }}>
                           {op.full_name?.charAt(0)}
                         </div>
                         <div style={{ textAlign: 'left' }}>
-                          <div style={{ fontWeight: 700, fontSize: 13, color: '#1f2937' }}>{op.full_name}</div>
-                          <div style={{ fontSize: 11, color: opStatus.color, fontWeight: 600 }}>{opStatus.label}</div>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: '#1f2937' }}>{op.full_name}</div>
+                          <div style={{ fontSize: 12, color: opStatus.color, fontWeight: 600 }}>{opStatus.label}</div>
                         </div>
                       </div>
                       <span style={{ color: selectedBooking.operator_id === op.id ? '#3b82f6' : isAvailable ? '#10b981' : '#ef4444', fontSize: 18 }}>
@@ -919,7 +899,7 @@ const AdminView = () => {
               </div>
             </div>
             <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', textAlign: 'right' }}>
-              <button onClick={() => setIsModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#6b7280' }}>Cerrar</button>
+              <button onClick={() => setIsModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#6b7280', minHeight: 44, padding: '0 16px' }}>Cerrar</button>
             </div>
           </div>
         </div>
@@ -927,13 +907,13 @@ const AdminView = () => {
 
       {/* ════ MODAL: EDITAR RESERVACIÓN ════ */}
       {editModal && editData && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.20)', maxWidth: 420, width: '100%', overflow: 'hidden' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 16, boxShadow: '0 4px 24px rgba(0,0,0,0.20)', width: '100%', maxWidth: isMobile ? '100%' : 420, overflow: 'hidden' }}>
             <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>✏️ Editar Reservación</h3>
-              <button onClick={() => setEditModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#bfdbfe', fontSize: 20 }}>×</button>
+              <button onClick={() => setEditModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 20, borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
-            <div style={{ padding: 20, display: 'grid', gap: 14 }}>
+            <div style={{ padding: isMobile ? '16px' : 20, display: 'grid', gap: 14 }}>
               {[
                 { key: 'scheduled_date', label: 'Fecha', type: 'date' },
                 { key: 'scheduled_time', label: 'Hora', type: 'time' },
@@ -947,8 +927,8 @@ const AdminView = () => {
               ))}
             </div>
             <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button onClick={() => setEditModal(false)} style={{ padding: '9px 20px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>Cancelar</button>
-              <button onClick={saveEdit} disabled={savingEdit} style={{ padding: '9px 24px', background: savingEdit ? '#9ca3af' : '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <button onClick={() => setEditModal(false)} style={{ padding: '12px 20px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cancelar</button>
+              <button onClick={saveEdit} disabled={savingEdit} style={{ padding: '12px 24px', background: savingEdit ? '#9ca3af' : '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 48 }}>
                 {savingEdit ? '⏳ Guardando...' : 'Guardar Cambios'}
               </button>
             </div>
@@ -958,25 +938,25 @@ const AdminView = () => {
 
       {/* ════ MODAL: KPIs DE TIEMPO ════ */}
       {kpisModal && kpisOp && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto' }}>
-          <div style={{ background: '#fff', borderRadius: 20, boxShadow: '0 8px 40px rgba(0,0,0,0.2)', maxWidth: 560, width: '100%', overflow: 'hidden', margin: 'auto' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16, overflowY: 'auto' }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, boxShadow: '0 8px 40px rgba(0,0,0,0.2)', width: '100%', maxWidth: isMobile ? '100%' : 560, overflow: 'hidden', margin: isMobile ? 0 : 'auto' }}>
             <div style={{ background: 'linear-gradient(135deg,#7c3aed,#a78bfa)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>⏱ Rendimiento — {kpisOp.full_name}</h3>
-              <button onClick={() => setKpisModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ede9fe', fontSize: 22 }}>×</button>
+              <button onClick={() => setKpisModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#ede9fe', fontSize: 22, borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
-            <div style={{ padding: 20, maxHeight: '75vh', overflowY: 'auto' }}>
+            <div style={{ padding: isMobile ? '16px' : 20, maxHeight: '70vh', overflowY: 'auto' }}>
               {loadingKpis ? (
                 <div style={{ textAlign: 'center', padding: 40, color: '#9ca3af' }}>⏳ Calculando KPIs...</div>
               ) : (
                 <>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 10, marginBottom: 20 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 20 }}>
                     {[
                       { label: 'Prom. traslado', value: formatSeconds(Math.round(kpisData?.avg_travel_seconds || 0)),  icon: '🚗', color: '#3b82f6' },
                       { label: 'Prom. lavado',   value: formatSeconds(Math.round(kpisData?.avg_washing_seconds || 0)), icon: '🧽', color: '#f97316' },
                       { label: 'Servicios',      value: kpisData?.total_services || 0,                                  icon: '✅', color: '#10b981' },
                       { label: 'Real vs Est.',   value: kpisData?.avg_real_vs_estimated ? `${Math.round(kpisData.avg_real_vs_estimated)}%` : '—', icon: '📊', color: kpisData?.avg_real_vs_estimated > 110 ? '#ef4444' : '#7c3aed' },
                     ].map((k, i) => (
-                      <div key={i} style={{ background: '#f9fafb', borderRadius: 12, padding: '12px 10px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
+                      <div key={i} style={{ background: '#f9fafb', borderRadius: 12, padding: '12px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
                         <div style={{ fontSize: 20, marginBottom: 4 }}>{k.icon}</div>
                         <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{k.label}</div>
                         <div style={{ fontSize: 16, fontWeight: 700, color: k.color }}>{k.value}</div>
@@ -985,16 +965,16 @@ const AdminView = () => {
                   </div>
                   {kpisData?.avg_real_vs_estimated && (
                     <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 20, background: kpisData.avg_real_vs_estimated > 110 ? '#fef2f2' : '#f0fdf4', border: `1px solid ${kpisData.avg_real_vs_estimated > 110 ? '#fecaca' : '#bbf7d0'}` }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: kpisData.avg_real_vs_estimated > 110 ? '#dc2626' : '#166534' }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: kpisData.avg_real_vs_estimated > 110 ? '#dc2626' : '#166534' }}>
                         {kpisData.avg_real_vs_estimated > 110
-                          ? `⚠️ El operador tarda ${Math.round(kpisData.avg_real_vs_estimated - 100)}% más de lo estimado en promedio`
-                          : `✅ El operador opera dentro del tiempo estimado`}
+                          ? `⚠️ El operador tarda ${Math.round(kpisData.avg_real_vs_estimated - 100)}% más de lo estimado`
+                          : `✅ Opera dentro del tiempo estimado`}
                       </span>
                     </div>
                   )}
                   {kpisTimeline.length > 0 && (
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 12 }}>📅 Timeline de servicios recientes</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 12 }}>📅 Servicios recientes</div>
                       <div style={{ display: 'grid', gap: 12 }}>
                         {kpisTimeline.map(b => (
                           <div key={b.id} style={{ background: '#f9fafb', borderRadius: 12, padding: '12px 14px', border: '1px solid #e5e7eb' }}>
@@ -1015,17 +995,9 @@ const AdminView = () => {
                                 return (
                                   <React.Fragment key={idx}>
                                     <div style={{ textAlign: 'center' }}>
-                                      <div style={{ fontSize: 10, fontWeight: 700, color: info.color, background: info.color + '15', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>
-                                        {info.label}
-                                      </div>
-                                      <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
-                                        {formatTime(log.created_at)}
-                                      </div>
-                                      {log.duration_seconds && (
-                                        <div style={{ fontSize: 9, color: '#d1d5db' }}>
-                                          +{formatSeconds(log.duration_seconds)}
-                                        </div>
-                                      )}
+                                      <div style={{ fontSize: 10, fontWeight: 700, color: info.color, background: info.color + '15', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>{info.label}</div>
+                                      <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>{formatTime(log.created_at)}</div>
+                                      {log.duration_seconds && <div style={{ fontSize: 9, color: '#d1d5db' }}>+{formatSeconds(log.duration_seconds)}</div>}
                                     </div>
                                     {idx < b.logs.filter(l => statusLabels[l.status]).length - 1 && (
                                       <div style={{ fontSize: 12, color: '#d1d5db', flexShrink: 0 }}>→</div>
@@ -1034,11 +1006,7 @@ const AdminView = () => {
                                 );
                               })}
                             </div>
-                            {b.duration_min && (
-                              <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 6 }}>
-                                Duración estimada: {b.duration_min} min
-                              </div>
-                            )}
+                            {b.duration_min && <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 6 }}>Duración estimada: {b.duration_min} min</div>}
                           </div>
                         ))}
                       </div>
@@ -1051,7 +1019,7 @@ const AdminView = () => {
               )}
             </div>
             <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', textAlign: 'right' }}>
-              <button onClick={() => setKpisModal(false)} style={{ padding: '9px 24px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>Cerrar</button>
+              <button onClick={() => setKpisModal(false)} style={{ padding: '12px 24px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cerrar</button>
             </div>
           </div>
         </div>
@@ -1059,23 +1027,23 @@ const AdminView = () => {
 
       {/* ════ MODAL: COMISIÓN ════ */}
       {commissionModal && commissionOp && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: '#fff', borderRadius: 20, boxShadow: '0 8px 40px rgba(0,0,0,0.2)', maxWidth: 460, width: '100%', overflow: 'hidden' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, boxShadow: '0 8px 40px rgba(0,0,0,0.2)', width: '100%', maxWidth: isMobile ? '100%' : 460, overflow: 'hidden' }}>
             <div style={{ background: 'linear-gradient(135deg,#059669,#10b981)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>💰 Comisiones — {commissionOp.full_name}</h3>
-              <button onClick={() => setCommissionModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a7f3d0', fontSize: 22 }}>×</button>
+              <button onClick={() => setCommissionModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#a7f3d0', fontSize: 22, borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
-            <div style={{ padding: 20 }}>
+            <div style={{ padding: isMobile ? '16px' : 20 }}>
               {commissionReport && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 20 }}>
                   {[
-                    { label: 'Servicios finalizados', value: commissionReport.services, color: '#1e40af' },
-                    { label: 'Ingresos generados', value: `$${commissionReport.totalRevenue.toFixed(2)}`, color: '#059669' },
-                    { label: 'Comisión a pagar', value: `$${(commissionReport.totalRevenue * (commissionPct / 100)).toFixed(2)}`, color: '#7c3aed' },
+                    { label: 'Servicios', value: commissionReport.services, color: '#1e40af' },
+                    { label: 'Ingresos', value: `$${commissionReport.totalRevenue.toFixed(2)}`, color: '#059669' },
+                    { label: 'Comisión', value: `$${(commissionReport.totalRevenue * (commissionPct / 100)).toFixed(2)}`, color: '#7c3aed' },
                   ].map((s, i) => (
-                    <div key={i} style={{ background: '#f9fafb', borderRadius: 10, padding: '12px 10px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
+                    <div key={i} style={{ background: '#f9fafb', borderRadius: 10, padding: '12px 8px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
                       <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{s.label}</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: s.color }}>{s.value}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: s.color }}>{s.value}</div>
                     </div>
                   ))}
                 </div>
@@ -1086,16 +1054,16 @@ const AdminView = () => {
                   <input type="number" min="0" max="100" step="0.5" value={commissionPct}
                     onChange={e => setCommissionPct(e.target.value)}
                     style={{ ...inputStyle, width: 100 }} />
-                  <span style={{ fontSize: 13, color: '#6b7280' }}>
+                  <span style={{ fontSize: 14, color: '#6b7280' }}>
                     = ${((commissionReport?.totalRevenue || 0) * (commissionPct / 100)).toFixed(2)} MXN
                   </span>
                 </div>
               </div>
             </div>
             <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => setCommissionModal(false)} style={{ padding: '9px 20px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={() => setCommissionModal(false)} style={{ padding: '12px 20px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cancelar</button>
               <button onClick={saveCommission} disabled={savingCommission}
-                style={{ padding: '9px 24px', background: savingCommission ? '#9ca3af' : '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                style={{ padding: '12px 24px', background: savingCommission ? '#9ca3af' : '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>
                 {savingCommission ? '⏳ Guardando...' : '💾 Guardar %'}
               </button>
             </div>
@@ -1105,13 +1073,13 @@ const AdminView = () => {
 
       {/* ════ MODAL: CREAR/EDITAR SERVICIO + CHECKLIST ════ */}
       {serviceModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto' }}>
-          <div style={{ background: '#fff', borderRadius: 20, boxShadow: '0 8px 40px rgba(0,0,0,0.20)', maxWidth: 640, width: '100%', overflow: 'hidden', margin: 'auto' }}>
-            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16, overflowY: 'auto' }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, boxShadow: '0 8px 40px rgba(0,0,0,0.20)', width: '100%', maxWidth: isMobile ? '100%' : 640, overflow: 'hidden', margin: isMobile ? 0 : 'auto' }}>
+            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 17, margin: 0 }}>{editingService ? '✏️ Editar Servicio' : '➕ Nuevo Servicio'}</h3>
-              <button onClick={() => setServiceModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#bfdbfe', fontSize: 22 }}>×</button>
+              <button onClick={() => setServiceModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#bfdbfe', fontSize: 22, borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
-            <div style={{ padding: 24, maxHeight: '75vh', overflowY: 'auto' }}>
+            <div style={{ padding: isMobile ? '16px' : 24, maxHeight: '70vh', overflowY: 'auto' }}>
               <div style={{ display: 'grid', gap: 14, marginBottom: 20 }}>
                 <div>
                   <label style={labelStyle}>Nombre del servicio *</label>
@@ -1130,7 +1098,7 @@ const AdminView = () => {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
                   {EMOJI_OPTIONS.map(emoji => (
                     <button key={emoji} onClick={() => setServiceForm(p => ({...p, icon: emoji}))}
-                      style={{ fontSize: 22, padding: '6px 8px', borderRadius: 8, border: serviceForm.icon === emoji ? '2px solid #3b82f6' : '1.5px solid #e5e7eb', background: serviceForm.icon === emoji ? '#eff6ff' : '#fff', cursor: 'pointer' }}>
+                      style={{ fontSize: 22, padding: '8px', borderRadius: 8, border: serviceForm.icon === emoji ? '2px solid #3b82f6' : '1.5px solid #e5e7eb', background: serviceForm.icon === emoji ? '#eff6ff' : '#fff', cursor: 'pointer', minHeight: 44 }}>
                       {emoji}
                     </button>
                   ))}
@@ -1138,7 +1106,7 @@ const AdminView = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <label style={{ ...labelStyle, margin: 0 }}>Color:</label>
                   <input type="color" value={serviceForm.color} onChange={e => setServiceForm(p => ({...p, color: e.target.value}))}
-                    style={{ width: 40, height: 32, borderRadius: 6, border: '1.5px solid #e5e7eb', cursor: 'pointer', padding: 2 }} />
+                    style={{ width: 44, height: 44, borderRadius: 6, border: '1.5px solid #e5e7eb', cursor: 'pointer', padding: 2 }} />
                 </div>
               </div>
               <div style={{ marginBottom: 20 }}>
@@ -1176,13 +1144,13 @@ const AdminView = () => {
                   <label style={labelStyle}>✅ Checklist de calidad</label>
                   <div style={{ display: 'grid', gap: 8, marginBottom: 10 }}>
                     {checklistItems.map(item => (
-                      <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                      <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <CheckSquare size={16} color="#10b981" />
-                          <span style={{ fontSize: 13, color: '#374151' }}>{item.item}</span>
+                          <span style={{ fontSize: 14, color: '#374151' }}>{item.item}</span>
                         </div>
                         <button onClick={() => deleteChecklistItem(item.id)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 16 }}>×</button>
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 18, minHeight: 44, minWidth: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
                       </div>
                     ))}
                   </div>
@@ -1192,7 +1160,7 @@ const AdminView = () => {
                       onKeyDown={e => e.key === 'Enter' && addChecklistItem(editingService)}
                       style={{ ...inputStyle, flex: 1 }} />
                     <button onClick={() => addChecklistItem(editingService)} disabled={savingChecklist}
-                      style={{ padding: '10px 16px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>
+                      style={{ padding: '12px 16px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', flexShrink: 0, minHeight: 48 }}>
                       + Agregar
                     </button>
                   </div>
@@ -1207,18 +1175,18 @@ const AdminView = () => {
                 <div>
                   <label style={labelStyle}>Estado</label>
                   <button onClick={() => setServiceForm(p => ({...p, is_active: !p.is_active}))}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', background: serviceForm.is_active ? '#f0fdf4' : '#fef2f2', color: serviceForm.is_active ? '#166534' : '#991b1b', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    style={{ width: '100%', padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', background: serviceForm.is_active ? '#f0fdf4' : '#fef2f2', color: serviceForm.is_active ? '#166534' : '#991b1b', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
                     {serviceForm.is_active ? <><ToggleRight size={18} color="#10b981" /> Activo</> : <><ToggleLeft size={18} color="#ef4444" /> Inactivo</>}
                   </button>
                 </div>
               </div>
-              {serviceError   && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 16, color: '#dc2626', fontSize: 13 }}>⚠️ {serviceError}</div>}
-              {serviceSuccess && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', marginTop: 16, color: '#166534', fontSize: 13 }}>✅ {serviceSuccess}</div>}
+              {serviceError   && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 16, color: '#dc2626', fontSize: 14 }}>⚠️ {serviceError}</div>}
+              {serviceSuccess && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', marginTop: 16, color: '#166534', fontSize: 14 }}>✅ {serviceSuccess}</div>}
             </div>
-            <div style={{ padding: '14px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button onClick={() => setServiceModal(false)} style={{ padding: '10px 22px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>Cancelar</button>
+            <div style={{ padding: '14px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button onClick={() => setServiceModal(false)} style={{ padding: '12px 22px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cancelar</button>
               <button onClick={saveService} disabled={savingService}
-                style={{ padding: '10px 28px', background: savingService ? '#9ca3af' : '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                style={{ padding: '12px 28px', background: savingService ? '#9ca3af' : '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, minHeight: 48 }}>
                 <Save size={15} /> {savingService ? 'Guardando...' : editingService ? 'Actualizar' : 'Crear Servicio'}
               </button>
             </div>
@@ -1230,7 +1198,7 @@ const AdminView = () => {
       {photoModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPhotoModal(null)}>
           <div style={{ position: 'relative', maxWidth: 600, width: '100%' }}>
-            <button onClick={() => setPhotoModal(null)} style={{ position: 'absolute', top: -36, right: 0, background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 24 }}>×</button>
+            <button onClick={() => setPhotoModal(null)} style={{ position: 'absolute', top: -40, right: 0, background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 24, borderRadius: 8, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             <img src={photoModal} alt="Foto del servicio" style={{ width: '100%', borderRadius: 16, maxHeight: '80vh', objectFit: 'contain' }} />
           </div>
         </div>
