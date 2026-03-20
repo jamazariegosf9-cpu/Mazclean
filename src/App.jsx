@@ -14,6 +14,17 @@ function getTrackingId() {
   return match ? match[1] : null
 }
 
+// ── Hook móvil ─────────────────────────────────────────────────
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 640)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+  return isMobile
+}
+
 function Navbar({ view, setView, onShowAuth }) {
   const { user, profile, signOut } = useAuth()
 
@@ -42,12 +53,12 @@ function Navbar({ view, setView, onShowAuth }) {
       background: 'rgba(5,10,20,0.95)',
       borderBottom: '1px solid rgba(255,255,255,0.06)',
     }}>
-      <div style={{ padding: '0 24px', display: 'flex', alignItems: 'center', height: 64, gap: 12 }}>
+      <div style={{ padding: '0 16px', display: 'flex', alignItems: 'center', height: 56, gap: 8 }}>
 
         {/* Logo */}
-        <button onClick={() => setView('home')} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', color: '#F0F6FF', flexShrink: 0 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>💧</div>
-          <span style={{ fontWeight: 800, fontSize: 18 }}>Maz Clean</span>
+        <button onClick={() => setView('home')} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#F0F6FF', flexShrink: 0 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 10, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>💧</div>
+          <span style={{ fontWeight: 800, fontSize: 16 }}>Maz Clean</span>
         </button>
 
         {/* Links */}
@@ -57,7 +68,7 @@ function Navbar({ view, setView, onShowAuth }) {
               key={id + label}
               onClick={() => setView(id)}
               style={{
-                padding: '8px 12px', border: 'none', cursor: 'pointer', borderRadius: 10,
+                padding: '8px 10px', border: 'none', cursor: 'pointer', borderRadius: 10,
                 background: view === id ? 'rgba(0,200,255,0.12)' : 'none',
                 color: view === id ? '#00C8FF' : '#8CA0BF',
                 fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap', flexShrink: 0,
@@ -70,29 +81,29 @@ function Navbar({ view, setView, onShowAuth }) {
 
         {/* Usuario */}
         {user ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             {roleBadge && (
               <span style={{
-                padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                padding: '3px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700,
                 background: roleBadge.color + '20', color: roleBadge.color, whiteSpace: 'nowrap',
               }}>
                 {roleBadge.label}
               </span>
             )}
-            <span style={{ color: '#8CA0BF', fontSize: 13, whiteSpace: 'nowrap' }}>
-              Hola, {profile?.full_name?.split(' ')[0] || 'Usuario'}
+            <span style={{ color: '#8CA0BF', fontSize: 12, whiteSpace: 'nowrap' }}>
+              {profile?.full_name?.split(' ')[0] || 'Usuario'}
             </span>
             <button
               onClick={signOut}
-              style={{ padding: '7px 14px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'none', color: '#F87171', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' }}
+              style={{ padding: '6px 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'none', color: '#F87171', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap', minHeight: 36 }}
             >
               Salir
             </button>
           </div>
         ) : (
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <button onClick={() => onShowAuth('login')} style={{ padding: '9px 20px', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, background: 'none', color: '#F0F6FF', fontWeight: 600, fontSize: 14, cursor: 'pointer', whiteSpace: 'nowrap' }}>Login</button>
-            <button onClick={() => onShowAuth('register')} style={{ padding: '9px 22px', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', border: 'none', borderRadius: 12, color: '#050A14', fontWeight: 700, fontSize: 14, cursor: 'pointer', whiteSpace: 'nowrap' }}>Registrarse</button>
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <button onClick={() => onShowAuth('login')} style={{ padding: '8px 14px', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 10, background: 'none', color: '#F0F6FF', fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap', minHeight: 36 }}>Login</button>
+            <button onClick={() => onShowAuth('register')} style={{ padding: '8px 14px', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', border: 'none', borderRadius: 10, color: '#050A14', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap', minHeight: 36 }}>Registro</button>
           </div>
         )}
       </div>
@@ -102,33 +113,43 @@ function Navbar({ view, setView, onShowAuth }) {
 
 function HomeView({ setView, onShowAuth }) {
   const { user } = useAuth()
+  const isMobile = useIsMobile()
 
   return (
-    <div style={{ minHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 40 }}>
-      <h1 style={{ fontWeight: 800, fontSize: 72, lineHeight: 1.05, background: 'linear-gradient(135deg,#F0F6FF 30%,#00C8FF 70%,#00E5C8 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: 24 }}>
+    <div style={{ minHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: isMobile ? '32px 24px' : '40px' }}>
+      <h1 style={{
+        fontWeight: 800,
+        fontSize: isMobile ? 40 : 72,
+        lineHeight: 1.1,
+        background: 'linear-gradient(135deg,#F0F6FF 30%,#00C8FF 70%,#00E5C8 100%)',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        marginBottom: isMobile ? 16 : 24,
+        wordBreak: 'break-word',
+      }}>
         Tu auto, impecable.
       </h1>
-      <p style={{ color: '#8CA0BF', fontSize: 18, maxWidth: 500, margin: '0 auto 48px', lineHeight: 1.7 }}>
+      <p style={{ color: '#8CA0BF', fontSize: isMobile ? 16 : 18, maxWidth: 500, margin: isMobile ? '0 auto 32px' : '0 auto 48px', lineHeight: 1.7 }}>
         Reserva un lavado profesional sin salir de casa.
       </p>
       {user ? (
         <button
           onClick={() => setView('booking')}
-          style={{ padding: '16px 40px', fontSize: 16, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700 }}
+          style={{ padding: isMobile ? '14px 32px' : '16px 40px', fontSize: 16, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, minHeight: 52, width: isMobile ? '100%' : 'auto', maxWidth: 320 }}
         >
           Reservar Ahora
         </button>
       ) : (
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', width: '100%', maxWidth: 400 }}>
           <button
             onClick={() => onShowAuth('login')}
-            style={{ padding: '16px 40px', fontSize: 16, borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: 'none', color: '#F0F6FF', fontWeight: 700 }}
+            style={{ padding: '14px 32px', fontSize: 15, borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: 'none', color: '#F0F6FF', fontWeight: 700, flex: 1, minHeight: 52 }}
           >
             Iniciar Sesión
           </button>
           <button
             onClick={() => onShowAuth('register')}
-            style={{ padding: '16px 40px', fontSize: 16, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700 }}
+            style={{ padding: '14px 32px', fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, flex: 1, minHeight: 52 }}
           >
             Registrarse
           </button>
@@ -144,8 +165,8 @@ function BookingViewProtected({ onNavigate, onShowAuth }) {
 
   if (!user) {
     return (
-      <div style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 40 }}>
-        <div style={{ background: 'rgba(0,200,255,0.08)', border: '1.5px solid rgba(0,200,255,0.25)', borderRadius: 20, padding: '40px 48px', maxWidth: 440, width: '100%' }}>
+      <div style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24 }}>
+        <div style={{ background: 'rgba(0,200,255,0.08)', border: '1.5px solid rgba(0,200,255,0.25)', borderRadius: 20, padding: '40px 32px', maxWidth: 440, width: '100%' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
           <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F0F6FF', marginBottom: 10 }}>
             Necesitas una cuenta
@@ -156,13 +177,13 @@ function BookingViewProtected({ onNavigate, onShowAuth }) {
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
             <button
               onClick={() => onShowAuth('login')}
-              style={{ padding: '12px 32px', fontSize: 15, borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: 'none', color: '#F0F6FF', fontWeight: 600 }}
+              style={{ padding: '12px 32px', fontSize: 15, borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: 'none', color: '#F0F6FF', fontWeight: 600, flex: 1, minHeight: 48 }}
             >
               Iniciar Sesión
             </button>
             <button
               onClick={() => onShowAuth('register')}
-              style={{ padding: '12px 32px', fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700 }}
+              style={{ padding: '12px 32px', fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, flex: 1, minHeight: 48 }}
             >
               Registrarse
             </button>
