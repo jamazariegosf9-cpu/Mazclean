@@ -102,7 +102,7 @@ const OperatorView = () => {
   };
 
   // ── Actualizar status ──────────────────────────────────────────
-  const updateStatus = async (bookingId, newStatus, eventName) => {
+  const updateStatus = async (bookingId, newStatus, eventName, bookingData = null) => {
     if (newStatus === 'en_camino' && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         () => setGpsError(''),
@@ -115,13 +115,18 @@ const OperatorView = () => {
       const { error } = await supabase.from('bookings').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', bookingId);
       if (error) throw error;
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: newStatus } : b));
-      const booking = bookings.find(b => b.id === bookingId);
-      if (booking?.customer?.phone) sendWhatsApp(eventName, booking.customer.phone, {
-        booking_ref:  booking.booking_ref,
-        service_name: booking.service_name,
-        booking_id:   bookingId,
-        operator_name: booking.operator?.full_name || 'tu operador',
-      });
+      const booking = bookingData || bookings.find(b => b.id === bookingId);
+      const phone = booking?.customer?.phone;
+      if (phone) {
+        sendWhatsApp(eventName, phone, {
+          booking_ref:   booking.booking_ref,
+          service_name:  booking.service_name,
+          booking_id:    bookingId,
+          operator_name: profile?.full_name || user?.user_metadata?.full_name || 'tu operador',
+        });
+      } else {
+        console.warn('⚠️ sendWhatsApp [' + eventName + ']: sin teléfono del cliente para booking', bookingId);
+      }
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, status: newStatus }));
     } catch (err) {
       alert(`Error al actualizar estado: ${err.message}`);
@@ -132,7 +137,7 @@ const OperatorView = () => {
 
   // ── Iniciar lavado → abrir foto Antes ─────────────────────────
   const handleStartWashing = async (booking) => {
-    await updateStatus(booking.id, 'en_proceso', 'washing');
+    await updateStatus(booking.id, 'en_proceso', 'washing', booking);
     const updated = { ...booking, status: 'en_proceso' };
     setPhotoBooking(updated);
     setPhotoMode('before');
@@ -333,7 +338,7 @@ const OperatorView = () => {
                   </div>
                   <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #f3f4f6', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {booking.status === 'confirmado' && (
-                      <button onClick={async e => { e.stopPropagation(); await updateStatus(booking.id, 'en_camino', 'on_the_way'); }} disabled={updatingId === booking.id}
+                      <button onClick={async e => { e.stopPropagation(); await updateStatus(booking.id, 'en_camino', 'on_the_way', booking); }} disabled={updatingId === booking.id}
                         style={{ flex: 1, background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '11px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, boxShadow: '0 4px 12px rgba(59,130,246,0.3)' }}>
                         <Navigation size={14} /> Iniciar Viaje
                       </button>
@@ -405,7 +410,7 @@ const OperatorView = () => {
             </div>
             <div style={{ position: 'fixed', bottom: 24, left: 20, right: 20 }}>
               {selectedBooking.status === 'confirmado' && (
-                <button onClick={() => updateStatus(selectedBooking.id, 'en_camino', 'on_the_way')} disabled={updatingId === selectedBooking.id}
+                <button onClick={() => updateStatus(selectedBooking.id, 'en_camino', 'on_the_way', selectedBooking)} disabled={updatingId === selectedBooking.id}
                   style={{ width: '100%', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 8px 32px rgba(59,130,246,0.4)' }}>
                   {updatingId === selectedBooking.id ? '⏳ Cargando...' : <><Navigation size={18} /> INICIAR VIAJE AHORA</>}
                 </button>
