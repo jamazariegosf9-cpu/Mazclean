@@ -213,33 +213,54 @@ const OperatorView = () => {
     setChecklist([]);
   };
 
+  // ── Comprimir imagen antes de subir ───────────────────────────
+  const compressImage = (file) => new Promise((resolve) => {
+    const maxSize = 1024;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        if (width > maxSize || height > maxSize) {
+          if (width > height) { height = Math.round(height * maxSize / width); width = maxSize; }
+          else { width = Math.round(width * maxSize / height); height = maxSize; }
+        }
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => resolve(blob || file), 'image/jpeg', 0.82);
+      };
+      img.onerror = () => resolve(file);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve(file);
+    reader.readAsDataURL(file);
+  });
+
   // ── Upload foto ────────────────────────────────────────────────
   const handlePhotoUpload = async (file, bookingId, type) => {
     if (!file) return;
     setUploadingPhoto(true);
     setPhotoSaved(false);
-    // ── Timeout 20s para uploads en móvil con conexión lenta ──────
-    const timeoutId = setTimeout(() => {
-      setUploadingPhoto(false);
-      alert('La subida tardó demasiado. Verifica tu conexión e intenta de nuevo.');
-    }, 20000);
     try {
-      const mimeToExt = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif' };
-      const ext  = mimeToExt[file.type] || file.name?.split('.').pop() || 'jpg';
-      const path = `${bookingId}/${type}.${ext}`;
-      const { error: uploadError } = await supabase.storage.from('service-photos').upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' });
+      // Comprimir imagen (reduce de ~5MB a ~300KB)
+      const compressed = await compressImage(file);
+      const path = `${bookingId}/${type}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from('service-photos')
+        .upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
       if (uploadError) throw uploadError;
       const column = type === 'before' ? 'photo_before' : 'photo_after';
-      const { error: updateError } = await supabase.from('bookings').update({ [column]: path, updated_at: new Date().toISOString() }).eq('id', bookingId);
+      const { error: updateError } = await supabase.from('bookings')
+        .update({ [column]: path, updated_at: new Date().toISOString() })
+        .eq('id', bookingId);
       if (updateError) throw updateError;
-      clearTimeout(timeoutId);
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, [column]: path } : b));
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, [column]: path }));
       if (photoBooking?.id === bookingId) setPhotoBooking(prev => ({ ...prev, [column]: path }));
       setPhotoSaved(true);
     } catch (err) {
-      clearTimeout(timeoutId);
-      alert(`Error al subir foto: ${err.message}\n\nVerifica tu conexión e intenta de nuevo.`);
+      alert(`Error al subir foto: ${err.message}`);
     } finally {
       setUploadingPhoto(false);
     }
