@@ -171,6 +171,11 @@ export default function BookingView() {
   const handleSubmit = async () => {
     if (!user) return
     setLoading(true); setError('')
+    // ── Timeout 15s para evitar que se trabe en móvil ─────────────
+    const timeoutId = setTimeout(() => {
+      setLoading(false)
+      setError('La conexión tardó demasiado. Verifica tu internet e intenta de nuevo.')
+    }, 15000)
     try {
       const service    = SERVICES.find(s => s.id === selectedService)
       const price      = getPrice()
@@ -185,6 +190,7 @@ export default function BookingView() {
         vehicle_brand: vehicleBrand, vehicle_color: vehicleColor,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       })
+      clearTimeout(timeoutId)
       if (insertError) throw insertError
       setLoading(false); setSuccess(true)
       setTimeout(() => {
@@ -196,7 +202,8 @@ export default function BookingView() {
           }).catch(() => {})
       }, 0)
     } catch (err) {
-      setError('Hubo un error al guardar. Intenta de nuevo.')
+      clearTimeout(timeoutId)
+      setError('Error al guardar. Verifica tu conexión e intenta de nuevo.')
       setLoading(false)
     }
   }
@@ -409,7 +416,12 @@ export default function BookingView() {
                 <span style={{ fontSize: 20, fontWeight: 700, color: '#1d4ed8' }}>${price} MXN</span>
               </div>
             </div>
-            {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 12, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
+            {error && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 14px', marginTop: 12 }}>
+                <div style={{ color: '#dc2626', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>⚠️ {error}</div>
+                <button onClick={handleSubmit} style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 0', fontSize: 14, fontWeight: 600, cursor: 'pointer', width: '100%', minHeight: 44 }}>🔄 Reintentar</button>
+              </div>
+            )}
           </div>
         )}
 

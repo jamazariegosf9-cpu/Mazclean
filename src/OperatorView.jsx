@@ -123,8 +123,14 @@ const OperatorView = () => {
       );
     }
     setUpdatingId(bookingId);
+    // ── Timeout 12s para evitar que se trabe en móvil ─────────────
+    const timeoutId = setTimeout(() => {
+      setUpdatingId(null);
+      alert('La operación tardó demasiado. Verifica tu conexión e intenta de nuevo.');
+    }, 12000);
     try {
       const { error } = await supabase.from('bookings').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', bookingId);
+      clearTimeout(timeoutId);
       if (error) throw error;
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: newStatus } : b));
       const booking = bookingData || bookings.find(b => b.id === bookingId);
@@ -141,6 +147,7 @@ const OperatorView = () => {
       }
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, status: newStatus }));
     } catch (err) {
+      clearTimeout(timeoutId);
       alert(`Error al actualizar estado: ${err.message}`);
     } finally {
       setUpdatingId(null);
@@ -211,6 +218,11 @@ const OperatorView = () => {
     if (!file) return;
     setUploadingPhoto(true);
     setPhotoSaved(false);
+    // ── Timeout 20s para uploads en móvil con conexión lenta ──────
+    const timeoutId = setTimeout(() => {
+      setUploadingPhoto(false);
+      alert('La subida tardó demasiado. Verifica tu conexión e intenta de nuevo.');
+    }, 20000);
     try {
       const mimeToExt = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif' };
       const ext  = mimeToExt[file.type] || file.name?.split('.').pop() || 'jpg';
@@ -220,12 +232,14 @@ const OperatorView = () => {
       const column = type === 'before' ? 'photo_before' : 'photo_after';
       const { error: updateError } = await supabase.from('bookings').update({ [column]: path, updated_at: new Date().toISOString() }).eq('id', bookingId);
       if (updateError) throw updateError;
+      clearTimeout(timeoutId);
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, [column]: path } : b));
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, [column]: path }));
       if (photoBooking?.id === bookingId) setPhotoBooking(prev => ({ ...prev, [column]: path }));
       setPhotoSaved(true);
     } catch (err) {
-      alert(`Error al subir foto: ${err.message}`);
+      clearTimeout(timeoutId);
+      alert(`Error al subir foto: ${err.message}\n\nVerifica tu conexión e intenta de nuevo.`);
     } finally {
       setUploadingPhoto(false);
     }
