@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthModal from './components/auth/AuthModal'
 import BookingView from './BookingView'
+import { Menu, X } from 'lucide-react'
 
 // ── Detectar ruta /tracking/:id ────────────────────────────────
 function getTrackingId() {
@@ -16,9 +17,9 @@ function getTrackingId() {
 
 // ── Hook móvil ─────────────────────────────────────────────────
 function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 640)
+    const handler = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', handler)
     return () => window.removeEventListener('resize', handler)
   }, [])
@@ -27,6 +28,8 @@ function useIsMobile() {
 
 function Navbar({ view, setView, onShowAuth }) {
   const { user, profile, signOut } = useAuth()
+  const isMobile = useIsMobile()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const navLinks = [
     ['home',    'Inicio'],
@@ -47,67 +50,129 @@ function Navbar({ view, setView, onShowAuth }) {
     cliente:  { label: 'Cliente',  color: '#8CA0BF' },
   }[profile?.role] || null
 
+  const handleNav = (id) => {
+    setView(id)
+    setMenuOpen(false)
+  }
+
   return (
-    <nav style={{
-      position: 'sticky', top: 0, zIndex: 100,
-      background: 'rgba(5,10,20,0.95)',
-      borderBottom: '1px solid rgba(255,255,255,0.06)',
-    }}>
-      <div style={{ padding: '0 16px', display: 'flex', alignItems: 'center', height: 56, gap: 8 }}>
+    <>
+      <nav style={{
+        position: 'sticky', top: 0, zIndex: 100,
+        background: 'rgba(5,10,20,0.97)',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+      }}>
+        <div style={{ padding: '0 16px', display: 'flex', alignItems: 'center', height: 56, gap: 8 }}>
 
-        {/* Logo */}
-        <button onClick={() => setView('home')} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#F0F6FF', flexShrink: 0 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 10, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>💧</div>
-          <span style={{ fontWeight: 800, fontSize: 16 }}>Maz Clean</span>
-        </button>
+          {/* Logo */}
+          <button onClick={() => handleNav('home')} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#F0F6FF', flexShrink: 0 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>💧</div>
+            <span style={{ fontWeight: 800, fontSize: 16 }}>Maz Clean</span>
+          </button>
 
-        {/* Links */}
-        <div style={{ display: 'flex', gap: 2, flex: 1, overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-          {navLinks.map(([id, label]) => (
-            <button
-              key={id + label}
-              onClick={() => setView(id)}
-              style={{
-                padding: '8px 10px', border: 'none', cursor: 'pointer', borderRadius: 10,
-                background: view === id ? 'rgba(0,200,255,0.12)' : 'none',
-                color: view === id ? '#00C8FF' : '#8CA0BF',
-                fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap', flexShrink: 0,
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+          <div style={{ flex: 1 }} />
 
-        {/* Usuario */}
-        {user ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            {roleBadge && (
-              <span style={{
-                padding: '3px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700,
-                background: roleBadge.color + '20', color: roleBadge.color, whiteSpace: 'nowrap',
-              }}>
-                {roleBadge.label}
+          {/* Desktop: links inline */}
+          {!isMobile && (
+            <div style={{ display: 'flex', gap: 2 }}>
+              {navLinks.map(([id, label]) => (
+                <button key={id + label} onClick={() => handleNav(id)}
+                  style={{ padding: '8px 12px', border: 'none', cursor: 'pointer', borderRadius: 10, background: view === id ? 'rgba(0,200,255,0.12)' : 'none', color: view === id ? '#00C8FF' : '#8CA0BF', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Desktop: usuario */}
+          {!isMobile && user && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              {roleBadge && (
+                <span style={{ padding: '3px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: roleBadge.color + '20', color: roleBadge.color, whiteSpace: 'nowrap' }}>
+                  {roleBadge.label}
+                </span>
+              )}
+              <span style={{ color: '#8CA0BF', fontSize: 12, whiteSpace: 'nowrap' }}>
+                {profile?.full_name?.split(' ')[0] || 'Usuario'}
               </span>
-            )}
+              <button onClick={signOut} style={{ padding: '6px 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'none', color: '#F87171', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>
+                Salir
+              </button>
+            </div>
+          )}
+
+          {/* Desktop: no logueado */}
+          {!isMobile && !user && (
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              <button onClick={() => onShowAuth('login')} style={{ padding: '8px 14px', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 10, background: 'none', color: '#F0F6FF', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Login</button>
+              <button onClick={() => onShowAuth('register')} style={{ padding: '8px 14px', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', border: 'none', borderRadius: 10, color: '#050A14', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Registro</button>
+            </div>
+          )}
+
+          {/* Móvil: nombre usuario */}
+          {isMobile && user && (
             <span style={{ color: '#8CA0BF', fontSize: 12, whiteSpace: 'nowrap' }}>
               {profile?.full_name?.split(' ')[0] || 'Usuario'}
             </span>
-            <button
-              onClick={signOut}
-              style={{ padding: '6px 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'none', color: '#F87171', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap', minHeight: 36 }}
-            >
-              Salir
+          )}
+
+          {/* Móvil: botón hamburguesa */}
+          {isMobile && (
+            <button onClick={() => setMenuOpen(o => !o)}
+              style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '8px', cursor: 'pointer', color: '#F0F6FF', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 40, minHeight: 40 }}>
+              {menuOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
+          )}
+        </div>
+      </nav>
+
+      {/* ── Menú desplegable móvil ── */}
+      {isMobile && menuOpen && (
+        <div style={{ position: 'fixed', top: 56, left: 0, right: 0, bottom: 0, zIndex: 99, background: 'rgba(0,0,0,0.5)' }} onClick={() => setMenuOpen(false)}>
+          <div style={{ background: 'rgba(5,10,20,0.98)', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '8px 0' }} onClick={e => e.stopPropagation()}>
+
+            {/* Links de navegación */}
+            {navLinks.map(([id, label]) => (
+              <button key={id + label} onClick={() => handleNav(id)}
+                style={{ display: 'block', width: '100%', padding: '14px 20px', border: 'none', cursor: 'pointer', background: view === id ? 'rgba(0,200,255,0.10)' : 'transparent', color: view === id ? '#00C8FF' : '#F0F6FF', fontWeight: view === id ? 700 : 500, fontSize: 15, textAlign: 'left', borderLeft: view === id ? '3px solid #00C8FF' : '3px solid transparent' }}>
+                {label}
+              </button>
+            ))}
+
+            {/* Divider */}
+            <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '8px 0' }} />
+
+            {/* Usuario logueado */}
+            {user ? (
+              <div style={{ padding: '8px 20px' }}>
+                {roleBadge && (
+                  <div style={{ marginBottom: 8 }}>
+                    <span style={{ padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, background: roleBadge.color + '20', color: roleBadge.color }}>
+                      {roleBadge.label}
+                    </span>
+                  </div>
+                )}
+                <button onClick={() => { signOut(); setMenuOpen(false) }}
+                  style={{ width: '100%', padding: '12px', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 10, background: 'rgba(248,113,113,0.08)', color: '#F87171', cursor: 'pointer', fontSize: 15, fontWeight: 600 }}>
+                  Cerrar sesión
+                </button>
+              </div>
+            ) : (
+              <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <button onClick={() => { onShowAuth('login'); setMenuOpen(false) }}
+                  style={{ width: '100%', padding: '12px', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 10, background: 'none', color: '#F0F6FF', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
+                  Iniciar Sesión
+                </button>
+                <button onClick={() => { onShowAuth('register'); setMenuOpen(false) }}
+                  style={{ width: '100%', padding: '12px', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', border: 'none', borderRadius: 10, color: '#050A14', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
+                  Registrarse
+                </button>
+              </div>
+            )}
           </div>
-        ) : (
-          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            <button onClick={() => onShowAuth('login')} style={{ padding: '8px 14px', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 10, background: 'none', color: '#F0F6FF', fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap', minHeight: 36 }}>Login</button>
-            <button onClick={() => onShowAuth('register')} style={{ padding: '8px 14px', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', border: 'none', borderRadius: 10, color: '#050A14', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap', minHeight: 36 }}>Registro</button>
-          </div>
-        )}
-      </div>
-    </nav>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -141,16 +206,12 @@ function HomeView({ setView, onShowAuth }) {
         </button>
       ) : (
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', width: '100%', maxWidth: 400 }}>
-          <button
-            onClick={() => onShowAuth('login')}
-            style={{ padding: '14px 32px', fontSize: 15, borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: 'none', color: '#F0F6FF', fontWeight: 700, flex: 1, minHeight: 52 }}
-          >
+          <button onClick={() => onShowAuth('login')}
+            style={{ padding: '14px 32px', fontSize: 15, borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: 'none', color: '#F0F6FF', fontWeight: 700, flex: 1, minHeight: 52 }}>
             Iniciar Sesión
           </button>
-          <button
-            onClick={() => onShowAuth('register')}
-            style={{ padding: '14px 32px', fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, flex: 1, minHeight: 52 }}
-          >
+          <button onClick={() => onShowAuth('register')}
+            style={{ padding: '14px 32px', fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, flex: 1, minHeight: 52 }}>
             Registrarse
           </button>
         </div>
@@ -175,16 +236,12 @@ function BookingViewProtected({ onNavigate, onShowAuth }) {
             Para reservar un servicio debes iniciar sesión o crear una cuenta. Es rápido y gratuito.
           </p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => onShowAuth('login')}
-              style={{ padding: '12px 32px', fontSize: 15, borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: 'none', color: '#F0F6FF', fontWeight: 600, flex: 1, minHeight: 48 }}
-            >
+            <button onClick={() => onShowAuth('login')}
+              style={{ padding: '12px 32px', fontSize: 15, borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: 'none', color: '#F0F6FF', fontWeight: 600, flex: 1, minHeight: 48 }}>
               Iniciar Sesión
             </button>
-            <button
-              onClick={() => onShowAuth('register')}
-              style={{ padding: '12px 32px', fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, flex: 1, minHeight: 48 }}
-            >
+            <button onClick={() => onShowAuth('register')}
+              style={{ padding: '12px 32px', fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, flex: 1, minHeight: 48 }}>
               Registrarse
             </button>
           </div>
