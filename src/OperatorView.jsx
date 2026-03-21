@@ -246,14 +246,17 @@ const OperatorView = () => {
       // Comprimir imagen (reduce de ~5MB a ~300KB)
       const compressed = await compressImage(file);
       const path = `${bookingId}/${type}.jpg`;
-      const { error: uploadError } = await supabase.storage
+      console.log('📸 Upload iniciando:', { path, size: compressed.size, type: compressed.type });
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from('service-photos')
         .upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
+      console.log('📸 Upload resultado:', { uploadData, uploadError });
       if (uploadError) throw uploadError;
       const column = type === 'before' ? 'photo_before' : 'photo_after';
       const { error: updateError } = await supabase.from('bookings')
         .update({ [column]: path, updated_at: new Date().toISOString() })
         .eq('id', bookingId);
+      console.log('📸 DB update error:', updateError);
       if (updateError) throw updateError;
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, [column]: path } : b));
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, [column]: path }));
