@@ -31,19 +31,22 @@ function loadGoogleMapsScript(apiKey) {
 
 export default function ClientView() {
   const { user } = useAuth()
-  const [bookings, setBookings]       = useState([])
+  const [bookings, setBookings]           = useState([])
   const [activeBooking, setActiveBooking] = useState(null)
-  const [tab, setTab]                 = useState('active')
-  const [loading, setLoading]         = useState(true)
-  const [mapsLoaded, setMapsLoaded]   = useState(false)
-  const [eta, setEta]                 = useState(null)
+  const [tab, setTab]                     = useState('active')
+  const [loading, setLoading]             = useState(false)   // ← inicia false
+  const [fetchError, setFetchError]       = useState('')      // ← nuevo
+  const [mapsLoaded, setMapsLoaded]       = useState(false)
+  const [eta, setEta]                     = useState(null)
+  const fetchingRef                       = useRef(false)     // ← control duplicados
+  const bookingsCache                     = useRef([])        // ← caché
 
   // ── Calificación ───────────────────────────────────────────────
-  const [ratingModal, setRatingModal]       = useState(false)
-  const [ratingBooking, setRatingBooking]   = useState(null)
-  const [ratingValue, setRatingValue]       = useState(0)
-  const [ratingReview, setRatingReview]     = useState('')
-  const [savingRating, setSavingRating]     = useState(false)
+  const [ratingModal, setRatingModal]     = useState(false)
+  const [ratingBooking, setRatingBooking] = useState(null)
+  const [ratingValue, setRatingValue]     = useState(0)
+  const [ratingReview, setRatingReview]   = useState('')
+  const [savingRating, setSavingRating]   = useState(false)
 
   useEffect(() => {
     if (user) {
@@ -52,17 +55,67 @@ export default function ClientView() {
     }
   }, [user])
 
-  const fetchBookings = async () => {
-    setLoading(true)
-    const { data } = await supabase
-      .from('bookings')
-      .select('*')
-      .eq('client_id', user.id)
-      .order('created_at', { ascending: false })
-    setBookings(data || [])
-    const active = (data || []).find(b => ['pendiente','confirmado','en_camino','en_proceso'].includes(b.status))
-    if (active) setActiveBooking(active)
-    setLoading(false)
+  // ── Fetch con caché, timeout y control de duplicados ──────────
+  const fetchBookings = async (silent = false) => {
+    if (fetchingRef.current) return
+    fetchingRef.current = true
+    if (!silent) setLoading(true)
+    setFetchError('')
+
+    // Timeout 8s — si tarda más usa caché
+    let timedOut = false
+    const timeoutId = setTimeout(() => {
+      timedOut = true
+      fetchingRef.current = false
+      setLoading(false)
+      if (bookingsCache.current.length > 0) {
+        setBookings(bookingsCache.current)
+        const active = bookingsCache.current.find(b =>
+          ['pendiente','confirmado','en_camino','en_proceso'].includes(b.status)
+        )
+        if (active) setActiveBooking(active)
+        setFetchError('Sin conexión — mostrando datos anteriores.')
+      } else {
+        setFetchError('Sin conexión. Verifica tu red e intenta de nuevo.')
+      }
+    }, 8000)
+
+    try {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('client_id', user.id)
+        .order('created_at', { ascending: false })
+      clearTimeout(timeoutId)
+      if (timedOut) return
+      if (error) throw error
+      const result = data || []
+      bookingsCache.current = result   // guardar en caché
+      setBookings(result)
+      const active = result.find(b =>
+        ['pendiente','confirmado','en_camino','en_proceso'].includes(b.status)
+      )
+      if (active) setActiveBooking(active)
+      setFetchError('')
+    } catch (err) {
+      clearTimeout(timeoutId)
+      if (timedOut) return
+      if (bookingsCache.current.length > 0) {
+        setBookings(bookingsCache.current)
+        const active = bookingsCache.current.find(b =>
+          ['pendiente','confirmado','en_camino','en_proceso'].includes(b.status)
+        )
+        if (active) setActiveBooking(active)
+        setFetchError('Error de red — mostrando datos anteriores.')
+      } else {
+        setFetchError('No se pudieron cargar las reservaciones. Verifica tu conexión.')
+      }
+    } finally {
+      if (!timedOut) {
+        fetchingRef.current = false
+        setLoading(false)
+      }
+    }
   }
 
   useEffect(() => {
@@ -75,6 +128,10 @@ export default function ClientView() {
       }, (payload) => {
         setActiveBooking(payload.new)
         setBookings(prev => prev.map(b => b.id === payload.new.id ? payload.new : b))
+        // Actualizar caché también
+        bookingsCache.current = bookingsCache.current.map(b =>
+          b.id === payload.new.id ? payload.new : b
+        )
       })
       .subscribe()
     return () => supabase.removeChannel(channel)
@@ -97,6 +154,9 @@ export default function ClientView() {
       setBookings(prev => prev.map(b =>
         b.id === ratingBooking.id ? { ...b, client_rating: ratingValue, client_review: ratingReview } : b
       ))
+      bookingsCache.current = bookingsCache.current.map(b =>
+        b.id === ratingBooking.id ? { ...b, client_rating: ratingValue, client_review: ratingReview } : b
+      )
       setRatingModal(false)
       setRatingValue(0)
       setRatingReview('')
@@ -112,7 +172,6 @@ export default function ClientView() {
   const historyList = bookings.filter(b => ['finalizado','cancelado'].includes(b.status))
 
   if (!user) return null
-  if (loading) return <div style={styles.loading}>Cargando tus reservaciones...</div>
 
   return (
     <div style={styles.container}>
@@ -122,27 +181,45 @@ export default function ClientView() {
 
       <div style={styles.card}>
         <h2 style={styles.title}>🚗 Mis Reservaciones</h2>
-        <div style={styles.tabs}>
-          {[
-            { key: 'active',  label: `Activas (${activeList.length})` },
-            { key: 'history', label: `Historial (${historyList.length})` },
-          ].map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              style={{ ...styles.tab, ...(tab === t.key ? styles.tabActive : {}) }}>
-              {t.label}
-            </button>
-          ))}
-        </div>
 
-        {(tab === 'active' ? activeList : historyList).length === 0 ? (
-          <div style={styles.empty}>
-            {tab === 'active' ? 'No tienes reservaciones activas' : 'Sin historial aún'}
+        {/* Banner error de red con reintentar */}
+        {fetchError ? (
+          <div style={{ background: '#fef9c3', border: '1.5px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 13, color: '#854d0e', fontWeight: 600 }}>⚠️ {fetchError}</span>
+            <button onClick={() => fetchBookings()} style={{ padding: '7px 14px', background: '#f97316', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+              🔄 Reintentar
+            </button>
           </div>
+        ) : null}
+
+        {/* Spinner solo cuando carga por primera vez */}
+        {loading ? (
+          <div style={styles.loading}>Cargando tus reservaciones...</div>
         ) : (
-          (tab === 'active' ? activeList : historyList).map(b => (
-            <BookingCard key={b.id} booking={b}
-              onRate={() => { setRatingBooking(b); setRatingValue(b.client_rating || 0); setRatingReview(b.client_review || ''); setRatingModal(true); }} />
-          ))
+          <>
+            <div style={styles.tabs}>
+              {[
+                { key: 'active',  label: `Activas (${activeList.length})` },
+                { key: 'history', label: `Historial (${historyList.length})` },
+              ].map(t => (
+                <button key={t.key} onClick={() => setTab(t.key)}
+                  style={{ ...styles.tab, ...(tab === t.key ? styles.tabActive : {}) }}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {(tab === 'active' ? activeList : historyList).length === 0 ? (
+              <div style={styles.empty}>
+                {tab === 'active' ? 'No tienes reservaciones activas' : 'Sin historial aún'}
+              </div>
+            ) : (
+              (tab === 'active' ? activeList : historyList).map(b => (
+                <BookingCard key={b.id} booking={b}
+                  onRate={() => { setRatingBooking(b); setRatingValue(b.client_rating || 0); setRatingReview(b.client_review || ''); setRatingModal(true); }} />
+              ))
+            )}
+          </>
         )}
       </div>
 
@@ -159,7 +236,6 @@ export default function ClientView() {
                 <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 15 }}>{ratingBooking.service_name}</div>
                 <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>📅 {ratingBooking.scheduled_date} · {ratingBooking.scheduled_time}</div>
               </div>
-
               <div style={{ marginBottom: 20 }}>
                 <p style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 12, textAlign: 'center' }}>¿Cómo calificarías el servicio?</p>
                 <RatingSlider
@@ -167,7 +243,6 @@ export default function ClientView() {
                   onRatingChange={(val) => setRatingValue(val)}
                 />
               </div>
-
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Comentario (opcional)</label>
                 <textarea value={ratingReview} onChange={e => setRatingReview(e.target.value)}
@@ -327,8 +402,6 @@ function BookingCard({ booking, onRate }) {
         <span>📅 {booking.scheduled_date} · {booking.scheduled_time} hrs</span>
         <span>💰 ${booking.total_price || booking.service_price} MXN</span>
       </div>
-
-      {/* Calificación */}
       {hasRated && (
         <div style={{ marginTop: 10, padding: '8px 12px', background: '#fefce8', borderRadius: 8, border: '1px solid #fde68a', display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 14 }}>{'⭐'.repeat(booking.client_rating)}</span>
@@ -346,27 +419,27 @@ function BookingCard({ booking, onRate }) {
 }
 
 const styles = {
-  container: { minHeight: '100vh', background: '#f3f4f6', padding: 16 },
-  loading: { padding: 40, textAlign: 'center', color: '#6b7280' },
-  card: { background: '#fff', borderRadius: 16, padding: 20, maxWidth: 640, margin: '0 auto', boxShadow: '0 2px 12px rgba(0,0,0,0.08)' },
-  title: { fontSize: 20, fontWeight: 700, color: '#1f2937', margin: '0 0 16px' },
-  tabs: { display: 'flex', gap: 8, marginBottom: 16, borderBottom: '2px solid #f3f4f6', paddingBottom: 8 },
-  tab: { padding: '6px 16px', borderRadius: 20, border: 'none', background: '#f3f4f6', color: '#6b7280', cursor: 'pointer', fontSize: 13, fontWeight: 500 },
-  tabActive: { background: '#eff6ff', color: '#3b82f6', fontWeight: 600 },
-  empty: { textAlign: 'center', color: '#9ca3af', padding: '32px 0', fontSize: 14 },
-  trackingCard: { background: 'linear-gradient(135deg, #1e3a8a, #1e40af)', borderRadius: 16, padding: 16, maxWidth: 640, margin: '0 auto 16px', overflow: 'hidden' },
+  container:      { minHeight: '100vh', background: '#f3f4f6', padding: 16 },
+  loading:        { padding: 40, textAlign: 'center', color: '#6b7280' },
+  card:           { background: '#fff', borderRadius: 16, padding: 20, maxWidth: 640, margin: '0 auto', boxShadow: '0 2px 12px rgba(0,0,0,0.08)' },
+  title:          { fontSize: 20, fontWeight: 700, color: '#1f2937', margin: '0 0 16px' },
+  tabs:           { display: 'flex', gap: 8, marginBottom: 16, borderBottom: '2px solid #f3f4f6', paddingBottom: 8 },
+  tab:            { padding: '6px 16px', borderRadius: 20, border: 'none', background: '#f3f4f6', color: '#6b7280', cursor: 'pointer', fontSize: 13, fontWeight: 500 },
+  tabActive:      { background: '#eff6ff', color: '#3b82f6', fontWeight: 600 },
+  empty:          { textAlign: 'center', color: '#9ca3af', padding: '32px 0', fontSize: 14 },
+  trackingCard:   { background: 'linear-gradient(135deg, #1e3a8a, #1e40af)', borderRadius: 16, padding: 16, maxWidth: 640, margin: '0 auto 16px', overflow: 'hidden' },
   trackingHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  liveChip: { display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.15)', borderRadius: 20, padding: '4px 12px', color: '#fff', fontWeight: 700, fontSize: 12 },
-  liveDot: { width: 8, height: 8, borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 8px #4ade80', display: 'inline-block' },
-  statusRow: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 },
-  etaChip: { marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: '8px 14px', textAlign: 'center' },
-  trackingMap: { width: '100%', height: 240, borderRadius: 12, border: '2px solid rgba(255,255,255,0.2)', marginBottom: 10 },
+  liveChip:       { display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.15)', borderRadius: 20, padding: '4px 12px', color: '#fff', fontWeight: 700, fontSize: 12 },
+  liveDot:        { width: 8, height: 8, borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 8px #4ade80', display: 'inline-block' },
+  statusRow:      { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 },
+  etaChip:        { marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: '8px 14px', textAlign: 'center' },
+  trackingMap:    { width: '100%', height: 240, borderRadius: 12, border: '2px solid rgba(255,255,255,0.2)', marginBottom: 10 },
   mapPlaceholder: { width: '100%', height: 240, borderRadius: 12, background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#93c5fd', fontSize: 14, marginBottom: 10 },
   trackingFooter: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  bookingCard: { border: '2px solid #f3f4f6', borderRadius: 12, padding: 14, marginBottom: 10 },
-  bookingHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
-  bookingTitle: { fontWeight: 600, fontSize: 15, color: '#1f2937' },
-  bookingMeta: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
-  statusPill: { padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, flexShrink: 0 },
-  bookingInfo: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, color: '#374151' },
+  bookingCard:    { border: '2px solid #f3f4f6', borderRadius: 12, padding: 14, marginBottom: 10 },
+  bookingHeader:  { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
+  bookingTitle:   { fontWeight: 600, fontSize: 15, color: '#1f2937' },
+  bookingMeta:    { fontSize: 12, color: '#9ca3af', marginTop: 2 },
+  statusPill:     { padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, flexShrink: 0 },
+  bookingInfo:    { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, color: '#374151' },
 }
