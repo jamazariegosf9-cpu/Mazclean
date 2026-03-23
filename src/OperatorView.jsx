@@ -24,10 +24,13 @@ const OperatorView = () => {
   const { user, profile, signOut } = useAuth();
   const isMobile = useIsMobile();
   const [bookings, setBookings]               = useState([]);
-  const [loading, setLoading]                 = useState(true);
+  const [loading, setLoading]                 = useState(false);
+  const [fetchError, setFetchError]           = useState('');
   const [activeTab, setActiveTab]             = useState('pendientes');
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [updatingId, setUpdatingId]           = useState(null);
+  const fetchingRef                           = useRef(false);
+  const bookingsCache                         = useRef([]);
 
   // ── Checklist ──────────────────────────────────────────────────
   const [checklist, setChecklist]             = useState([]);
@@ -61,7 +64,7 @@ const OperatorView = () => {
         .on('postgres_changes', {
           event: '*', schema: 'public', table: 'bookings',
           filter: `operator_id=eq.${user.id}`
-        }, () => fetchOperatorBookings())
+        }, () => fetchOperatorBookings(true))
         .subscribe();
       return () => supabase.removeChannel(channel);
     }
@@ -96,20 +99,55 @@ const OperatorView = () => {
     return () => { if (gpsWatcherRef.current !== null) navigator.geolocation.clearWatch(gpsWatcherRef.current); };
   }, [bookings, user]);
 
-  // ── Fetch ──────────────────────────────────────────────────────
-  const fetchOperatorBookings = async () => {
+  // ── Fetch con caché, timeout y control de duplicados ──────────
+  const fetchOperatorBookings = async (silent = false) => {
+    // Evitar peticiones duplicadas simultáneas
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+    if (!silent) setLoading(true);
+    setFetchError('');
+
+    // Timeout de 8s — si tarda más, usa caché
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      fetchingRef.current = false;
+      setLoading(false);
+      if (bookingsCache.current.length > 0) {
+        setBookings(bookingsCache.current);
+        setFetchError('Sin conexión — mostrando datos anteriores.');
+      } else {
+        setFetchError('Sin conexión. Verifica tu red e intenta de nuevo.');
+      }
+    }, 8000);
+
     try {
-      setLoading(true);
       let query = supabase.from('bookings').select('*, customer:client_id(full_name, phone)').order('scheduled_date', { ascending: true });
       if (profile?.role !== 'admin') query = query.eq('operator_id', user.id);
       else query = query.in('status', ['confirmado', 'en_camino', 'en_proceso', 'finalizado']);
       const { data, error } = await query;
+      clearTimeout(timeoutId);
+      if (timedOut) return;
       if (error) throw error;
-      setBookings(data || []);
+      const result = data || [];
+      bookingsCache.current = result;   // guardar en caché
+      setBookings(result);
+      setFetchError('');
     } catch (err) {
+      clearTimeout(timeoutId);
+      if (timedOut) return;
       console.error('Error fetching:', err.message);
+      if (bookingsCache.current.length > 0) {
+        setBookings(bookingsCache.current);
+        setFetchError('Error de red — mostrando datos anteriores.');
+      } else {
+        setFetchError('No se pudieron cargar los servicios. Verifica tu conexión.');
+      }
     } finally {
-      setLoading(false);
+      if (!timedOut) {
+        fetchingRef.current = false;
+        setLoading(false);
+      }
     }
   };
 
@@ -355,6 +393,16 @@ const OperatorView = () => {
             </div>
           </div>
         )}
+
+        {/* Banner de error de red con botón reintentar */}
+        {fetchError ? (
+          <div style={{ background: '#fef9c3', border: '1.5px solid #fde68a', borderRadius: 12, padding: '14px 16px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 13, color: '#854d0e', fontWeight: 600 }}>⚠️ {fetchError}</span>
+            <button onClick={() => fetchOperatorBookings()} style={{ padding: '8px 16px', background: '#f97316', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0, minHeight: 36 }}>
+              🔄 Reintentar
+            </button>
+          </div>
+        ) : null}
 
         {loading ? (
           <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: 48, textAlign: 'center' }}>
