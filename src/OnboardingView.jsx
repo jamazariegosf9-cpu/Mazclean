@@ -1,554 +1,876 @@
-import { useState, useEffect } from 'react'
-import { supabase } from './lib/supabase'
-import { useAuth } from './context/AuthContext'
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  MapPin, Clock, Phone, Navigation, LogOut,
+  Play, Check, Camera, CheckSquare, Square, AlertTriangle, Upload
+} from 'lucide-react';
+import { supabase } from './lib/supabase';
+import { useAuth } from './context/AuthContext';
+import { sendWhatsApp, updateOperatorLocation } from './lib/whatsapp';
 
-const ZONAS = [
-  'Álvaro Obregón','Azcapotzalco','Benito Juárez','Coyoacán',
-  'Cuajimalpa','Cuauhtémoc','Gustavo A. Madero','Iztacalco',
-  'Iztapalapa','La Magdalena Contreras','Miguel Hidalgo','Milpa Alta',
-  'Tláhuac','Tlalpan','Venustiano Carranza','Xochimilco',
-  'Atizapán','Cuautitlán Izcalli','Ecatepec','Huixquilucan',
-  'Naucalpan','Nezahualcóyotl','Tlalnepantla','Tultitlán',
-]
-const DIAS   = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo']
-const BANCOS = ['BBVA','Banamex','Santander','Banorte','HSBC','Inbursa','Scotiabank','Afirme','BanBajío','Azteca','Otro']
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
-function validarCLABE(clabe) {
-  if (!/^\d{18}$/.test(clabe)) return false
-  const pesos = [3,7,1,3,7,1,3,7,1,3,7,1,3,7,1,3,7]
-  const suma  = pesos.reduce((acc, p, i) => acc + (parseInt(clabe[i]) * p) % 10, 0)
-  return (10 - (suma % 10)) % 10 === parseInt(clabe[17])
-}
-
+// ── Hook móvil ─────────────────────────────────────────────────
 function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
   useEffect(() => {
-    const h = () => setIsMobile(window.innerWidth < 768)
-    window.addEventListener('resize', h)
-    return () => window.removeEventListener('resize', h)
-  }, [])
-  return isMobile
+    const handler = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return isMobile;
 }
 
-// ── Compresión robusta con múltiples fallbacks ─────────────────
-// Intenta OffscreenCanvas → canvas DOM → archivo original
-// Cada paso tiene timeout de 5s para no bloquear el hilo principal
+// ── compressForMobile: doble fallback probado en Samsung F24 ──
+// OffscreenCanvas → canvas DOM + FileReader → archivo original
 async function compressForMobile(file) {
-  // Archivos pequeños van directo
-  if (file.size < 500 * 1024) return file
+  if (file.size < 500 * 1024) return file;
+  const MAX = 1000; const QUALITY = 0.78; const TIMEOUT = 5000;
 
-  const MAX     = 1000
-  const QUALITY = 0.78
-  const TIMEOUT = 5000
-
-  // ── Intento 1: OffscreenCanvas (Chrome Android moderno) ──────
+  // Intento 1: OffscreenCanvas
   if (typeof OffscreenCanvas !== 'undefined') {
     try {
       const bitmap = await Promise.race([
         createImageBitmap(file),
-        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), TIMEOUT)),
-      ])
-      let w = bitmap.width, h = bitmap.height
+        new Promise((_, r) => setTimeout(() => r(new Error('t')), TIMEOUT)),
+      ]);
+      let w = bitmap.width, h = bitmap.height;
       if (w > MAX || h > MAX) {
-        if (w > h) { h = Math.round(h * MAX / w); w = MAX }
-        else       { w = Math.round(w * MAX / h); h = MAX }
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else       { w = Math.round(w * MAX / h); h = MAX; }
       }
-      const oc  = new OffscreenCanvas(w, h)
-      const ctx = oc.getContext('2d')
-      ctx.drawImage(bitmap, 0, 0, w, h)
-      bitmap.close()
+      const oc = new OffscreenCanvas(w, h);
+      oc.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+      bitmap.close();
       const blob = await Promise.race([
         oc.convertToBlob({ type: 'image/jpeg', quality: QUALITY }),
-        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), TIMEOUT)),
-      ])
-      if (blob && blob.size > 0) return blob
-    } catch { /* continuar al siguiente intento */ }
+        new Promise((_, r) => setTimeout(() => r(new Error('t')), TIMEOUT)),
+      ]);
+      if (blob && blob.size > 0) return blob;
+    } catch { /* siguiente intento */ }
   }
 
-  // ── Intento 2: canvas DOM con FileReader (máxima compatibilidad) ──
+  // Intento 2: canvas DOM + FileReader con timeouts
   try {
-    const blob = await new Promise((resolve) => {
-      // Timeout de seguridad total: 10s → devuelve original
-      const safeTimer = setTimeout(() => resolve(file), 10000)
-
-      const reader = new FileReader()
+    return await new Promise((resolve) => {
+      const safe = setTimeout(() => resolve(file), 10000);
+      const reader = new FileReader();
       reader.onload = (e) => {
-        const img = new Image()
+        const img = new Image();
         img.onload = () => {
           try {
-            let w = img.width, h = img.height
+            let w = img.width, h = img.height;
             if (w > MAX || h > MAX) {
-              if (w > h) { h = Math.round(h * MAX / w); w = MAX }
-              else       { w = Math.round(w * MAX / h); h = MAX }
+              if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+              else       { w = Math.round(w * MAX / h); h = MAX; }
             }
-            const canvas = document.createElement('canvas')
-            canvas.width = w; canvas.height = h
-            const ctx = canvas.getContext('2d')
-            if (!ctx) { clearTimeout(safeTimer); resolve(file); return }
-            ctx.drawImage(img, 0, 0, w, h)
-
-            // toBlob con timeout propio de 5s
-            let blobDone = false
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { clearTimeout(safe); resolve(file); return; }
+            ctx.drawImage(img, 0, 0, w, h);
+            let done = false;
             canvas.toBlob((b) => {
-              if (blobDone) return
-              blobDone = true
-              clearTimeout(safeTimer)
-              resolve(b && b.size > 0 ? b : file)
-            }, 'image/jpeg', QUALITY)
-
-            setTimeout(() => {
-              if (!blobDone) { blobDone = true; clearTimeout(safeTimer); resolve(file) }
-            }, 5000)
-
-          } catch { clearTimeout(safeTimer); resolve(file) }
-        }
-        img.onerror = () => { clearTimeout(safeTimer); resolve(file) }
-        img.src     = e.target.result
-      }
-      reader.onerror = () => { clearTimeout(safeTimer); resolve(file) }
-      reader.readAsDataURL(file)
-    })
-    return blob
-  } catch {
-    return file // último fallback: subir original sin comprimir
-  }
+              if (done) return; done = true;
+              clearTimeout(safe);
+              resolve(b && b.size > 0 ? b : file);
+            }, 'image/jpeg', QUALITY);
+            setTimeout(() => { if (!done) { done = true; clearTimeout(safe); resolve(file); } }, 5000);
+          } catch { clearTimeout(safe); resolve(file); }
+        };
+        img.onerror = () => { clearTimeout(safe); resolve(file); };
+        img.src = e.target.result;
+      };
+      reader.onerror = () => { clearTimeout(safe); resolve(file); };
+      reader.readAsDataURL(file);
+    });
+  } catch { return file; }
 }
 
-export default function OnboardingView({ onComplete }) {
-  const { user, profile } = useAuth()
-  const isMobile          = useIsMobile()
-  const [step, setStep]   = useState(profile?.onboarding_step || 1)
-  const [saving, setSaving] = useState(false)
-  const [error, setError]   = useState('')
+const OperatorView = () => {
+  const { user, profile, signOut } = useAuth();
+  const isMobile = useIsMobile();
+  const [bookings, setBookings]               = useState([]);
+  const [loading, setLoading]                 = useState(false);
+  const [fetchError, setFetchError]           = useState('');
+  const [activeTab, setActiveTab]             = useState('pendientes');
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [updatingId, setUpdatingId]           = useState(null);
+  const fetchingRef                           = useRef(false);
+  const bookingsCache                         = useRef([]);
 
-  // Paso 1
-  const [fullName, setFullName] = useState(profile?.full_name || '')
-  const [phone, setPhone]       = useState(profile?.phone || '')
+  // ── Checklist ──────────────────────────────────────────────────
+  const [checklist, setChecklist]             = useState([]);
+  const [checklistModal, setChecklistModal]   = useState(false);
+  const [pendingFinalize, setPendingFinalize] = useState(null);
 
-  // Paso 2
-  const [kitPhotoUrl, setKitPhotoUrl]   = useState(profile?.kit_photo_url || '')
-  const [uploadingKit, setUploadingKit] = useState(false)
-  const [debugLog, setDebugLog]         = useState([])
+  // ── Fotos 4 obligatorias ─────────────────────────────────────
+  const [photoModal, setPhotoModal]           = useState(false);
+  const [photoBooking, setPhotoBooking]       = useState(null);
+  const [photoStep, setPhotoStep]             = useState(1);
+  const [photosData, setPhotosData]           = useState({});
+  const [uploadingPhoto, setUploadingPhoto]   = useState(false);
+  const [uploadError, setUploadError]         = useState('');
+  const [uploadProgress, setUploadProgress]   = useState('');
+  const [photoPhase, setPhotoPhase]           = useState('before');
 
-  // Paso 3
-  const [selectedZones, setSelectedZones] = useState(profile?.coverage_zones || [])
-  const [radius, setRadius]               = useState(profile?.coverage_radius || 10)
-  const [selectedDays, setSelectedDays]   = useState(profile?.work_days || [])
-  const [workStart, setWorkStart]         = useState(profile?.work_start?.slice(0,5) || '08:00')
-  const [workEnd, setWorkEnd]             = useState(profile?.work_end?.slice(0,5) || '18:00')
+  // ── Incidencia ─────────────────────────────────────────────────
+  const [incidentModal, setIncidentModal]     = useState(false);
+  const [incidentBooking, setIncidentBooking] = useState(null);
+  const [incidentNote, setIncidentNote]       = useState('');
+  const [sendingIncident, setSendingIncident] = useState(false);
 
-  // Paso 4
-  const [clabe, setClabe]             = useState('')
-  const [clabeHolder, setClabeHolder] = useState(profile?.clabe_holder || '')
-  const [bankName, setBankName]       = useState(profile?.bank_name || '')
-  const [clabeError, setClabeError]   = useState('')
+  // ── GPS Tracking ───────────────────────────────────────────────
+  const gpsWatcherRef                         = useRef(null);
+  const [trackingBookingId, setTrackingBookingId] = useState(null);
+  const [gpsError, setGpsError]               = useState('');
 
+  // ── Token cacheado para uploads XHR en Samsung ─────────────────
+  const [sessionToken, setSessionToken]       = useState(null);
+
+  // ── Realtime ───────────────────────────────────────────────────
   useEffect(() => {
-    if (profile?.onboarding_step) setStep(profile.onboarding_step)
-  }, [profile])
+    if (user) {
+      fetchOperatorBookings();
+      const channel = supabase
+        .channel('operator-changes')
+        .on('postgres_changes', {
+          event: '*', schema: 'public', table: 'bookings',
+          filter: `operator_id=eq.${user.id}`
+        }, () => fetchOperatorBookings(true))
+        .subscribe();
+      return () => supabase.removeChannel(channel);
+    }
+  }, [user]);
 
-  const addLog = (msg) => {
-    const line = `[${new Date().toLocaleTimeString('es-MX')}] ${msg}`
-    console.log(line)
-    setDebugLog(prev => [...prev.slice(-9), line])
-  }
-
-  const saveStep = async (data, next) => {
-    setSaving(true); setError('')
-    try {
-      const { error: e } = await supabase.from('profiles')
-        .update({ ...data, onboarding_step: next, updated_at: new Date().toISOString() })
-        .eq('id', user.id)
-      if (e) throw e
-      setStep(next)
-    } catch (e) { setError(e.message) }
-    finally { setSaving(false) }
-  }
-
-  const handleStep1 = async () => {
-    if (!fullName.trim()) { setError('El nombre completo es requerido.'); return }
-    if (!/^\d{10}$/.test(phone.replace(/\s/g,''))) { setError('El teléfono debe tener 10 dígitos.'); return }
-    await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,'') }, 2)
-  }
-
-  // ── Token de sesión cacheado al montar el componente ────────
-  const [sessionToken, setSessionToken] = useState(null)
+  // ── Cachear token al montar — nunca await durante el upload ────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.access_token) setSessionToken(session.access_token)
-    })
+      if (session?.access_token) setSessionToken(session.access_token);
+    });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (session?.access_token) setSessionToken(session.access_token)
-    })
-    return () => subscription.unsubscribe()
-  }, [])
+      if (session?.access_token) setSessionToken(session.access_token);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
-  // ── Upload con XHR puro + token cacheado ─────────────────────
-  const handleKitUpload = async (file) => {
-    if (!file) return
-    setUploadingKit(true)
-    setError('')
-    setDebugLog([])
+  // ── GPS watchPosition cuando status es en_camino ───────────────
+  useEffect(() => {
+    const activeBooking = bookings.find(
+      b => b.status === 'en_camino' && (b.operator_id === user?.id || profile?.role === 'admin')
+    );
+    if (activeBooking && trackingBookingId !== activeBooking.id) {
+      setTrackingBookingId(activeBooking.id);
+      if (!navigator.geolocation) return;
+      if (gpsWatcherRef.current !== null) navigator.geolocation.clearWatch(gpsWatcherRef.current);
+      gpsWatcherRef.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          setGpsError('');
+          updateOperatorLocation(activeBooking.id, user.id, pos.coords.latitude, pos.coords.longitude);
+        },
+        (err) => {
+          if (err.code === 1) setGpsError('⚠️ Ubicación bloqueada. Ve a Configuración › Permisos › Ubicación.');
+          else setGpsError('⚠️ No se pudo obtener tu ubicación. Verifica que el GPS esté activado.');
+        },
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+      );
+    }
+    if (!activeBooking && gpsWatcherRef.current !== null) {
+      navigator.geolocation.clearWatch(gpsWatcherRef.current);
+      gpsWatcherRef.current = null;
+      setTrackingBookingId(null);
+    }
+    return () => { if (gpsWatcherRef.current !== null) navigator.geolocation.clearWatch(gpsWatcherRef.current); };
+  }, [bookings, user]);
+
+  // ── Fetch con caché, timeout y control de duplicados ──────────
+  const fetchOperatorBookings = async (silent = false) => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+    if (!silent) setLoading(true);
+    setFetchError('');
+
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      fetchingRef.current = false;
+      setLoading(false);
+      if (bookingsCache.current.length > 0) {
+        setBookings(bookingsCache.current);
+        setFetchError('Sin conexión — mostrando datos anteriores.');
+      } else {
+        setFetchError('Sin conexión. Verifica tu red e intenta de nuevo.');
+      }
+    }, 8000);
+
     try {
-      addLog(`Archivo: ${(file.size/1024).toFixed(0)} KB | ${file.type || 'image/jpeg'}`)
+      let query = supabase.from('bookings').select('*, customer:client_id(full_name, phone)').order('scheduled_date', { ascending: true });
+      if (profile?.role !== 'admin') query = query.eq('operator_id', user.id);
+      else query = query.in('status', ['confirmado', 'en_camino', 'en_proceso', 'finalizado']);
+      const { data, error } = await query;
+      clearTimeout(timeoutId);
+      if (timedOut) return;
+      if (error) throw error;
+      const result = data || [];
+      bookingsCache.current = result;
+      setBookings(result);
+      setFetchError('');
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (timedOut) return;
+      console.error('Error fetching:', err.message);
+      if (bookingsCache.current.length > 0) {
+        setBookings(bookingsCache.current);
+        setFetchError('Error de red — mostrando datos anteriores.');
+      } else {
+        setFetchError('No se pudieron cargar los servicios. Verifica tu conexión.');
+      }
+    } finally {
+      if (!timedOut) {
+        fetchingRef.current = false;
+        setLoading(false);
+      }
+    }
+  };
 
+  // ── Actualizar status ──────────────────────────────────────────
+  const updateStatus = async (bookingId, newStatus, eventName, bookingData = null) => {
+    if (newStatus === 'en_camino' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        () => setGpsError(''),
+        (err) => { if (err.code === 1) setGpsError('⚠️ Ubicación bloqueada.'); else setGpsError('⚠️ GPS no disponible.'); },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+    setUpdatingId(bookingId);
+    const timeoutId = setTimeout(() => {
+      setUpdatingId(null);
+      alert('La operación tardó demasiado. Verifica tu conexión e intenta de nuevo.');
+    }, 12000);
+    try {
+      const { error } = await supabase.from('bookings').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', bookingId);
+      clearTimeout(timeoutId);
+      if (error) throw error;
+      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: newStatus } : b));
+      const booking = bookingData || bookings.find(b => b.id === bookingId);
+      const phone = booking?.customer?.phone;
+      if (phone) {
+        sendWhatsApp(eventName, phone, {
+          booking_ref:   booking.booking_ref,
+          service_name:  booking.service_name,
+          booking_id:    bookingId,
+          operator_name: profile?.full_name || user?.user_metadata?.full_name || 'tu operador',
+        });
+      }
+      if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, status: newStatus }));
+    } catch (err) {
+      clearTimeout(timeoutId);
+      alert(`Error al actualizar estado: ${err.message}`);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // ── Config de los 4 pasos de fotos ───────────────────────────
+  const PHOTO_STEPS = [
+    { step: 1, key: 'front_before',   phase: 'before', label: '📸 Foto 1 de 4 — Frontal ANTES',   desc: 'Captura el frente del auto con la placa visible',    color: '#f97316' },
+    { step: 2, key: 'side_before',    phase: 'before', label: '📸 Foto 2 de 4 — Lateral ANTES',   desc: 'Captura el lado más expuesto del auto',             color: '#f97316' },
+    { step: 3, key: 'front_after',    phase: 'after',  label: '📸 Foto 3 de 4 — Frontal DESPUÉS', desc: 'Captura el frente del auto ya lavado',              color: '#10b981' },
+    { step: 4, key: 'interior_after', phase: 'after',  label: '📸 Foto 4 de 4 — Interior DESPUÉS',desc: 'Captura el interior o cajuela según el servicio',   color: '#10b981' },
+  ];
+
+  // ── Iniciar lavado → fotos ANTES (pasos 1 y 2) ───────────────
+  const handleStartWashing = async (booking) => {
+    await updateStatus(booking.id, 'en_proceso', 'washing', booking);
+    const updated = { ...booking, status: 'en_proceso' };
+    const existing = {};
+    if (updated.photo_front_before) existing.front_before = updated.photo_front_before;
+    if (updated.photo_side_before)  existing.side_before  = updated.photo_side_before;
+    setPhotoBooking(updated);
+    setPhotosData(existing);
+    setPhotoStep(1);
+    setPhotoPhase('before');
+    setUploadError('');
+    setUploadProgress('');
+    setUploadingPhoto(false);
+    setPhotoModal(true);
+  };
+
+  // ── Finalizar → fotos DESPUÉS (pasos 3 y 4) ──────────────────
+  const handleFinalizeClick = (booking) => {
+    if (!booking.photo_front_before || !booking.photo_side_before) {
+      alert('⚠️ Debes subir las fotos ANTES del servicio primero.\n\nUsa el botón "Empezar Lavado" para tomarlas.');
+      return;
+    }
+    const existing = {};
+    if (booking.photo_front_after)    existing.front_after    = booking.photo_front_after;
+    if (booking.photo_interior_after) existing.interior_after = booking.photo_interior_after;
+    setPhotoBooking(booking);
+    setPhotosData(existing);
+    setPhotoStep(3);
+    setPhotoPhase('after');
+    setPendingFinalize(booking.id);
+    setUploadError('');
+    setUploadProgress('');
+    setUploadingPhoto(false);
+    setPhotoModal(true);
+  };
+
+  // ── Cerrar/completar modal fotos ──────────────────────────────
+  const closePhotoModal = async () => {
+    const currentPending = pendingFinalize;
+    setPhotoModal(false);
+    setPhotosData({});
+    setPhotoBooking(null);
+    if (currentPending) {
+      const booking = bookings.find(b => b.id === currentPending);
+      if (!booking) { setPendingFinalize(null); return; }
+      const items = await loadChecklist(booking);
+      if (!items) {
+        setPendingFinalize(null);
+        await updateStatus(currentPending, 'finalizado', 'done');
+        return;
+      }
+      setChecklist(items);
+      setChecklistModal(true);
+    }
+  };
+
+  // ── Avanzar al siguiente paso de fotos ────────────────────────
+  const handleNextPhotoStep = () => {
+    if (photoStep === 1 && photoPhase === 'before') {
+      setPhotoStep(2);
+    } else if (photoStep === 2 && photoPhase === 'before') {
+      savePhotosMeta(photoBooking.id);
+      setPhotoModal(false);
+      setPhotosData({});
+      setPhotoBooking(null);
+    } else if (photoStep === 3 && photoPhase === 'after') {
+      setPhotoStep(4);
+    } else if (photoStep === 4 && photoPhase === 'after') {
+      savePhotosMeta(photoBooking.id);
+      closePhotoModal();
+    }
+  };
+
+  // ── Guardar geolocalización y timestamp de fotos ──────────────
+  const savePhotosMeta = (bookingId) => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      supabase.from('bookings').update({
+        photos_geo_lat:      pos.coords.latitude,
+        photos_geo_lng:      pos.coords.longitude,
+        photos_completed_at: new Date().toISOString(),
+      }).eq('id', bookingId).then(() => {});
+    }, () => {
+      supabase.from('bookings').update({
+        photos_completed_at: new Date().toISOString(),
+      }).eq('id', bookingId).then(() => {});
+    });
+  };
+
+  // ── Checklist ──────────────────────────────────────────────────
+  const loadChecklist = async (booking) => {
+    const { data, error } = await supabase.from('service_checklist').select('*').eq('service_id', booking.service_id).order('sort_order', { ascending: true });
+    if (error || !data || data.length === 0) return null;
+    return data.map(item => ({ ...item, checked: false }));
+  };
+
+  const toggleCheckItem = (id) => {
+    setChecklist(prev => prev.map(item => item.id === id ? { ...item, checked: !item.checked } : item));
+  };
+
+  const confirmFinalize = async () => {
+    if (!checklist.every(item => item.checked)) { alert('Por favor completa todos los ítems del checklist antes de finalizar.'); return; }
+    setChecklistModal(false);
+    await updateStatus(pendingFinalize, 'finalizado', 'done');
+    setPendingFinalize(null);
+    setChecklist([]);
+  };
+
+  // ── Upload con XHR + token cacheado — probado Samsung F24 ───────
+  const handlePhotoUpload = async (file, bookingId, type) => {
+    if (!file) return;
+    setUploadingPhoto(true);
+    setUploadError('');
+    setUploadProgress('Comprimiendo...');
+
+    const TYPE_TO_COLUMN = {
+      front_before:   'photo_front_before',
+      side_before:    'photo_side_before',
+      front_after:    'photo_front_after',
+      interior_after: 'photo_interior_after',
+    };
+
+    try {
       if (file.size > 15 * 1024 * 1024) {
-        throw new Error('La foto pesa más de 15 MB. Usa una foto de menor resolución.')
+        throw new Error('La foto pesa más de 15 MB. Toma una con menor resolución.');
       }
 
-      // Comprimir
-      addLog('Comprimiendo...')
-      const compressed = await compressForMobile(file)
-      addLog(`Comprimido: ${(compressed.size/1024).toFixed(0)} KB`)
+      // Comprimir con doble fallback
+      const compressed = await compressForMobile(file);
+      setUploadProgress('Subiendo...');
 
-      // Token — usar el cacheado al montar, nunca await dentro del upload
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-      const token = sessionToken || supabaseKey
-      const path  = `kits/${user.id}/kit_${Date.now()}.jpg`
-
-      addLog(`Token: ${token === supabaseKey ? 'anon' : 'user'} — subiendo con XHR...`)
+      // XHR con token cacheado — nunca await getSession() aquí
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const token = sessionToken || supabaseKey;
+      const path  = `${bookingId}/${type}_${Date.now()}.jpg`;
 
       await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`)
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`)
-        xhr.setRequestHeader('apikey', supabaseKey)
-        xhr.setRequestHeader('Content-Type', 'image/jpeg')
-        xhr.setRequestHeader('x-upsert', 'true')
-        xhr.timeout = 60000 // 60s
-
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`);
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.setRequestHeader('apikey', supabaseKey);
+        xhr.setRequestHeader('Content-Type', 'image/jpeg');
+        xhr.setRequestHeader('x-upsert', 'true');
+        xhr.timeout = 60000;
         xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) addLog(`Progreso: ${Math.round(e.loaded/e.total*100)}%`)
-        }
-        xhr.onload = () => {
-          addLog(`HTTP ${xhr.status}`)
-          if (xhr.status >= 200 && xhr.status < 300) resolve()
-          else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.substring(0,120)}`))
-        }
-        xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexión'))
-        xhr.ontimeout = () => reject(new Error('Tiempo agotado (60s) — señal débil, intenta de nuevo'))
-        xhr.send(compressed)
-      })
+          if (e.lengthComputable) setUploadProgress(`${Math.round(e.loaded/e.total*100)}%`);
+        };
+        xhr.onload  = () => xhr.status >= 200 && xhr.status < 300
+          ? resolve()
+          : reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.substring(0,100)}`));
+        xhr.onerror   = () => reject(new Error('Error de red. Verifica tu conexión.'));
+        xhr.ontimeout = () => reject(new Error('Tiempo agotado. Señal débil, intenta de nuevo.'));
+        xhr.send(compressed);
+      });
 
-      const publicUrl = `${supabaseUrl}/storage/v1/object/public/service-photos/${path}`
-      setKitPhotoUrl(publicUrl)
-      addLog('✅ Completado')
+      // Guardar path en BD
+      setUploadProgress('Guardando...');
+      const column = TYPE_TO_COLUMN[type] || type;
+      const { error: dbErr } = await supabase.from('bookings')
+        .update({ [column]: path, updated_at: new Date().toISOString() })
+        .eq('id', bookingId);
+      if (dbErr) throw dbErr;
 
-    } catch (e) {
-      addLog(`ERROR: ${e.name} — ${e.message}`)
-      setError(e.message || 'Error al subir. Intenta de nuevo.')
+      // Actualizar estado local — desbloquea botón Siguiente
+      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, [column]: path } : b));
+      if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, [column]: path }));
+      if (photoBooking?.id === bookingId)    setPhotoBooking(prev =>    ({ ...prev, [column]: path }));
+      setPhotosData(prev => ({ ...prev, [type]: path }));
+      setUploadProgress('');
+
+    } catch (err) {
+      console.error('Upload error:', err);
+      setUploadError(err.message || 'Error al subir. Intenta de nuevo.');
+      setUploadProgress('');
     } finally {
-      setUploadingKit(false)
+      setUploadingPhoto(false); // SIEMPRE se ejecuta
     }
-  }
+  };
 
-  const handleStep2 = async () => {
-    if (!kitPhotoUrl) { setError('Sube una foto de tu kit de materiales.'); return }
-    await saveStep({ kit_photo_url: kitPhotoUrl }, 3)
-  }
+  // ── Incidencia ─────────────────────────────────────────────────
+  const sendIncidentReport = async () => {
+    if (!incidentNote.trim()) { alert('Describe el problema antes de enviar.'); return; }
+    setSendingIncident(true);
+    try {
+      const { error } = await supabase.from('incidents').insert({
+        booking_id: incidentBooking.id, operator_id: user.id,
+        description: incidentNote, status: 'abierto',
+        created_at: new Date().toISOString()
+      });
+      if (error) throw error;
+      alert('⚠️ Incidencia reportada al administrador.');
+      setIncidentModal(false); setIncidentNote(''); setIncidentBooking(null);
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setSendingIncident(false);
+    }
+  };
 
-  const toggleZone = (z) => setSelectedZones(p => p.includes(z) ? p.filter(x => x !== z) : [...p, z])
-  const toggleDay  = (d) => setSelectedDays(p  => p.includes(d) ? p.filter(x => x !== d) : [...p, d])
+  const openInMaps = (address) => { if (!address) return; window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, '_blank'); };
+  const getPhotoUrl = (path) => { if (!path) return null; return path.startsWith('http') ? path : `${SUPABASE_URL}/storage/v1/object/public/service-photos/${path}`; };
 
-  const handleStep3 = async () => {
-    if (!selectedZones.length) { setError('Selecciona al menos una zona.'); return }
-    if (!selectedDays.length)  { setError('Selecciona al menos un día.'); return }
-    if (workStart >= workEnd)  { setError('La hora de inicio debe ser antes del cierre.'); return }
-    await saveStep({ coverage_zones: selectedZones, coverage_radius: radius, work_days: selectedDays, work_start: workStart, work_end: workEnd }, 4)
-  }
+  const pendingServices   = bookings.filter(b => b.status === 'confirmado');
+  const activeServices    = bookings.filter(b => ['en_camino', 'en_proceso'].includes(b.status));
+  const completedServices = bookings.filter(b => b.status === 'finalizado');
+  const currentList = activeTab === 'pendientes' ? pendingServices : activeTab === 'activos' ? activeServices : completedServices;
 
-  const handleStep4 = async () => {
-    const clabeClean = clabe.replace(/\s/g,'')
-    if (!clabeClean && !profile?.clabe) { setError('La CLABE es requerida.'); return }
-    if (clabeClean && !validarCLABE(clabeClean)) { setClabeError('CLABE inválida. Verifica los 18 dígitos.'); return }
-    if (!clabeHolder.trim()) { setError('El nombre del titular es requerido.'); return }
-    if (!bankName)           { setError('Selecciona un banco.'); return }
-    const clabeToSave = clabeClean ? '****' + clabeClean.slice(14) : profile?.clabe
-    await saveStep({ clabe: clabeToSave, clabe_holder: clabeHolder.trim(), bank_name: bankName, operator_status: 'pendiente', onboarding_done: true }, 5)
-  }
+  const getStatusStyle = (status) => {
+    switch (status) {
+      case 'confirmado': return { bg: '#dbeafe', text: '#1e40af', label: 'Confirmado' };
+      case 'en_camino':  return { bg: '#e0e7ff', text: '#3730a3', label: 'En camino'  };
+      case 'en_proceso': return { bg: '#ffedd5', text: '#9a3412', label: 'Lavando'    };
+      case 'finalizado': return { bg: '#dcfce7', text: '#166534', label: 'Finalizado' };
+      default:           return { bg: '#f3f4f6', text: '#374151', label: status       };
+    }
+  };
 
-  const STEPS = [
-    { n:1, label:'Datos',    icon:'👤' },
-    { n:2, label:'Kit',      icon:'🧴' },
-    { n:3, label:'Zona',     icon:'📍' },
-    { n:4, label:'Pago',     icon:'💳' },
-    { n:5, label:'Revisión', icon:'✅' },
-  ]
+  // ── Helpers del paso actual de fotos ─────────────────────────
+  const currentPhotoConfig = PHOTO_STEPS.find(p => p.step === photoStep) || PHOTO_STEPS[0];
+  const currentPhotoKey    = currentPhotoConfig.key;
+  const currentPhotoSaved  = !!photosData[currentPhotoKey];
+  const photoBtnLabel      = uploadingPhoto
+    ? (uploadProgress || 'Subiendo...')
+    : currentPhotoSaved ? '🔄 Cambiar foto' : '📷 Tomar foto';
+  const canAdvancePhoto    = currentPhotoSaved && !uploadingPhoto;
 
-  const inp = { padding:'13px 14px', borderRadius:10, border:'1.5px solid #e5e7eb', fontSize:16, outline:'none', width:'100%', boxSizing:'border-box', fontFamily:'inherit', color:'#1f2937', minHeight:50, background:'#fff' }
-  const lbl = { fontSize:13, fontWeight:600, color:'#374151', marginBottom:6, display:'block' }
+  const tabs = [
+    { id: 'pendientes',  label: 'Pendientes', icon: '📋', count: pendingServices.length },
+    { id: 'activos',     label: 'Activos',    icon: '⚡', count: activeServices.length },
+    { id: 'completados', label: 'Historial',  icon: '📖', count: completedServices.length },
+  ];
 
   return (
-    <div style={{ minHeight:'100vh', background:'#f3f4f6', padding: isMobile ? '16px 12px 40px' : '32px 16px' }}>
-      <div style={{ maxWidth:520, margin:'0 auto' }}>
+    <div style={{ minHeight: '100vh', background: '#f3f4f6', paddingBottom: isMobile ? 72 : 80 }}>
 
-        {/* Header */}
-        <div style={{ textAlign:'center', marginBottom:24 }}>
-          <div style={{ fontSize:40, marginBottom:8 }}>💧</div>
-          <h1 style={{ fontSize: isMobile ? 22 : 26, fontWeight:800, color:'#1f2937', margin:'0 0 6px' }}>Bienvenido a Maz Clean</h1>
-          <p style={{ fontSize:14, color:'#6b7280', margin:0 }}>Completa tu registro para empezar a recibir servicios</p>
+      {/* Header */}
+      <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: isMobile ? '20px 16px 16px' : '32px 24px 28px', borderRadius: '0 0 24px 24px', boxShadow: '0 4px 24px rgba(30,64,175,0.3)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: isMobile ? 0 : 20 }}>
+          <div>
+            <h1 style={{ color: '#fff', fontSize: isMobile ? 18 : 22, fontWeight: 700, margin: '0 0 4px' }}>🚗 Mis Servicios</h1>
+            <p style={{ color: '#bfdbfe', fontSize: 13, margin: 0 }}>Hola, {user?.user_metadata?.full_name || profile?.full_name || 'Operador'}</p>
+          </div>
+          <button onClick={() => signOut()} style={{ background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 10, padding: '10px 12px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', minHeight: 44 }}>
+            <LogOut size={16} />
+          </button>
         </div>
 
-        {/* Barra de progreso */}
-        <div style={{ background:'#fff', borderRadius:16, padding:'16px 20px', marginBottom:20, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-            {STEPS.map((s, i) => (
-              <div key={s.n} style={{ display:'flex', alignItems:'center', flex: i < STEPS.length-1 ? 1 : 'none' }}>
-                <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
-                  <div style={{ width:36, height:36, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, background: step > s.n ? '#10b981' : step === s.n ? '#3b82f6' : '#e5e7eb', color: step >= s.n ? '#fff' : '#9ca3af', fontWeight:700 }}>
-                    {step > s.n ? '✓' : s.icon}
-                  </div>
-                  <span style={{ fontSize:10, color: step >= s.n ? '#1f2937' : '#9ca3af', fontWeight: step === s.n ? 700 : 400 }}>{s.label}</span>
-                </div>
-                {i < STEPS.length-1 && <div style={{ flex:1, height:3, background: step > s.n ? '#10b981' : '#e5e7eb', margin:'0 4px', marginBottom:20, borderRadius:4 }} />}
-              </div>
+        {!isMobile && (
+          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.15)', padding: 4, borderRadius: 14, gap: 4, marginTop: 16 }}>
+            {tabs.map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                style={{ flex: 1, padding: '10px 4px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, transition: 'all 0.2s', background: activeTab === tab.id ? '#fff' : 'transparent', color: activeTab === tab.id ? '#1e40af' : '#bfdbfe', boxShadow: activeTab === tab.id ? '0 2px 8px rgba(0,0,0,0.12)' : 'none' }}>
+                {tab.label} ({tab.count})
+              </button>
             ))}
           </div>
-        </div>
+        )}
+      </div>
 
-        {/* ── PASO 1 ── */}
-        {step === 1 && (
-          <div style={{ background:'#fff', borderRadius:16, padding: isMobile ? '20px 16px' : 28, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize:18, fontWeight:700, color:'#1f2937', margin:'0 0 6px' }}>👤 Datos personales</h2>
-            <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 24px' }}>Confirma o actualiza tu información de contacto.</p>
-            <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-              <div>
-                <label style={lbl}>Nombre completo *</label>
-                <input style={inp} placeholder="Ej: Juan Alberto Mazariegos" value={fullName} onChange={e => setFullName(e.target.value)} />
-              </div>
-              <div>
-                <label style={lbl}>Teléfono celular (10 dígitos) *</label>
-                <input style={inp} placeholder="Ej: 5512345678" type="tel" maxLength={10} value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g,''))} />
-              </div>
-              <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:10, padding:'12px 14px' }}>
-                <p style={{ fontSize:13, color:'#166534', margin:0, lineHeight:1.5 }}>📱 Usaremos este número para coordinar servicios y enviarte notificaciones importantes.</p>
-              </div>
+      {/* Contenido */}
+      <div style={{ padding: isMobile ? '16px 12px' : '20px 16px', maxWidth: 600, margin: '0 auto' }}>
+        {gpsError && (
+          <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <span style={{ fontSize: 20, flexShrink: 0 }}>📍</span>
+            <div>
+              <div style={{ fontWeight: 700, color: '#991b1b', fontSize: 13, marginBottom: 4 }}>Permiso de ubicación requerido</div>
+              <div style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.5 }}>{gpsError}</div>
+              <button onClick={() => window.location.reload()} style={{ marginTop: 8, padding: '8px 14px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44 }}>Reintentar</button>
             </div>
-            {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', marginTop:16, color:'#dc2626', fontSize:14 }}>⚠️ {error}</div>}
-            <button onClick={handleStep1} disabled={saving}
-              style={{ width:'100%', marginTop:20, padding:'14px 0', background: saving ? '#9ca3af' : '#3b82f6', color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:700, cursor: saving ? 'not-allowed' : 'pointer', minHeight:52 }}>
-              {saving ? '⏳ Guardando...' : 'Continuar →'}
+          </div>
+        )}
+
+        {fetchError ? (
+          <div style={{ background: '#fef9c3', border: '1.5px solid #fde68a', borderRadius: 12, padding: '14px 16px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 13, color: '#854d0e', fontWeight: 600 }}>⚠️ {fetchError}</span>
+            <button onClick={() => fetchOperatorBookings()} style={{ padding: '8px 16px', background: '#f97316', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0, minHeight: 36 }}>
+              🔄 Reintentar
             </button>
           </div>
-        )}
+        ) : null}
 
-        {/* ── PASO 2 ── */}
-        {step === 2 && (
-          <div style={{ background:'#fff', borderRadius:16, padding: isMobile ? '20px 16px' : 28, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize:18, fontWeight:700, color:'#1f2937', margin:'0 0 6px' }}>🧴 Kit de materiales</h2>
-            <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 16px' }}>Sube una foto de tu kit completo para verificar que tienes todo lo necesario.</p>
-
-            <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:12, padding:'14px 16px', marginBottom:20 }}>
-              <p style={{ fontSize:13, fontWeight:700, color:'#1e40af', margin:'0 0 10px' }}>✅ Materiales obligatorios:</p>
-              {['Shampoo para autos','Mínimo 4 microfibras limpias','Cubeta de doble balde','Aspiradora portátil'].map(m => (
-                <div key={m} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
-                  <span style={{ color:'#3b82f6' }}>•</span>
-                  <span style={{ fontSize:13, color:'#1e40af' }}>{m}</span>
-                </div>
-              ))}
-              <p style={{ fontSize:12, color:'#6b7280', margin:'10px 0 0', fontStyle:'italic' }}>Recomendados: sellador de llantas, agua propia</p>
-            </div>
-
-            {kitPhotoUrl ? (
-              <div style={{ position:'relative', marginBottom:14 }}>
-                <img src={kitPhotoUrl} alt="Kit" style={{ width:'100%', height:200, objectFit:'cover', borderRadius:12 }} />
-                <span style={{ position:'absolute', top:10, right:10, background:'#10b981', color:'#fff', fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:20 }}>✅ Foto guardada</span>
-              </div>
-            ) : (
-              <div style={{ width:'100%', height:160, background:'#f9fafb', borderRadius:12, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', marginBottom:14, border:'2px dashed #e5e7eb' }}>
-                <span style={{ fontSize:40 }}>📦</span>
-                <span style={{ fontSize:13, color:'#9ca3af', marginTop:8 }}>Aún no has subido la foto</span>
-              </div>
-            )}
-
-            {uploadingKit && (
-              <div style={{ background:'#eff6ff', borderRadius:10, padding:'10px 14px', marginBottom:12, display:'flex', alignItems:'center', gap:10 }}>
-                <div style={{ width:18, height:18, border:'3px solid #bfdbfe', borderTop:'3px solid #3b82f6', borderRadius:'50%', animation:'spin 0.8s linear infinite', flexShrink:0 }} />
-                <span style={{ fontSize:13, color:'#1e40af', fontWeight:600 }}>Subiendo foto...</span>
-              </div>
-            )}
-
-            {debugLog.length > 0 && (
-              <div style={{ background:'#0f172a', borderRadius:10, padding:'10px 12px', marginBottom:12, border:'1.5px solid #334155' }}>
-                <div style={{ fontSize:10, color:'#94a3b8', fontWeight:700, marginBottom:6, textTransform:'uppercase', letterSpacing:0.5 }}>🔍 Debug Log</div>
-                {debugLog.map((line, i) => (
-                  <div key={i} style={{ fontSize:10, fontFamily:'monospace', lineHeight:1.7, wordBreak:'break-all', color: line.includes('ERROR') ? '#f87171' : line.includes('✅') ? '#4ade80' : '#e2e8f0' }}>
-                    {line}
+        {loading ? (
+          <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: 48, textAlign: 'center' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+            <p style={{ color: '#9ca3af', fontWeight: 500 }}>Cargando tus servicios...</p>
+          </div>
+        ) : currentList.length === 0 ? (
+          <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: 48, textAlign: 'center' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
+            <p style={{ color: '#9ca3af', fontWeight: 500 }}>No tienes servicios en esta sección</p>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 12 }}>
+            {currentList.map(booking => {
+              const sc = getStatusStyle(booking.status);
+              return (
+                <div key={booking.id} onClick={() => setSelectedBooking(booking)}
+                  style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? 14 : '16px 18px', cursor: 'pointer', border: '2px solid transparent' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', background: '#eff6ff', padding: '3px 10px', borderRadius: 20, letterSpacing: 0.5 }}>{booking.booking_ref}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: sc.bg, color: sc.text }}>{sc.label}</span>
                   </div>
-                ))}
-              </div>
-            )}
-
-            {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', marginBottom:12, color:'#dc2626', fontSize:14 }}>⚠️ {error}</div>}
-
-            <label style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, padding:'13px 0', borderRadius:12, background: uploadingKit ? '#f3f4f6' : '#6366f1', color: uploadingKit ? '#9ca3af' : '#fff', fontSize:15, fontWeight:700, cursor: uploadingKit ? 'not-allowed' : 'pointer', pointerEvents: uploadingKit ? 'none' : 'auto', minHeight:50, marginBottom:12 }}>
-              📷 {kitPhotoUrl ? 'Cambiar foto' : 'Tomar / Subir foto del kit'}
-              <input type="file" accept="image/*" capture="environment" style={{ display:'none' }}
-                onChange={e => { if (e.target.files[0]) handleKitUpload(e.target.files[0]) }} />
-            </label>
-
-            <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setStep(1)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52 }}>← Atrás</button>
-              <button onClick={handleStep2} disabled={saving || !kitPhotoUrl || uploadingKit}
-                style={{ flex:2, padding:'13px 0', background: saving || !kitPhotoUrl || uploadingKit ? '#9ca3af' : '#3b82f6', color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:700, cursor: saving || !kitPhotoUrl || uploadingKit ? 'not-allowed' : 'pointer', minHeight:52 }}>
-                {saving ? '⏳ Guardando...' : uploadingKit ? '⏳ Espera...' : 'Continuar →'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── PASO 3 ── */}
-        {step === 3 && (
-          <div style={{ background:'#fff', borderRadius:16, padding: isMobile ? '20px 16px' : 28, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize:18, fontWeight:700, color:'#1f2937', margin:'0 0 6px' }}>📍 Zona de trabajo</h2>
-            <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 20px' }}>Define dónde y cuándo puedes atender servicios.</p>
-
-            <div style={{ marginBottom:20 }}>
-              <label style={lbl}>Alcaldías / Municipios de cobertura * ({selectedZones.length} seleccionadas)</label>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-                {ZONAS.map(z => (
-                  <button key={z} onClick={() => toggleZone(z)}
-                    style={{ padding:'7px 14px', borderRadius:20, fontSize:13, fontWeight:600, cursor:'pointer', border:'none', transition:'all 0.15s', background: selectedZones.includes(z) ? '#3b82f6' : '#f3f4f6', color: selectedZones.includes(z) ? '#fff' : '#374151', minHeight:36 }}>
-                    {z}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ marginBottom:20 }}>
-              <label style={lbl}>Radio máximo de traslado: <strong>{radius} km</strong></label>
-              <input type="range" min={1} max={20} value={radius} onChange={e => setRadius(Number(e.target.value))} style={{ width:'100%', accentColor:'#3b82f6' }} />
-              <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'#9ca3af', marginTop:4 }}>
-                <span>1 km</span><span>20 km</span>
-              </div>
-            </div>
-
-            <div style={{ marginBottom:20 }}>
-              <label style={lbl}>Días disponibles *</label>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-                {DIAS.map(d => (
-                  <button key={d} onClick={() => toggleDay(d)}
-                    style={{ padding:'7px 14px', borderRadius:20, fontSize:13, fontWeight:600, cursor:'pointer', border:'none', background: selectedDays.includes(d) ? '#10b981' : '#f3f4f6', color: selectedDays.includes(d) ? '#fff' : '#374151', minHeight:36, textTransform:'capitalize' }}>
-                    {d}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ display:'flex', gap:12, marginBottom:8 }}>
-              <div style={{ flex:1 }}>
-                <label style={lbl}>Hora inicio *</label>
-                <input type="time" value={workStart} onChange={e => setWorkStart(e.target.value)} style={inp} />
-              </div>
-              <div style={{ flex:1 }}>
-                <label style={lbl}>Hora cierre *</label>
-                <input type="time" value={workEnd} onChange={e => setWorkEnd(e.target.value)} style={inp} />
-              </div>
-            </div>
-
-            {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', marginBottom:12, color:'#dc2626', fontSize:14 }}>⚠️ {error}</div>}
-
-            <div style={{ display:'flex', gap:10, marginTop:20 }}>
-              <button onClick={() => setStep(2)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52 }}>← Atrás</button>
-              <button onClick={handleStep3} disabled={saving}
-                style={{ flex:2, padding:'13px 0', background: saving ? '#9ca3af' : '#3b82f6', color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:700, cursor: saving ? 'not-allowed' : 'pointer', minHeight:52 }}>
-                {saving ? '⏳ Guardando...' : 'Continuar →'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── PASO 4 ── */}
-        {step === 4 && (
-          <div style={{ background:'#fff', borderRadius:16, padding: isMobile ? '20px 16px' : 28, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize:18, fontWeight:700, color:'#1f2937', margin:'0 0 6px' }}>💳 Datos de pago</h2>
-            <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 20px' }}>Para recibir tus liquidaciones semanales vía transferencia SPEI.</p>
-            <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-              <div>
-                <label style={lbl}>CLABE interbancaria (18 dígitos) *</label>
-                <input style={{ ...inp, borderColor: clabeError ? '#fca5a5' : '#e5e7eb' }}
-                  placeholder="Ej: 012345678901234567" type="tel" maxLength={18}
-                  value={clabe} onChange={e => { setClabe(e.target.value.replace(/\D/g,'')); setClabeError('') }} />
-                {clabeError && <p style={{ fontSize:12, color:'#dc2626', margin:'4px 0 0' }}>⚠️ {clabeError}</p>}
-                {clabe.length === 18 && !clabeError && validarCLABE(clabe) && <p style={{ fontSize:12, color:'#10b981', margin:'4px 0 0' }}>✅ CLABE válida</p>}
-                {profile?.clabe && !clabe && <p style={{ fontSize:12, color:'#6b7280', margin:'4px 0 0' }}>CLABE registrada: {profile.clabe} — deja en blanco para mantenerla</p>}
-              </div>
-              <div>
-                <label style={lbl}>Nombre del titular *</label>
-                <input style={inp} placeholder="Nombre como aparece en tu cuenta" value={clabeHolder} onChange={e => setClabeHolder(e.target.value)} />
-              </div>
-              <div>
-                <label style={lbl}>Banco *</label>
-                <select value={bankName} onChange={e => setBankName(e.target.value)} style={{ ...inp, cursor:'pointer' }}>
-                  <option value="">Selecciona tu banco</option>
-                  {BANCOS.map(b => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={{ background:'#fef9c3', border:'1px solid #fde68a', borderRadius:10, padding:'12px 14px', marginTop:16 }}>
-              <p style={{ fontSize:12, color:'#854d0e', margin:0, lineHeight:1.5 }}>🔒 Tus datos bancarios se almacenan de forma segura. Solo mostramos los últimos 4 dígitos de tu CLABE. Las liquidaciones se realizan cada lunes por la semana anterior.</p>
-            </div>
-            {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', marginTop:16, color:'#dc2626', fontSize:14 }}>⚠️ {error}</div>}
-            <div style={{ display:'flex', gap:10, marginTop:20 }}>
-              <button onClick={() => setStep(3)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52 }}>← Atrás</button>
-              <button onClick={handleStep4} disabled={saving}
-                style={{ flex:2, padding:'13px 0', background: saving ? '#9ca3af' : '#10b981', color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:700, cursor: saving ? 'not-allowed' : 'pointer', minHeight:52 }}>
-                {saving ? '⏳ Enviando...' : '✅ Enviar para revisión'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── PASO 5 ── */}
-        {step === 5 && (
-          <div style={{ background:'#fff', borderRadius:16, padding: isMobile ? '28px 20px' : 40, boxShadow:'0 2px 12px rgba(0,0,0,0.06)', textAlign:'center' }}>
-            <div style={{ fontSize:64, marginBottom:16 }}>🎉</div>
-            <h2 style={{ fontSize:22, fontWeight:800, color:'#1f2937', margin:'0 0 12px' }}>¡Registro completado!</h2>
-            <p style={{ fontSize:15, color:'#374151', margin:'0 0 8px', lineHeight:1.6 }}>Tu solicitud está siendo revisada por nuestro equipo.</p>
-            <p style={{ fontSize:14, color:'#6b7280', margin:'0 0 24px', lineHeight:1.6 }}>Recibirás una notificación en máximo <strong>4 horas hábiles</strong>. Una vez aprobado podrás empezar a recibir servicios.</p>
-
-            <div style={{ background:'#f9fafb', borderRadius:12, padding:'16px 20px', marginBottom:24, textAlign:'left' }}>
-              <p style={{ fontSize:13, fontWeight:700, color:'#374151', margin:'0 0 12px' }}>📋 Estado de tu solicitud:</p>
-              {[
-                { label:'Datos personales', done: true },
-                { label:'Foto del kit',     done: !!profile?.kit_photo_url },
-                { label:'Zona de trabajo',  done: !!profile?.coverage_zones?.length },
-                { label:'Datos bancarios',  done: !!profile?.clabe },
-              ].map(item => (
-                <div key={item.label} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-                  <span style={{ fontSize:16 }}>{item.done ? '✅' : '⏳'}</span>
-                  <span style={{ fontSize:14, color: item.done ? '#166534' : '#9ca3af', fontWeight: item.done ? 600 : 400 }}>{item.label}</span>
-                  <span style={{ marginLeft:'auto', fontSize:12, color: item.done ? '#10b981' : '#d97706', fontWeight:600 }}>{item.done ? 'Entregado' : 'Pendiente'}</span>
+                  <div style={{ fontWeight: 700, color: '#1f2937', fontSize: isMobile ? 15 : 16, marginBottom: 10 }}>{booking.service_name}</div>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#374151' }}>
+                      <Clock size={14} color="#3b82f6" />
+                      <span style={{ fontWeight: 600 }}>{booking.scheduled_time}</span>
+                      <span style={{ color: '#9ca3af' }}>·</span>
+                      <span style={{ color: '#6b7280' }}>{booking.scheduled_date}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#6b7280' }}>
+                      <MapPin size={14} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
+                      <span style={{ lineHeight: 1.4 }}>{booking.address_line || 'Ver detalles...'}</span>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #f3f4f6', display: 'flex', gap: 8 }}>
+                    {booking.status === 'confirmado' && (
+                      <button onClick={async e => { e.stopPropagation(); await updateStatus(booking.id, 'en_camino', 'on_the_way', booking); }} disabled={updatingId === booking.id}
+                        style={{ flex: 1, background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48, boxShadow: '0 4px 12px rgba(59,130,246,0.3)' }}>
+                        <Navigation size={14} /> Iniciar Viaje
+                      </button>
+                    )}
+                    {booking.status === 'en_camino' && (
+                      <button onClick={async e => { e.stopPropagation(); await handleStartWashing(booking); }} disabled={updatingId === booking.id}
+                        style={{ flex: 1, background: '#f97316', color: '#fff', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
+                        <Play size={14} /> Empezar Lavado
+                      </button>
+                    )}
+                    {booking.status === 'en_proceso' && (
+                      <button onClick={e => { e.stopPropagation(); handleFinalizeClick(booking); }} disabled={updatingId === booking.id}
+                        style={{ flex: 1, background: '#10b981', color: '#fff', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
+                        <Check size={14} /> Finalizar
+                      </button>
+                    )}
+                    {['confirmado','en_camino','en_proceso'].includes(booking.status) && (
+                      <button onClick={e => { e.stopPropagation(); setIncidentBooking(booking); setIncidentModal(true); }}
+                        style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 10, padding: '13px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, minHeight: 48 }}>
+                        <AlertTriangle size={14} />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              ))}
-            </div>
-
-            {profile?.operator_status === 'aprobado' && (
-              <div style={{ background:'#f0fdf4', border:'1.5px solid #bbf7d0', borderRadius:12, padding:'14px 18px', marginBottom:20 }}>
-                <p style={{ fontSize:15, fontWeight:700, color:'#166534', margin:0 }}>🎉 ¡Tu cuenta está activa! Ya puedes recibir servicios.</p>
-              </div>
-            )}
-            {profile?.operator_status === 'rechazado' && profile?.rejection_reason && (
-              <div style={{ background:'#fef2f2', border:'1.5px solid #fecaca', borderRadius:12, padding:'14px 18px', marginBottom:20 }}>
-                <p style={{ fontSize:14, fontWeight:700, color:'#dc2626', margin:'0 0 6px' }}>❌ Solicitud rechazada</p>
-                <p style={{ fontSize:13, color:'#991b1b', margin:0, lineHeight:1.5 }}>{profile.rejection_reason}</p>
-                <button onClick={() => setStep(1)} style={{ marginTop:12, padding:'10px 20px', background:'#dc2626', color:'#fff', border:'none', borderRadius:8, fontSize:14, fontWeight:600, cursor:'pointer', minHeight:44 }}>
-                  Corregir y reenviar
-                </button>
-              </div>
-            )}
-            {profile?.operator_status === 'aprobado' && (
-              <button onClick={onComplete}
-                style={{ width:'100%', padding:'15px 0', background:'#3b82f6', color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:700, cursor:'pointer', minHeight:52 }}>
-                Ir al Panel de Operador →
-              </button>
-            )}
+              );
+            })}
           </div>
         )}
-
       </div>
-      <style>{`@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }`}</style>
+
+      {/* ── Tab Bar inferior — solo móvil ── */}
+      {isMobile && (
+        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100, background: '#fff', borderTop: '1px solid #e5e7eb', display: 'flex', boxShadow: '0 -4px 16px rgba(0,0,0,0.08)' }}>
+          {tabs.map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              style={{ flex: 1, padding: '10px 4px 12px', border: 'none', cursor: 'pointer', background: 'transparent', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, borderTop: activeTab === tab.id ? '3px solid #3b82f6' : '3px solid transparent', transition: 'all 0.2s', minHeight: 60, position: 'relative' }}>
+              <span style={{ fontSize: 20 }}>{tab.icon}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: activeTab === tab.id ? '#1e40af' : '#9ca3af' }}>{tab.label}</span>
+              {tab.count > 0 && (
+                <span style={{ position: 'absolute', top: 6, right: '50%', transform: 'translateX(12px)', fontSize: 9, fontWeight: 700, background: '#ef4444', color: '#fff', borderRadius: 10, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>{tab.count}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ════ MODAL DETALLE ════ */}
+      {selectedBooking && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: '#f3f4f6', overflowY: 'auto' }}>
+          <div style={{ maxWidth: 600, margin: '0 auto', padding: isMobile ? 12 : 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <button onClick={() => setSelectedBooking(null)} style={{ background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 44 }}>← Cerrar</button>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 }}>Detalle del Servicio</div>
+                <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 13 }}>{selectedBooking.booking_ref}</div>
+              </div>
+              <div style={{ width: 80 }} />
+            </div>
+            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', borderRadius: 20, padding: isMobile ? 16 : '20px 22px', color: '#fff', marginBottom: 16, boxShadow: '0 8px 32px rgba(30,64,175,0.3)' }}>
+              <h2 style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, margin: '0 0 4px' }}>{selectedBooking.service_name}</h2>
+              <p style={{ color: '#bfdbfe', fontSize: 13, margin: '0 0 16px' }}>{selectedBooking.vehicle_brand} {selectedBooking.vehicle_model} · {selectedBooking.vehicle_color}</p>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>🕐 {selectedBooking.scheduled_time}</span>
+                <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>💰 ${selectedBooking.total_price || selectedBooking.service_price}</span>
+              </div>
+            </div>
+            <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 18px', marginBottom: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Cliente</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 16 }}>{selectedBooking.customer?.full_name}</div>
+                  <div style={{ fontSize: 14, color: '#6b7280', marginTop: 3 }}>{selectedBooking.customer?.phone}</div>
+                </div>
+                <a href={`tel:${selectedBooking.customer?.phone}`} style={{ background: '#10b981', padding: '12px 14px', borderRadius: 12, color: '#fff', textDecoration: 'none', display: 'flex', alignItems: 'center', boxShadow: '0 4px 12px rgba(16,185,129,0.3)', minHeight: 48 }}>
+                  <Phone size={18} />
+                </a>
+              </div>
+            </div>
+            <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '16px 18px', marginBottom: 120 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Ubicación</div>
+              <p style={{ fontWeight: 500, color: '#1f2937', fontSize: 14, margin: '0 0 14px', lineHeight: 1.5 }}>{selectedBooking.address_line}</p>
+              <button onClick={() => openInMaps(selectedBooking.address_line)} style={{ width: '100%', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 10, padding: '14px 0', fontSize: 14, fontWeight: 700, color: '#1e40af', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
+                <Navigation size={14} /> Abrir en Google Maps
+              </button>
+            </div>
+            <div style={{ position: 'fixed', bottom: isMobile ? 72 : 24, left: isMobile ? 12 : 20, right: isMobile ? 12 : 20 }}>
+              {selectedBooking.status === 'confirmado' && (
+                <button onClick={() => updateStatus(selectedBooking.id, 'en_camino', 'on_the_way', selectedBooking)} disabled={updatingId === selectedBooking.id}
+                  style={{ width: '100%', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 8px 32px rgba(59,130,246,0.4)', minHeight: 56 }}>
+                  {updatingId === selectedBooking.id ? '⏳ Cargando...' : <><Navigation size={18} /> INICIAR VIAJE AHORA</>}
+                </button>
+              )}
+              {selectedBooking.status === 'en_camino' && (
+                <button onClick={() => handleStartWashing(selectedBooking)} disabled={updatingId === selectedBooking.id}
+                  style={{ width: '100%', background: '#f97316', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 8px 32px rgba(249,115,22,0.4)', minHeight: 56 }}>
+                  <Play size={18} /> LLEGUÉ / EMPEZAR LAVADO
+                </button>
+              )}
+              {selectedBooking.status === 'en_proceso' && (
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => { setIncidentBooking(selectedBooking); setIncidentModal(true); }}
+                    style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 14, padding: '16px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, minHeight: 56 }}>
+                    <AlertTriangle size={18} />
+                  </button>
+                  <button onClick={() => handleFinalizeClick(selectedBooking)} disabled={updatingId === selectedBooking.id}
+                    style={{ flex: 1, background: '#10b981', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 8px 32px rgba(16,185,129,0.4)', minHeight: 56 }}>
+                    <Check size={18} /> FINALIZAR SERVICIO
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════ MODAL FOTOS — 4 obligatorias ════ */}
+      {photoModal && photoBooking && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 24, boxShadow: '0 8px 40px rgba(0,0,0,0.25)', width: '100%', maxWidth: isMobile ? '100%' : 420, overflow: 'hidden' }}>
+
+            {/* Header con color según fase */}
+            <div style={{ background: currentPhotoConfig.phase === 'before' ? 'linear-gradient(135deg,#f97316,#fb923c)' : 'linear-gradient(135deg,#10b981,#34d399)', padding: '16px 20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 15, margin: '0 0 4px' }}>{currentPhotoConfig.label}</h3>
+                  <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12, margin: 0 }}>{currentPhotoConfig.desc}</p>
+                </div>
+                <button onClick={() => { setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); setUploadingPhoto(false); setUploadProgress(''); }}
+                  style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 18, borderRadius: 8, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginLeft: 8 }}>×</button>
+              </div>
+
+              {/* Barra de progreso — 4 pasos */}
+              <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
+                {PHOTO_STEPS.map(p => (
+                  <div key={p.step} style={{ flex: 1, height: 4, borderRadius: 4,
+                    background: photosData[p.key] ? '#fff' : p.step === photoStep ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)' }} />
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                {PHOTO_STEPS.map(p => (
+                  <span key={p.step} style={{ fontSize: 9, color: photosData[p.key] ? '#fff' : 'rgba(255,255,255,0.5)', fontWeight: 700 }}>
+                    {photosData[p.key] ? '✓' : p.step}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Cuerpo */}
+            <div style={{ padding: isMobile ? '18px 16px' : '20px 24px' }}>
+
+              {/* Preview o placeholder */}
+              {getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`]) ? (
+                <div style={{ position: 'relative', marginBottom: 14 }}>
+                  <img
+                    src={getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`])}
+                    alt={currentPhotoConfig.label}
+                    style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 12 }} />
+                  <span style={{ position: 'absolute', top: 10, right: 10, background: '#10b981', color: '#fff', fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 20 }}>✅ Guardada</span>
+                </div>
+              ) : (
+                <div style={{ width: '100%', height: 160, background: '#f9fafb', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 14, border: '2px dashed #e5e7eb' }}>
+                  <Camera size={40} color="#d1d5db" />
+                  <span style={{ fontSize: 13, color: '#9ca3af', marginTop: 10, textAlign: 'center', padding: '0 16px' }}>Toma la foto ahora</span>
+                </div>
+              )}
+
+              {/* Spinner + progreso upload */}
+              {uploadingPhoto && (
+                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 18, height: 18, border: '3px solid #bfdbfe', borderTop: '3px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#1e40af' }}>{uploadProgress || 'Procesando...'}</span>
+                </div>
+              )}
+
+              {/* Error de upload */}
+              {uploadError ? (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', marginBottom: 12 }}>
+                  <span style={{ fontSize: 13, color: '#dc2626', fontWeight: 600 }}>⚠️ {uploadError}</span>
+                  <span style={{ fontSize: 12, color: '#9ca3af', display: 'block', marginTop: 2 }}>Intenta de nuevo tomando la foto.</span>
+                </div>
+              ) : null}
+
+              {/* Botón tomar foto */}
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploadingPhoto ? '#f3f4f6' : '#3b82f6', color: uploadingPhoto ? '#9ca3af' : '#fff', fontSize: 15, fontWeight: 700, cursor: uploadingPhoto ? 'not-allowed' : 'pointer', pointerEvents: uploadingPhoto ? 'none' : 'auto', boxShadow: uploadingPhoto ? 'none' : '0 4px 12px rgba(59,130,246,0.3)', minHeight: 52, marginBottom: 10 }}>
+                <Upload size={16} /> {photoBtnLabel}
+                <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                  onChange={e => { if (e.target.files[0]) handlePhotoUpload(e.target.files[0], photoBooking.id, currentPhotoKey); }} />
+              </label>
+
+              {/* Botón Siguiente / Continuar */}
+              <button onClick={handleNextPhotoStep} disabled={!canAdvancePhoto}
+                style={{ width: '100%', padding: '14px 0', borderRadius: 12, border: 'none',
+                  background: canAdvancePhoto
+                    ? (currentPhotoConfig.phase === 'before' ? '#f97316' : '#10b981')
+                    : '#e5e7eb',
+                  color: canAdvancePhoto ? '#fff' : '#9ca3af',
+                  fontSize: 15, fontWeight: 700, cursor: canAdvancePhoto ? 'pointer' : 'not-allowed', minHeight: 52 }}>
+                {photoStep < 2 ? 'Siguiente foto →' :
+                 photoStep === 2 ? '✅ Fotos ANTES listas' :
+                 photoStep === 3 ? 'Siguiente foto →' :
+                 pendingFinalize ? '✅ Continuar al Checklist →' : '✅ Listo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════ MODAL CHECKLIST ════ */}
+      {checklistModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, boxShadow: '0 8px 40px rgba(0,0,0,0.2)', width: '100%', maxWidth: isMobile ? '100%' : 460, overflow: 'hidden' }}>
+            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>✅ Checklist de Calidad</h3>
+              <button onClick={() => setChecklistModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 20, borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+            <div style={{ padding: isMobile ? '16px 14px' : 20 }}>
+              <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 16px' }}>Confirma que cada punto fue completado antes de finalizar el servicio.</p>
+              <div style={{ display: 'grid', gap: 10, maxHeight: 320, overflowY: 'auto' }}>
+                {checklist.map(item => (
+                  <button key={item.id} onClick={() => toggleCheckItem(item.id)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 10, border: item.checked ? '2px solid #10b981' : '1.5px solid #e5e7eb', background: item.checked ? '#f0fdf4' : '#fff', cursor: 'pointer', textAlign: 'left', minHeight: 52 }}>
+                    {item.checked ? <CheckSquare size={20} color="#10b981" style={{ flexShrink: 0 }} /> : <Square size={20} color="#d1d5db" style={{ flexShrink: 0 }} />}
+                    <span style={{ fontSize: 14, fontWeight: item.checked ? 600 : 400, color: item.checked ? '#166534' : '#374151' }}>{item.item}</span>
+                  </button>
+                ))}
+              </div>
+              <div style={{ marginTop: 16, padding: '10px 14px', borderRadius: 10, background: checklist.every(i => i.checked) ? '#f0fdf4' : '#fef9c3', border: `1px solid ${checklist.every(i => i.checked) ? '#bbf7d0' : '#fde68a'}` }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: checklist.every(i => i.checked) ? '#166534' : '#854d0e' }}>
+                  {checklist.filter(i => i.checked).length}/{checklist.length} ítems completados
+                </span>
+              </div>
+            </div>
+            <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10 }}>
+              <button onClick={() => setChecklistModal(false)} style={{ flex: 1, padding: '12px 0', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cancelar</button>
+              <button onClick={confirmFinalize} style={{ flex: 2, padding: '12px 0', background: checklist.every(i => i.checked) ? '#10b981' : '#9ca3af', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>
+                {checklist.every(i => i.checked) ? '✅ Confirmar y Finalizar' : 'Completa el checklist'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════ MODAL INCIDENCIA ════ */}
+      {incidentModal && incidentBooking && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, boxShadow: '0 8px 40px rgba(0,0,0,0.2)', width: '100%', maxWidth: isMobile ? '100%' : 420, overflow: 'hidden' }}>
+            <div style={{ background: 'linear-gradient(135deg,#dc2626,#ef4444)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>⚠️ Reportar Incidencia</h3>
+              <button onClick={() => { setIncidentModal(false); setIncidentNote(''); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 20, borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+            <div style={{ padding: isMobile ? '16px 14px' : 20 }}>
+              <div style={{ background: '#fef2f2', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 14, color: '#991b1b' }}>
+                Servicio: <strong>{incidentBooking.booking_ref}</strong> — {incidentBooking.service_name}
+              </div>
+              <label style={{ fontSize: 14, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Describe el problema *</label>
+              <textarea value={incidentNote} onChange={e => setIncidentNote(e.target.value)}
+                placeholder="Ej: El cliente no se encuentra en casa, hay un problema con el vehículo..."
+                style={{ width: '100%', padding: '12px', borderRadius: 8, border: '1.5px solid #fecaca', fontSize: 16, outline: 'none', height: 100, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937' }} />
+            </div>
+            <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10 }}>
+              <button onClick={() => { setIncidentModal(false); setIncidentNote(''); }} style={{ flex: 1, padding: '12px 0', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cancelar</button>
+              <button onClick={sendIncidentReport} disabled={sendingIncident}
+                style={{ flex: 2, padding: '12px 0', background: sendingIncident ? '#9ca3af' : '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>
+                {sendingIncident ? '⏳ Enviando...' : '⚠️ Enviar al Admin'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
-  )
-}
+  );
+};
+
+export default OperatorView;
