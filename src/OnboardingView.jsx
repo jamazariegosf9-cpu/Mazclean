@@ -120,7 +120,7 @@ export default function OnboardingView({ onComplete }) {
     await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,'') }, 2)
   }
 
-  // ── UPLOAD con AbortController (timeout 30s) + OffscreenCanvas ──
+  // ── UPLOAD con XHR — más confiable que fetch en Samsung WebView ──
   const handleKitUpload = async (file) => {
     if (!file) return
     setUploadingKit(true)
@@ -128,65 +128,57 @@ export default function OnboardingView({ onComplete }) {
     setDebugLog([])
 
     try {
-      addLog(`Archivo: ${file.name || 'foto'} | ${file.type || '?'} | ${(file.size/1024).toFixed(0)} KB`)
+      addLog(`Archivo: ${(file.size/1024).toFixed(0)} KB | ${file.type || 'image/jpeg'}`)
 
       if (file.size > 15 * 1024 * 1024) {
         throw new Error('La foto pesa más de 15 MB. Toma una foto con menor resolución.')
       }
 
-      // 1. Comprimir con OffscreenCanvas (funciona en Samsung)
-      addLog('Comprimiendo imagen...')
+      // 1. Comprimir con OffscreenCanvas
+      addLog('Comprimiendo...')
       const fileToUpload = await compressForMobile(file)
-      addLog(`Listo para subir: ${(fileToUpload.size/1024).toFixed(0)} KB`)
+      addLog(`Comprimido: ${(fileToUpload.size/1024).toFixed(0)} KB`)
 
-      // 2. Upload directo con fetch + AbortController (timeout 30s)
-      // Evita que el request quede colgado indefinidamente en móvil
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 30000)
-
+      // 2. Obtener token de sesión
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token || supabaseKey
-
-      addLog(`Subiendo a Storage (timeout: 30s)...`)
       const path = `kits/${user.id}/kit_${Date.now()}.jpg`
-      const uploadUrl = `${supabaseUrl}/storage/v1/object/service-photos/${path}`
 
-      const res = await fetch(uploadUrl, {
-        method:  'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type':  'image/jpeg',
-          'x-upsert':      'true',
-          'apikey':        supabaseKey,
-        },
-        body:   fileToUpload,
-        signal: controller.signal,
+      // 3. XHR en lugar de fetch — funciona en Samsung WebView
+      addLog('Subiendo con XHR...')
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`)
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+        xhr.setRequestHeader('apikey', supabaseKey)
+        xhr.setRequestHeader('Content-Type', 'image/jpeg')
+        xhr.setRequestHeader('x-upsert', 'true')
+        xhr.timeout = 45000
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            addLog(`Progreso: ${Math.round((e.loaded / e.total) * 100)}%`)
+          }
+        }
+        xhr.onload  = () => {
+          addLog(`XHR status: ${xhr.status}`)
+          if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response)
+          else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.substring(0,100)}`))
+        }
+        xhr.onerror   = () => reject(new Error('Error de red. Verifica tu conexión.'))
+        xhr.ontimeout = () => reject(new Error('Tiempo agotado (45s). Verifica tu señal.'))
+        xhr.send(fileToUpload)
       })
-      clearTimeout(timer)
-
-      addLog(`HTTP ${res.status} ${res.statusText}`)
-
-      if (!res.ok) {
-        const txt = await res.text().catch(() => '')
-        if (res.status === 413) throw new Error('Foto demasiado grande para el servidor. Intenta con una foto de menor resolución.')
-        if (res.status === 401 || res.status === 403) throw new Error('Sin permiso para subir fotos. Cierra sesión y vuelve a entrar.')
-        throw new Error(`Error del servidor (${res.status}): ${txt.substring(0,100)}`)
-      }
 
       const publicUrl = `${supabaseUrl}/storage/v1/object/public/service-photos/${path}`
       setKitPhotoUrl(publicUrl)
-      addLog('✅ Foto subida correctamente')
+      addLog('✅ Completado')
 
     } catch (e) {
-      if (e.name === 'AbortError') {
-        addLog('TIMEOUT — el upload tardó más de 30s')
-        setError('La conexión tardó demasiado (30s). Verifica tu señal de datos e intenta de nuevo.')
-      } else {
-        addLog(`ERROR: ${e.name} — ${e.message}`)
-        setError(e.message || 'Error al subir foto. Intenta de nuevo.')
-      }
+      addLog(`ERROR: ${e.name} — ${e.message}`)
+      setError(e.message || 'Error al subir foto. Intenta de nuevo.')
     } finally {
       setUploadingKit(false)
     }
