@@ -149,48 +149,61 @@ export default function OnboardingView({ onComplete }) {
     await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,'') }, 2)
   }
 
-  // ── handleKitUpload con prepareImage — compatible Samsung/HEIC/WebP ──
+  // ── LOG VISIBLE en pantalla para auditoría móvil ─────────────
+  const [debugLog, setDebugLog] = useState([])
+  const addLog = (msg) => {
+    const line = `[${new Date().toLocaleTimeString('es-MX')}] ${msg}`
+    console.log(line)
+    setDebugLog(prev => [...prev.slice(-8), line])
+  }
+
+  // ── handleKitUpload — MODO AUDITORÍA ─────────────────────────
+  // Upload DIRECTO sin compresión para identificar causa raíz del fallo.
   const handleKitUpload = async (file) => {
     if (!file) return
     setUploadingKit(true)
     setError('')
-    setUploadProgress('Leyendo imagen...')
+    setDebugLog([])
+
     try {
-      // 1. Validar tamaño antes de procesar
-      if (file.size > 10 * 1024 * 1024) {
-        throw new Error('La foto pesa más de 10 MB. Toma una foto con menor resolución.')
+      // LOG 1 — info del archivo recibido
+      addLog(`Archivo: ${file.name || 'sin nombre'} | tipo: ${file.type || 'desconocido'} | tamaño: ${(file.size/1024).toFixed(0)} KB`)
+
+      if (file.size > 15 * 1024 * 1024) {
+        throw new Error(`Archivo muy grande: ${(file.size/1024/1024).toFixed(1)} MB. Máximo 15 MB.`)
       }
 
-      // 2. Preparar (redimensionar + convertir a JPEG)
-      setUploadProgress('Optimizando imagen...')
-      const prepared = await prepareImage(file)
+      // LOG 2 — verificar URL de Supabase
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
+      addLog(`URL Supabase: ${supabaseUrl.substring(0,50)} | https: ${supabaseUrl.startsWith('https')}`)
 
-      // 3. Subir a Supabase Storage
-      setUploadProgress('Subiendo foto...')
+      // LOG 3 — upload DIRECTO sin canvas ni compresión
+      addLog('Enviando archivo directo a Storage...')
       const path = `kits/${user.id}/kit_${Date.now()}.jpg`
-      const { error: upErr } = await supabase.storage
+      const { data: uploadData, error: upErr } = await supabase.storage
         .from('service-photos')
-        .upload(path, prepared, { upsert: true, contentType: 'image/jpeg' })
+        .upload(path, file, {
+          upsert:      true,
+          contentType: file.type || 'image/jpeg',
+        })
+
+      // LOG 4 — resultado
       if (upErr) {
-        if (upErr.message?.includes('Payload too large') || upErr.statusCode === 413) {
-          throw new Error('Foto demasiado grande. Toma una nueva con menor resolución.')
-        }
-        if (upErr.message?.includes('network') || upErr.message?.includes('fetch')) {
-          throw new Error('Error de conexión. Verifica tu red e intenta de nuevo.')
-        }
-        throw upErr
+        addLog(`ERROR Storage: nombre=${upErr.name} | msg=${upErr.message} | status=${upErr.statusCode ?? 'n/a'}`)
+        throw new Error(`Storage error: ${upErr.message}`)
       }
 
-      // 4. Construir URL pública
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/service-photos/${path}`
+      addLog(`OK — path guardado: ${uploadData?.path || path}`)
+      const url = `${supabaseUrl}/storage/v1/object/public/service-photos/${path}`
       setKitPhotoUrl(url)
       setKitPhoto(file)
-      setUploadProgress('')
+      addLog('✅ Completado')
+
     } catch (e) {
-      setError(e.message || 'Error al subir foto. Intenta de nuevo.')
-      setUploadProgress('')
+      addLog(`CATCH: ${e.name} — ${e.message}`)
+      setError(`Error al subir: ${e.message}`)
     } finally {
-      setUploadingKit(false) // SIEMPRE se libera — nunca spinner infinito
+      setUploadingKit(false)
     }
   }
 
@@ -374,11 +387,23 @@ export default function OnboardingView({ onComplete }) {
               </div>
             )}
 
-            {/* Progreso de upload */}
+            {/* Spinner upload */}
             {uploadingKit && (
               <div style={{ background: '#eff6ff', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 18, height: 18, border: '3px solid #bfdbfe', borderTop: '3px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-                <span style={{ fontSize: 13, color: '#1e40af', fontWeight: 600 }}>{uploadProgress || 'Procesando...'}</span>
+                <span style={{ fontSize: 13, color: '#1e40af', fontWeight: 600 }}>Subiendo...</span>
+              </div>
+            )}
+
+            {/* Panel de auditoría — log visible en pantalla del móvil */}
+            {debugLog.length > 0 && (
+              <div style={{ background: '#0f172a', borderRadius: 10, padding: '10px 12px', marginBottom: 12, border: '1.5px solid #334155' }}>
+                <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>🔍 Debug Log</div>
+                {debugLog.map((line, i) => (
+                  <div key={i} style={{ fontSize: 10, color: line.includes('ERROR') || line.includes('CATCH') ? '#f87171' : line.includes('✅') ? '#4ade80' : '#e2e8f0', fontFamily: 'monospace', lineHeight: 1.6, wordBreak: 'break-all' }}>
+                    {line}
+                  </div>
+                ))}
               </div>
             )}
 
