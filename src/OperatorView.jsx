@@ -227,9 +227,7 @@ const OperatorView = () => {
   const handleFinalizeClick = (booking) => {
     // Verificar que las 2 fotos de antes existen
     if (!booking.photo_front_before || !booking.photo_side_before) {
-      alert('⚠️ Debes subir las fotos ANTES del servicio primero.
-
-Usa el botón "Empezar Lavado" para tomarlas.');
+      alert('⚠️ Debes subir las fotos ANTES del servicio primero.\n\nUsa el botón "Empezar Lavado" para tomarlas.');
       return;
     }
     const existing = {};
