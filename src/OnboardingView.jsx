@@ -171,10 +171,21 @@ export default function OnboardingView({ onComplete }) {
     await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,'') }, 2)
   }
 
-  // ── Upload simplificado: SDK oficial + compresión con fallbacks ──
+  // ── Token de sesión cacheado al montar el componente ────────
+  const [sessionToken, setSessionToken] = useState(null)
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.access_token) setSessionToken(session.access_token)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (session?.access_token) setSessionToken(session.access_token)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // ── Upload con XHR puro + token cacheado ─────────────────────
   const handleKitUpload = async (file) => {
     if (!file) return
-    // El finally SIEMPRE apaga el spinner — sin importar qué falle
     setUploadingKit(true)
     setError('')
     setDebugLog([])
@@ -185,35 +196,50 @@ export default function OnboardingView({ onComplete }) {
         throw new Error('La foto pesa más de 15 MB. Usa una foto de menor resolución.')
       }
 
-      // Comprimir con fallbacks
+      // Comprimir
       addLog('Comprimiendo...')
       const compressed = await compressForMobile(file)
-      addLog(`Comprimido: ${(compressed.size/1024).toFixed(0)} KB — subiendo...`)
+      addLog(`Comprimido: ${(compressed.size/1024).toFixed(0)} KB`)
 
-      // SDK oficial de Supabase — maneja auth internamente
-      const path = `kits/${user.id}/kit_${Date.now()}.jpg`
-      const { error: upErr } = await supabase.storage
-        .from('service-photos')
-        .upload(path, compressed, { upsert: true, contentType: 'image/jpeg' })
+      // Token — usar el cacheado al montar, nunca await dentro del upload
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const token = sessionToken || supabaseKey
+      const path  = `kits/${user.id}/kit_${Date.now()}.jpg`
 
-      if (upErr) {
-        if (upErr.message?.includes('413') || upErr.statusCode === 413)
-          throw new Error('Foto demasiado grande. Toma una con menor resolución.')
-        if (upErr.statusCode === 401 || upErr.statusCode === 403)
-          throw new Error('Sin permiso. Cierra sesión y vuelve a entrar.')
-        throw new Error(upErr.message || 'Error al subir al servidor.')
-      }
+      addLog(`Token: ${token === supabaseKey ? 'anon' : 'user'} — subiendo con XHR...`)
 
-      // URL pública
-      const publicUrl = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/service-photos/${path}`
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`)
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+        xhr.setRequestHeader('apikey', supabaseKey)
+        xhr.setRequestHeader('Content-Type', 'image/jpeg')
+        xhr.setRequestHeader('x-upsert', 'true')
+        xhr.timeout = 60000 // 60s
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) addLog(`Progreso: ${Math.round(e.loaded/e.total*100)}%`)
+        }
+        xhr.onload = () => {
+          addLog(`HTTP ${xhr.status}`)
+          if (xhr.status >= 200 && xhr.status < 300) resolve()
+          else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.substring(0,120)}`))
+        }
+        xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexión'))
+        xhr.ontimeout = () => reject(new Error('Tiempo agotado (60s) — señal débil, intenta de nuevo'))
+        xhr.send(compressed)
+      })
+
+      const publicUrl = `${supabaseUrl}/storage/v1/object/public/service-photos/${path}`
       setKitPhotoUrl(publicUrl)
-      addLog('✅ Foto subida correctamente')
+      addLog('✅ Completado')
 
     } catch (e) {
       addLog(`ERROR: ${e.name} — ${e.message}`)
       setError(e.message || 'Error al subir. Intenta de nuevo.')
     } finally {
-      setUploadingKit(false) // SIEMPRE se ejecuta
+      setUploadingKit(false)
     }
   }
 
