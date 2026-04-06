@@ -274,12 +274,7 @@ function AppInner() {
     }
   }, [loading, user])
 
-  // ── Detectar operador sin onboarding completo ─────────────────
-  const needsOnboarding = (
-    profile?.role === 'operador' &&
-    !profile?.onboarding_done
-  )
-
+  // ── Ruta pública de tracking ───────────────────────────────────
   if (trackingId) {
     return (
       <div style={{ minHeight: '100vh', background: '#f3f4f6' }}>
@@ -288,13 +283,20 @@ function AppInner() {
     )
   }
 
-  if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', background: '#050A14' }} />
-    )
+  // ── FIX: esperar loading Y que el profile llegue si hay user ───
+  // Sin esto, el operador entra al panel antes de que llegue su profile
+  if (loading || (user && !profile)) {
+    return <div style={{ minHeight: '100vh', background: '#050A14' }} />
   }
 
-  // ── Onboarding obligatorio para operadores nuevos ─────────────
+  // ── Detectar operador sin onboarding completo ──────────────────
+  // Usar === false explícito para no confundir null con false
+  const needsOnboarding = (
+    profile?.role === 'operador' &&
+    profile?.onboarding_done === false
+  )
+
+  // ── Onboarding obligatorio para operadores nuevos ──────────────
   if (needsOnboarding) {
     return (
       <div style={{ minHeight: '100vh', background: '#050A14' }}>
