@@ -42,7 +42,7 @@ function Navbar({ view, setView, onShowAuth }) {
   }
   if (profile?.role === 'admin') {
     navLinks.push(['operator', 'Panel Operador'])
-    navLinks.push(['admin',    'Admin'])
+    navLinks.push(['admin',     'Admin'])
   }
 
   const roleBadge = {
@@ -221,7 +221,6 @@ function HomeView({ setView, onShowAuth }) {
   )
 }
 
-// ── Wrapper de BookingView con protección de login ─────────────
 function BookingViewProtected({ onNavigate, onShowAuth }) {
   const { user } = useAuth()
 
@@ -283,17 +282,16 @@ function AppInner() {
     )
   }
 
-  // ── FIX: esperar loading Y que el profile llegue si hay user ───
-  // Sin esto, el operador entra al panel antes de que llegue su profile
   if (loading || (user && !profile)) {
     return <div style={{ minHeight: '100vh', background: '#050A14' }} />
   }
 
   // ── Detectar operador sin onboarding completo ──────────────────
-  // Usar === false explícito para no confundir null con false
+  // CAMBIO CLAVE: Usamos !profile?.onboarding_done para atrapar 
+  // tanto 'false' como 'null' (casos de nuevos operadores)
   const needsOnboarding = (
     profile?.role === 'operador' &&
-    profile?.onboarding_done === false
+    !profile?.onboarding_done
   )
 
   // ── Onboarding obligatorio para operadores nuevos ──────────────
