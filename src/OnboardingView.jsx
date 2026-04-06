@@ -139,11 +139,9 @@ export default function OnboardingView({ onComplete }) {
       const fileToUpload = await compressForMobile(file)
       addLog(`Comprimido: ${(fileToUpload.size/1024).toFixed(0)} KB`)
 
-      // 2. Obtener token de sesión
+      // 2. Token — usar anon key directamente, sin await getSession()
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token || supabaseKey
       const path = `kits/${user.id}/kit_${Date.now()}.jpg`
 
       // 3. XHR en lugar de fetch — funciona en Samsung WebView
@@ -151,7 +149,7 @@ export default function OnboardingView({ onComplete }) {
       await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest()
         xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`)
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+        xhr.setRequestHeader('Authorization', `Bearer ${supabaseKey}`)
         xhr.setRequestHeader('apikey', supabaseKey)
         xhr.setRequestHeader('Content-Type', 'image/jpeg')
         xhr.setRequestHeader('x-upsert', 'true')
