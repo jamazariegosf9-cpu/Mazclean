@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
 
-// ── Alcaldías CDMX + municipios Estado de México principales ──
 const ZONAS = [
   'Álvaro Obregón','Azcapotzalco','Benito Juárez','Coyoacán',
   'Cuajimalpa','Cuauhtémoc','Gustavo A. Madero','Iztacalco',
@@ -19,7 +18,6 @@ const BANCOS = [
   'Inbursa','Scotiabank','Afirme','BanBajío','Azteca','Otro',
 ]
 
-// ── Validar dígito verificador CLABE ─────────────────────────
 function validarCLABE(clabe) {
   if (!/^\d{18}$/.test(clabe)) return false
   const pesos = [3,7,1,3,7,1,3,7,1,3,7,1,3,7,1,3,7]
@@ -28,7 +26,6 @@ function validarCLABE(clabe) {
   return control === parseInt(clabe[17])
 }
 
-// ── Hook móvil ────────────────────────────────────────────────
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   useEffect(() => {
@@ -39,126 +36,91 @@ function useIsMobile() {
   return isMobile
 }
 
-// ── Comprimir imagen con fallback para Samsung/Android WebView ──
-// ── prepareImage: redimensiona + convierte a JPEG sin depender de toBlob ──
-// Compatible con Samsung WebView, HEIC, WebP, archivos grandes de cámara.
-async function prepareImage(file) {
-  const MAX_BYTES = 10 * 1024 * 1024
-  if (file.size > MAX_BYTES) {
-    throw new Error('La foto pesa más de 10 MB. Toma una foto con menor resolución.')
-  }
-  const MAX_PX = 1280
-  const QUALITY = 0.82
-  const objectUrl = URL.createObjectURL(file)
+// ── Comprimir imagen usando OffscreenCanvas + fetch raw con AbortController ──
+// Estrategia: OffscreenCanvas.convertToBlob() es más confiable que canvas.toBlob()
+// en Samsung WebView. Si falla, sube el archivo original directo.
+async function compressForMobile(file) {
+  // Archivos pequeños (<500KB) van directo sin procesar
+  if (file.size < 500 * 1024) return file
+
   try {
-    const img = await new Promise((resolve, reject) => {
-      const i = new Image()
-      const t = setTimeout(() => reject(new Error('timeout_load')), 15000)
-      i.onload  = () => { clearTimeout(t); resolve(i) }
-      i.onerror = () => { clearTimeout(t); reject(new Error('No se pudo leer la imagen')) }
-      i.src = objectUrl
-    })
-    const isStandard = file.type === 'image/jpeg' || file.type === 'image/png'
-    if (file.size < 800 * 1024 && isStandard) return file
-    let { width, height } = img
-    if (width > MAX_PX || height > MAX_PX) {
-      if (width > height) { height = Math.round(height * MAX_PX / width); width = MAX_PX }
-      else                { width = Math.round(width * MAX_PX / height); height = MAX_PX }
+    const bitmap = await createImageBitmap(file)
+    const MAX = 1000
+    let w = bitmap.width, h = bitmap.height
+    if (w > MAX || h > MAX) {
+      if (w > h) { h = Math.round(h * MAX / w); w = MAX }
+      else       { w = Math.round(w * MAX / h); h = MAX }
     }
-    const canvas = document.createElement('canvas')
-    canvas.width = width; canvas.height = height
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return file
-    ctx.drawImage(img, 0, 0, width, height)
-    // Usar fetch(dataURL) en lugar de toBlob — más confiable en Samsung WebView
-    const dataUrl = canvas.toDataURL('image/jpeg', QUALITY)
-    if (!dataUrl || dataUrl === 'data:,') return file
-    const res  = await fetch(dataUrl)
-    const blob = await res.blob()
-    return blob.size > 0 ? blob : file
-  } catch (err) {
-    if (err.message === 'timeout_load') {
-      throw new Error('La imagen tardó demasiado. Intenta con otra foto.')
-    }
-    return file // fallback: subir original
-  } finally {
-    URL.revokeObjectURL(objectUrl)
+    const oc = new OffscreenCanvas(w, h)
+    const ctx = oc.getContext('2d')
+    ctx.drawImage(bitmap, 0, 0, w, h)
+    bitmap.close()
+    const blob = await oc.convertToBlob({ type: 'image/jpeg', quality: 0.78 })
+    return blob && blob.size > 0 ? blob : file
+  } catch {
+    // Samsung/WebView sin OffscreenCanvas — subir original
+    return file
   }
 }
 
 export default function OnboardingView({ onComplete }) {
   const { user, profile } = useAuth()
   const isMobile = useIsMobile()
-  const [step, setStep] = useState(profile?.onboarding_step || 1)
+  const [step, setStep]   = useState(profile?.onboarding_step || 1)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError]   = useState('')
 
-  // ── Paso 1: Datos personales ──────────────────────────────
-  const [fullName, setFullName]   = useState(profile?.full_name || '')
-  const [phone, setPhone]         = useState(profile?.phone || '')
+  // Paso 1
+  const [fullName, setFullName] = useState(profile?.full_name || '')
+  const [phone, setPhone]       = useState(profile?.phone || '')
 
-  // ── Paso 2: Kit de materiales ─────────────────────────────
-  const [kitPhoto, setKitPhoto]           = useState(null)
-  const [kitPhotoUrl, setKitPhotoUrl]     = useState(profile?.kit_photo_url || '')
-  const [uploadingKit, setUploadingKit]   = useState(false)
-  const [uploadProgress, setUploadProgress] = useState('')
+  // Paso 2
+  const [kitPhotoUrl, setKitPhotoUrl]   = useState(profile?.kit_photo_url || '')
+  const [uploadingKit, setUploadingKit] = useState(false)
+  const [debugLog, setDebugLog]         = useState([])
 
-  // ── Paso 3: Zona de trabajo ───────────────────────────────
+  // Paso 3
   const [selectedZones, setSelectedZones] = useState(profile?.coverage_zones || [])
   const [radius, setRadius]               = useState(profile?.coverage_radius || 10)
   const [selectedDays, setSelectedDays]   = useState(profile?.work_days || [])
   const [workStart, setWorkStart]         = useState(profile?.work_start?.slice(0,5) || '08:00')
   const [workEnd, setWorkEnd]             = useState(profile?.work_end?.slice(0,5) || '18:00')
 
-  // ── Paso 4: Datos de pago ─────────────────────────────────
+  // Paso 4
   const [clabe, setClabe]             = useState('')
   const [clabeHolder, setClabeHolder] = useState(profile?.clabe_holder || '')
   const [bankName, setBankName]       = useState(profile?.bank_name || '')
   const [clabeError, setClabeError]   = useState('')
 
-  // ── Sincronizar step con profile ──────────────────────────
   useEffect(() => {
     if (profile?.onboarding_step) setStep(profile.onboarding_step)
   }, [profile])
 
+  const addLog = (msg) => {
+    const line = `[${new Date().toLocaleTimeString('es-MX')}] ${msg}`
+    console.log(line)
+    setDebugLog(prev => [...prev.slice(-9), line])
+  }
+
   const saveStep = async (stepData, nextStep) => {
-    setSaving(true)
-    setError('')
+    setSaving(true); setError('')
     try {
-      const { error: err } = await supabase
-        .from('profiles')
-        .update({
-          ...stepData,
-          onboarding_step: nextStep,
-          updated_at: new Date().toISOString(),
-        })
+      const { error: err } = await supabase.from('profiles')
+        .update({ ...stepData, onboarding_step: nextStep, updated_at: new Date().toISOString() })
         .eq('id', user.id)
       if (err) throw err
       setStep(nextStep)
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setSaving(false)
-    }
+    } catch (e) { setError(e.message) }
+    finally { setSaving(false) }
   }
 
-  // ── Handlers por paso ─────────────────────────────────────
   const handleStep1 = async () => {
     if (!fullName.trim()) { setError('El nombre completo es requerido.'); return }
     if (!/^\d{10}$/.test(phone.replace(/\s/g,''))) { setError('El teléfono debe tener 10 dígitos.'); return }
     await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,'') }, 2)
   }
 
-  // ── LOG VISIBLE en pantalla para auditoría móvil ─────────────
-  const [debugLog, setDebugLog] = useState([])
-  const addLog = (msg) => {
-    const line = `[${new Date().toLocaleTimeString('es-MX')}] ${msg}`
-    console.log(line)
-    setDebugLog(prev => [...prev.slice(-8), line])
-  }
-
-  // ── handleKitUpload — MODO AUDITORÍA ─────────────────────────
-  // Upload DIRECTO sin compresión para identificar causa raíz del fallo.
+  // ── UPLOAD con AbortController (timeout 30s) + OffscreenCanvas ──
   const handleKitUpload = async (file) => {
     if (!file) return
     setUploadingKit(true)
@@ -166,42 +128,65 @@ export default function OnboardingView({ onComplete }) {
     setDebugLog([])
 
     try {
-      // LOG 1 — info del archivo recibido
-      addLog(`Archivo: ${file.name || 'sin nombre'} | tipo: ${file.type || 'desconocido'} | tamaño: ${(file.size/1024).toFixed(0)} KB`)
+      addLog(`Archivo: ${file.name || 'foto'} | ${file.type || '?'} | ${(file.size/1024).toFixed(0)} KB`)
 
       if (file.size > 15 * 1024 * 1024) {
-        throw new Error(`Archivo muy grande: ${(file.size/1024/1024).toFixed(1)} MB. Máximo 15 MB.`)
+        throw new Error('La foto pesa más de 15 MB. Toma una foto con menor resolución.')
       }
 
-      // LOG 2 — verificar URL de Supabase
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
-      addLog(`URL Supabase: ${supabaseUrl.substring(0,50)} | https: ${supabaseUrl.startsWith('https')}`)
+      // 1. Comprimir con OffscreenCanvas (funciona en Samsung)
+      addLog('Comprimiendo imagen...')
+      const fileToUpload = await compressForMobile(file)
+      addLog(`Listo para subir: ${(fileToUpload.size/1024).toFixed(0)} KB`)
 
-      // LOG 3 — upload DIRECTO sin canvas ni compresión
-      addLog('Enviando archivo directo a Storage...')
+      // 2. Upload directo con fetch + AbortController (timeout 30s)
+      // Evita que el request quede colgado indefinidamente en móvil
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 30000)
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token || supabaseKey
+
+      addLog(`Subiendo a Storage (timeout: 30s)...`)
       const path = `kits/${user.id}/kit_${Date.now()}.jpg`
-      const { data: uploadData, error: upErr } = await supabase.storage
-        .from('service-photos')
-        .upload(path, file, {
-          upsert:      true,
-          contentType: file.type || 'image/jpeg',
-        })
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/service-photos/${path}`
 
-      // LOG 4 — resultado
-      if (upErr) {
-        addLog(`ERROR Storage: nombre=${upErr.name} | msg=${upErr.message} | status=${upErr.statusCode ?? 'n/a'}`)
-        throw new Error(`Storage error: ${upErr.message}`)
+      const res = await fetch(uploadUrl, {
+        method:  'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type':  'image/jpeg',
+          'x-upsert':      'true',
+          'apikey':        supabaseKey,
+        },
+        body:   fileToUpload,
+        signal: controller.signal,
+      })
+      clearTimeout(timer)
+
+      addLog(`HTTP ${res.status} ${res.statusText}`)
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '')
+        if (res.status === 413) throw new Error('Foto demasiado grande para el servidor. Intenta con una foto de menor resolución.')
+        if (res.status === 401 || res.status === 403) throw new Error('Sin permiso para subir fotos. Cierra sesión y vuelve a entrar.')
+        throw new Error(`Error del servidor (${res.status}): ${txt.substring(0,100)}`)
       }
 
-      addLog(`OK — path guardado: ${uploadData?.path || path}`)
-      const url = `${supabaseUrl}/storage/v1/object/public/service-photos/${path}`
-      setKitPhotoUrl(url)
-      setKitPhoto(file)
-      addLog('✅ Completado')
+      const publicUrl = `${supabaseUrl}/storage/v1/object/public/service-photos/${path}`
+      setKitPhotoUrl(publicUrl)
+      addLog('✅ Foto subida correctamente')
 
     } catch (e) {
-      addLog(`CATCH: ${e.name} — ${e.message}`)
-      setError(`Error al subir: ${e.message}`)
+      if (e.name === 'AbortError') {
+        addLog('TIMEOUT — el upload tardó más de 30s')
+        setError('La conexión tardó demasiado (30s). Verifica tu señal de datos e intenta de nuevo.')
+      } else {
+        addLog(`ERROR: ${e.name} — ${e.message}`)
+        setError(e.message || 'Error al subir foto. Intenta de nuevo.')
+      }
     } finally {
       setUploadingKit(false)
     }
@@ -212,55 +197,29 @@ export default function OnboardingView({ onComplete }) {
     await saveStep({ kit_photo_url: kitPhotoUrl }, 3)
   }
 
-  const toggleZone = (zone) => {
-    setSelectedZones(prev =>
-      prev.includes(zone) ? prev.filter(z => z !== zone) : [...prev, zone]
-    )
-  }
+  const toggleZone = (zone) =>
+    setSelectedZones(prev => prev.includes(zone) ? prev.filter(z => z !== zone) : [...prev, zone])
 
-  const toggleDay = (day) => {
-    setSelectedDays(prev =>
-      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
-    )
-  }
+  const toggleDay = (day) =>
+    setSelectedDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day])
 
   const handleStep3 = async () => {
     if (selectedZones.length === 0) { setError('Selecciona al menos una zona de cobertura.'); return }
     if (selectedDays.length === 0)  { setError('Selecciona al menos un día disponible.'); return }
     if (workStart >= workEnd)       { setError('La hora de inicio debe ser antes de la hora de cierre.'); return }
-    await saveStep({
-      coverage_zones:  selectedZones,
-      coverage_radius: radius,
-      work_days:       selectedDays,
-      work_start:      workStart,
-      work_end:        workEnd,
-    }, 4)
+    await saveStep({ coverage_zones: selectedZones, coverage_radius: radius, work_days: selectedDays, work_start: workStart, work_end: workEnd }, 4)
   }
 
   const handleStep4 = async () => {
     const clabeClean = clabe.replace(/\s/g,'')
     if (!clabeClean && !profile?.clabe) { setError('La CLABE es requerida.'); return }
-    if (clabeClean && !validarCLABE(clabeClean)) {
-      setClabeError('CLABE inválida. Verifica los 18 dígitos.')
-      return
-    }
+    if (clabeClean && !validarCLABE(clabeClean)) { setClabeError('CLABE inválida. Verifica los 18 dígitos.'); return }
     if (!clabeHolder.trim()) { setError('El nombre del titular es requerido.'); return }
     if (!bankName)           { setError('Selecciona un banco.'); return }
-
-    const clabeToSave = clabeClean
-      ? '****' + clabeClean.slice(14)
-      : profile?.clabe
-
-    await saveStep({
-      clabe:           clabeToSave,
-      clabe_holder:    clabeHolder.trim(),
-      bank_name:       bankName,
-      operator_status: 'pendiente',
-      onboarding_done: true,
-    }, 5)
+    const clabeToSave = clabeClean ? '****' + clabeClean.slice(14) : profile?.clabe
+    await saveStep({ clabe: clabeToSave, clabe_holder: clabeHolder.trim(), bank_name: bankName, operator_status: 'pendiente', onboarding_done: true }, 5)
   }
 
-  // Progreso visual
   const STEPS = [
     { n: 1, label: 'Datos',    icon: '👤' },
     { n: 2, label: 'Kit',      icon: '🧴' },
@@ -274,10 +233,7 @@ export default function OnboardingView({ onComplete }) {
     fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box',
     fontFamily: 'inherit', color: '#1f2937', minHeight: 50, background: '#fff',
   }
-
-  const labelStyle = {
-    fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6, display: 'block',
-  }
+  const labelStyle = { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6, display: 'block' }
 
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6', padding: isMobile ? '16px 12px 40px' : '32px 16px' }}>
@@ -286,32 +242,20 @@ export default function OnboardingView({ onComplete }) {
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div style={{ fontSize: 40, marginBottom: 8 }}>💧</div>
-          <h1 style={{ fontSize: isMobile ? 22 : 26, fontWeight: 800, color: '#1f2937', margin: '0 0 6px' }}>
-            Bienvenido a Maz Clean
-          </h1>
-          <p style={{ fontSize: 14, color: '#6b7280', margin: 0 }}>
-            Completa tu registro para empezar a recibir servicios
-          </p>
+          <h1 style={{ fontSize: isMobile ? 22 : 26, fontWeight: 800, color: '#1f2937', margin: '0 0 6px' }}>Bienvenido a Maz Clean</h1>
+          <p style={{ fontSize: 14, color: '#6b7280', margin: 0 }}>Completa tu registro para empezar a recibir servicios</p>
         </div>
 
         {/* Barra de progreso */}
         <div style={{ background: '#fff', borderRadius: 16, padding: '16px 20px', marginBottom: 20, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             {STEPS.map((s, i) => (
               <div key={s.n} style={{ display: 'flex', alignItems: 'center', flex: i < STEPS.length - 1 ? 1 : 'none' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                  <div style={{
-                    width: 36, height: 36, borderRadius: '50%', display: 'flex',
-                    alignItems: 'center', justifyContent: 'center', fontSize: 16,
-                    background: step > s.n ? '#10b981' : step === s.n ? '#3b82f6' : '#e5e7eb',
-                    color: step >= s.n ? '#fff' : '#9ca3af',
-                    fontWeight: 700,
-                  }}>
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, background: step > s.n ? '#10b981' : step === s.n ? '#3b82f6' : '#e5e7eb', color: step >= s.n ? '#fff' : '#9ca3af', fontWeight: 700 }}>
                     {step > s.n ? '✓' : s.icon}
                   </div>
-                  <span style={{ fontSize: 10, color: step >= s.n ? '#1f2937' : '#9ca3af', fontWeight: step === s.n ? 700 : 400 }}>
-                    {s.label}
-                  </span>
+                  <span style={{ fontSize: 10, color: step >= s.n ? '#1f2937' : '#9ca3af', fontWeight: step === s.n ? 700 : 400 }}>{s.label}</span>
                 </div>
                 {i < STEPS.length - 1 && (
                   <div style={{ flex: 1, height: 3, background: step > s.n ? '#10b981' : '#e5e7eb', margin: '0 4px', marginBottom: 20, borderRadius: 4 }} />
@@ -321,32 +265,25 @@ export default function OnboardingView({ onComplete }) {
           </div>
         </div>
 
-        {/* ── PASO 1: Datos personales ── */}
+        {/* ── PASO 1 ── */}
         {step === 1 && (
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>👤 Datos personales</h2>
             <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 24px' }}>Confirma o actualiza tu información de contacto.</p>
-
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
                 <label style={labelStyle}>Nombre completo *</label>
-                <input style={inputStyle} placeholder="Ej: Juan Alberto Mazariegos"
-                  value={fullName} onChange={e => setFullName(e.target.value)} />
+                <input style={inputStyle} placeholder="Ej: Juan Alberto Mazariegos" value={fullName} onChange={e => setFullName(e.target.value)} />
               </div>
               <div>
                 <label style={labelStyle}>Teléfono celular (10 dígitos) *</label>
-                <input style={inputStyle} placeholder="Ej: 5512345678" type="tel"
-                  maxLength={10} value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g,''))} />
+                <input style={inputStyle} placeholder="Ej: 5512345678" type="tel" maxLength={10} value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g,''))} />
               </div>
               <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px' }}>
-                <p style={{ fontSize: 13, color: '#166534', margin: 0, lineHeight: 1.5 }}>
-                  📱 Usaremos este número para coordinar servicios y enviarte notificaciones importantes.
-                </p>
+                <p style={{ fontSize: 13, color: '#166534', margin: 0, lineHeight: 1.5 }}>📱 Usaremos este número para coordinar servicios y enviarte notificaciones importantes.</p>
               </div>
             </div>
-
             {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 16, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
-
             <button onClick={handleStep1} disabled={saving}
               style={{ width: '100%', marginTop: 20, padding: '14px 0', background: saving ? '#9ca3af' : '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', minHeight: 52 }}>
               {saving ? '⏳ Guardando...' : 'Continuar →'}
@@ -358,23 +295,21 @@ export default function OnboardingView({ onComplete }) {
         {step === 2 && (
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🧴 Kit de materiales</h2>
-            <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Sube una foto de tu kit completo para que podamos verificar que tienes todo lo necesario.</p>
+            <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Sube una foto de tu kit completo para verificar que tienes todo lo necesario.</p>
 
-            {/* Lista de materiales requeridos */}
+            {/* Materiales */}
             <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: '14px 16px', marginBottom: 20 }}>
               <p style={{ fontSize: 13, fontWeight: 700, color: '#1e40af', margin: '0 0 10px' }}>✅ Materiales obligatorios:</p>
               {['Shampoo para autos','Mínimo 4 microfibras limpias','Cubeta de doble balde','Aspiradora portátil'].map(m => (
                 <div key={m} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span style={{ color: '#3b82f6', fontSize: 14 }}>•</span>
+                  <span style={{ color: '#3b82f6' }}>•</span>
                   <span style={{ fontSize: 13, color: '#1e40af' }}>{m}</span>
                 </div>
               ))}
-              <p style={{ fontSize: 12, color: '#6b7280', margin: '10px 0 0', fontStyle: 'italic' }}>
-                Recomendados: sellador de llantas, agua propia
-              </p>
+              <p style={{ fontSize: 12, color: '#6b7280', margin: '10px 0 0', fontStyle: 'italic' }}>Recomendados: sellador de llantas, agua propia</p>
             </div>
 
-            {/* Preview foto */}
+            {/* Preview */}
             {kitPhotoUrl ? (
               <div style={{ position: 'relative', marginBottom: 14 }}>
                 <img src={kitPhotoUrl} alt="Kit" style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 12 }} />
@@ -387,20 +322,20 @@ export default function OnboardingView({ onComplete }) {
               </div>
             )}
 
-            {/* Spinner upload */}
+            {/* Spinner */}
             {uploadingKit && (
               <div style={{ background: '#eff6ff', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 18, height: 18, border: '3px solid #bfdbfe', borderTop: '3px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-                <span style={{ fontSize: 13, color: '#1e40af', fontWeight: 600 }}>Subiendo...</span>
+                <span style={{ fontSize: 13, color: '#1e40af', fontWeight: 600 }}>Subiendo foto...</span>
               </div>
             )}
 
-            {/* Panel de auditoría — log visible en pantalla del móvil */}
+            {/* Debug log visible en móvil */}
             {debugLog.length > 0 && (
               <div style={{ background: '#0f172a', borderRadius: 10, padding: '10px 12px', marginBottom: 12, border: '1.5px solid #334155' }}>
                 <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>🔍 Debug Log</div>
                 {debugLog.map((line, i) => (
-                  <div key={i} style={{ fontSize: 10, color: line.includes('ERROR') || line.includes('CATCH') ? '#f87171' : line.includes('✅') ? '#4ade80' : '#e2e8f0', fontFamily: 'monospace', lineHeight: 1.6, wordBreak: 'break-all' }}>
+                  <div key={i} style={{ fontSize: 10, fontFamily: 'monospace', lineHeight: 1.7, wordBreak: 'break-all', color: line.includes('ERROR') || line.includes('CATCH') || line.includes('TIMEOUT') ? '#f87171' : line.includes('✅') ? '#4ade80' : '#e2e8f0' }}>
                     {line}
                   </div>
                 ))}
@@ -409,23 +344,11 @@ export default function OnboardingView({ onComplete }) {
 
             {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginBottom: 12, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
 
-            {/* Botón subir foto */}
-            <label style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              padding: '13px 0', borderRadius: 12,
-              background: uploadingKit ? '#f3f4f6' : '#6366f1',
-              color: uploadingKit ? '#9ca3af' : '#fff',
-              fontSize: 15, fontWeight: 700,
-              cursor: uploadingKit ? 'not-allowed' : 'pointer',
-              pointerEvents: uploadingKit ? 'none' : 'auto',
-              minHeight: 50, marginBottom: 12,
-            }}>
+            {/* Botón foto */}
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploadingKit ? '#f3f4f6' : '#6366f1', color: uploadingKit ? '#9ca3af' : '#fff', fontSize: 15, fontWeight: 700, cursor: uploadingKit ? 'not-allowed' : 'pointer', pointerEvents: uploadingKit ? 'none' : 'auto', minHeight: 50, marginBottom: 12 }}>
               📷 {kitPhotoUrl ? 'Cambiar foto' : 'Tomar / Subir foto del kit'}
-              <input
-                type="file" accept="image/*" capture="environment"
-                style={{ display: 'none' }}
-                onChange={e => { if (e.target.files[0]) handleKitUpload(e.target.files[0]) }}
-              />
+              <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                onChange={e => { if (e.target.files[0]) handleKitUpload(e.target.files[0]) }} />
             </label>
 
             <div style={{ display: 'flex', gap: 10 }}>
@@ -444,55 +367,46 @@ export default function OnboardingView({ onComplete }) {
             <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>📍 Zona de trabajo</h2>
             <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 20px' }}>Define dónde y cuándo puedes atender servicios.</p>
 
-            {/* Zonas */}
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Alcaldías / Municipios de cobertura * ({selectedZones.length} seleccionadas)</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {ZONAS.map(z => (
                   <button key={z} onClick={() => toggleZone(z)}
-                    style={{ padding: '7px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: 'none', transition: 'all 0.15s',
-                      background: selectedZones.includes(z) ? '#3b82f6' : '#f3f4f6',
-                      color: selectedZones.includes(z) ? '#fff' : '#374151', minHeight: 36 }}>
+                    style={{ padding: '7px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: 'none', transition: 'all 0.15s', background: selectedZones.includes(z) ? '#3b82f6' : '#f3f4f6', color: selectedZones.includes(z) ? '#fff' : '#374151', minHeight: 36 }}>
                     {z}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Radio */}
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Radio máximo de traslado: <strong>{radius} km</strong></label>
-              <input type="range" min={1} max={20} value={radius} onChange={e => setRadius(Number(e.target.value))}
-                style={{ width: '100%', accentColor: '#3b82f6' }} />
+              <input type="range" min={1} max={20} value={radius} onChange={e => setRadius(Number(e.target.value))} style={{ width: '100%', accentColor: '#3b82f6' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
                 <span>1 km</span><span>20 km</span>
               </div>
             </div>
 
-            {/* Días */}
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Días disponibles *</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {DIAS.map(d => (
                   <button key={d} onClick={() => toggleDay(d)}
-                    style={{ padding: '7px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: 'none',
-                      background: selectedDays.includes(d) ? '#10b981' : '#f3f4f6',
-                      color: selectedDays.includes(d) ? '#fff' : '#374151', minHeight: 36, textTransform: 'capitalize' }}>
+                    style={{ padding: '7px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: 'none', background: selectedDays.includes(d) ? '#10b981' : '#f3f4f6', color: selectedDays.includes(d) ? '#fff' : '#374151', minHeight: 36, textTransform: 'capitalize' }}>
                     {d}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Horario */}
             <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>
               <div style={{ flex: 1 }}>
                 <label style={labelStyle}>Hora inicio *</label>
-                <input type="time" value={workStart} onChange={e => setWorkStart(e.target.value)} style={{ ...inputStyle }} />
+                <input type="time" value={workStart} onChange={e => setWorkStart(e.target.value)} style={inputStyle} />
               </div>
               <div style={{ flex: 1 }}>
                 <label style={labelStyle}>Hora cierre *</label>
-                <input type="time" value={workEnd} onChange={e => setWorkEnd(e.target.value)} style={{ ...inputStyle }} />
+                <input type="time" value={workEnd} onChange={e => setWorkEnd(e.target.value)} style={inputStyle} />
               </div>
             </div>
 
@@ -528,17 +442,13 @@ export default function OnboardingView({ onComplete }) {
                   <p style={{ fontSize: 12, color: '#6b7280', margin: '4px 0 0' }}>CLABE registrada: {profile.clabe} — deja en blanco para mantenerla</p>
                 )}
               </div>
-
               <div>
                 <label style={labelStyle}>Nombre del titular *</label>
-                <input style={inputStyle} placeholder="Nombre como aparece en tu cuenta"
-                  value={clabeHolder} onChange={e => setClabeHolder(e.target.value)} />
+                <input style={inputStyle} placeholder="Nombre como aparece en tu cuenta" value={clabeHolder} onChange={e => setClabeHolder(e.target.value)} />
               </div>
-
               <div>
                 <label style={labelStyle}>Banco *</label>
-                <select value={bankName} onChange={e => setBankName(e.target.value)}
-                  style={{ ...inputStyle, cursor: 'pointer' }}>
+                <select value={bankName} onChange={e => setBankName(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                   <option value="">Selecciona tu banco</option>
                   {BANCOS.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
@@ -568,14 +478,11 @@ export default function OnboardingView({ onComplete }) {
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '28px 20px' : 40, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', textAlign: 'center' }}>
             <div style={{ fontSize: 64, marginBottom: 16 }}>🎉</div>
             <h2 style={{ fontSize: 22, fontWeight: 800, color: '#1f2937', margin: '0 0 12px' }}>¡Registro completado!</h2>
-            <p style={{ fontSize: 15, color: '#374151', margin: '0 0 8px', lineHeight: 1.6 }}>
-              Tu solicitud está siendo revisada por nuestro equipo.
-            </p>
+            <p style={{ fontSize: 15, color: '#374151', margin: '0 0 8px', lineHeight: 1.6 }}>Tu solicitud está siendo revisada por nuestro equipo.</p>
             <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 24px', lineHeight: 1.6 }}>
-              Recibirás una notificación en máximo <strong>4 horas hábiles</strong> con el resultado. Una vez aprobado podrás empezar a recibir servicios.
+              Recibirás una notificación en máximo <strong>4 horas hábiles</strong>. Una vez aprobado podrás empezar a recibir servicios.
             </p>
 
-            {/* Estado de documentos */}
             <div style={{ background: '#f9fafb', borderRadius: 12, padding: '16px 20px', marginBottom: 24, textAlign: 'left' }}>
               <p style={{ fontSize: 13, fontWeight: 700, color: '#374151', margin: '0 0 12px' }}>📋 Estado de tu solicitud:</p>
               {[
@@ -587,18 +494,14 @@ export default function OnboardingView({ onComplete }) {
                 <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                   <span style={{ fontSize: 16 }}>{item.done ? '✅' : '⏳'}</span>
                   <span style={{ fontSize: 14, color: item.done ? '#166534' : '#9ca3af', fontWeight: item.done ? 600 : 400 }}>{item.label}</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 12, color: item.done ? '#10b981' : '#d97706', fontWeight: 600 }}>
-                    {item.done ? 'Entregado' : 'Pendiente'}
-                  </span>
+                  <span style={{ marginLeft: 'auto', fontSize: 12, color: item.done ? '#10b981' : '#d97706', fontWeight: 600 }}>{item.done ? 'Entregado' : 'Pendiente'}</span>
                 </div>
               ))}
             </div>
 
             {profile?.operator_status === 'aprobado' && (
               <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
-                <p style={{ fontSize: 15, fontWeight: 700, color: '#166534', margin: 0 }}>
-                  🎉 ¡Tu cuenta está activa! Ya puedes recibir servicios.
-                </p>
+                <p style={{ fontSize: 15, fontWeight: 700, color: '#166534', margin: 0 }}>🎉 ¡Tu cuenta está activa! Ya puedes recibir servicios.</p>
               </div>
             )}
 
