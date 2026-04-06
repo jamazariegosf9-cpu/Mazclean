@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthModal from './components/auth/AuthModal'
 import BookingView from './BookingView'
+import OnboardingView from './OnboardingView'
 import { Menu, X } from 'lucide-react'
 
 // ── Detectar ruta /tracking/:id ────────────────────────────────
@@ -273,6 +274,12 @@ function AppInner() {
     }
   }, [loading, user])
 
+  // ── Detectar operador sin onboarding completo ─────────────────
+  const needsOnboarding = (
+    profile?.role === 'operador' &&
+    !profile?.onboarding_done
+  )
+
   if (trackingId) {
     return (
       <div style={{ minHeight: '100vh', background: '#f3f4f6' }}>
@@ -284,6 +291,15 @@ function AppInner() {
   if (loading && !user) {
     return (
       <div style={{ minHeight: '100vh', background: '#050A14' }} />
+    )
+  }
+
+  // ── Onboarding obligatorio para operadores nuevos ─────────────
+  if (needsOnboarding) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#050A14' }}>
+        <OnboardingView onComplete={() => setView('operator')} />
+      </div>
     )
   }
 
