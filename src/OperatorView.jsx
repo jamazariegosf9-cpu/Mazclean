@@ -43,8 +43,9 @@ const OperatorView = () => {
   const [photoBooking, setPhotoBooking]       = useState(null);
   const [photoStep, setPhotoStep]             = useState(1);
   const [photosData, setPhotosData]           = useState({});
-  // photosData = { front_before, side_before, front_after, interior_after }
+  // photosData = { front_before: path, side_before: path, ... }
   const [uploadingPhoto, setUploadingPhoto]   = useState(false);
+  const [uploadError, setUploadError]         = useState('');
   const [photoPhase, setPhotoPhase]           = useState('before');
   // 'before' = pasos 1-2 | 'after' = pasos 3-4
 
@@ -217,6 +218,8 @@ const OperatorView = () => {
     setPhotosData(existing);
     setPhotoStep(1);
     setPhotoPhase('before');
+    setUploadError('');
+    setUploadingPhoto(false);
     setPhotoModal(true);
   };
 
@@ -237,6 +240,8 @@ Usa el botón "Empezar Lavado" para tomarlas.');
     setPhotoStep(3);
     setPhotoPhase('after');
     setPendingFinalize(booking.id);
+    setUploadError('');
+    setUploadingPhoto(false);
     setPhotoModal(true);
   };
 
@@ -343,7 +348,7 @@ Usa el botón "Empezar Lavado" para tomarlas.');
   const handlePhotoUpload = async (file, bookingId, type) => {
     if (!file) return;
     setUploadingPhoto(true);
-    setPhotoSaved(false);
+    setUploadError('');
     // Mapa de tipo → columna en BD
     const TYPE_TO_COLUMN = {
       front_before:   'photo_front_before',
@@ -354,23 +359,25 @@ Usa el botón "Empezar Lavado" para tomarlas.');
     try {
       const compressed = await compressImage(file);
       const path = `${bookingId}/${type}.jpg`;
-      const { error: uploadError } = await supabase.storage
+      const { error: upErr } = await supabase.storage
         .from('service-photos')
         .upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
-      if (uploadError) throw uploadError;
+      if (upErr) throw upErr;
       const column = TYPE_TO_COLUMN[type] || type;
-      const { error: updateError } = await supabase.from('bookings')
+      const { error: dbErr } = await supabase.from('bookings')
         .update({ [column]: path, updated_at: new Date().toISOString() })
         .eq('id', bookingId);
-      if (updateError) throw updateError;
+      if (dbErr) throw dbErr;
+      // Actualizar estado local — esto desbloquea el botón Siguiente
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, [column]: path } : b));
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, [column]: path }));
       if (photoBooking?.id === bookingId)    setPhotoBooking(prev =>    ({ ...prev, [column]: path }));
-      // Actualizar caché local de fotos del paso actual
       setPhotosData(prev => ({ ...prev, [type]: path }));
     } catch (err) {
-      alert(`Error al subir foto: ${err.message}`);
+      console.error('Upload error:', err);
+      setUploadError(err.message || 'Error al subir. Intenta de nuevo.');
     } finally {
+      // SIEMPRE liberar el estado de carga — evita congelarse
       setUploadingPhoto(false);
     }
   };
@@ -684,6 +691,13 @@ Usa el botón "Empezar Lavado" para tomarlas.');
                   <span style={{ fontSize: 13, fontWeight: 600, color: '#1e40af' }}>Subiendo foto...</span>
                 </div>
               )}
+              {/* Error de upload */}
+              {uploadError ? (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', marginBottom: 12 }}>
+                  <span style={{ fontSize: 13, color: '#dc2626', fontWeight: 600 }}>⚠️ {uploadError}</span>
+                  <span style={{ fontSize: 12, color: '#9ca3af', display: 'block', marginTop: 2 }}>Intenta de nuevo tomando la foto.</span>
+                </div>
+              ) : null}
 
               {/* Botón tomar foto */}
               <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploadingPhoto ? '#f3f4f6' : '#3b82f6', color: uploadingPhoto ? '#9ca3af' : '#fff', fontSize: 15, fontWeight: 700, cursor: uploadingPhoto ? 'not-allowed' : 'pointer', pointerEvents: uploadingPhoto ? 'none' : 'auto', boxShadow: uploadingPhoto ? 'none' : '0 4px 12px rgba(59,130,246,0.3)', minHeight: 52, marginBottom: 10 }}>
