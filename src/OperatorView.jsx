@@ -20,62 +20,50 @@ function useIsMobile() {
   return isMobile;
 }
 
-// ── Comprimir imagen con fallback para Samsung/Android WebView ──
-function compressImage(file) {
-  return new Promise((resolve) => {
-    // Si el archivo ya es pequeño (<800KB) subir directo sin comprimir
-    if (file.size < 800 * 1024) { resolve(file); return; }
-
-    const MAX = 1200;
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-
-    // Timeout de seguridad: si toBlob no responde en 8s, usar archivo original
-    let settled = false;
-    const fallbackTimer = setTimeout(() => {
-      if (!settled) { settled = true; URL.revokeObjectURL(url); resolve(file); }
-    }, 8000);
-
-    img.onload = () => {
-      let { width, height } = img;
-      if (width > MAX || height > MAX) {
-        if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
-        else { width = Math.round(width * MAX / height); height = MAX; }
-      }
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) { clearTimeout(fallbackTimer); settled = true; URL.revokeObjectURL(url); resolve(file); return; }
-        ctx.drawImage(img, 0, 0, width, height);
-        URL.revokeObjectURL(url);
-        canvas.toBlob(
-          blob => {
-            if (settled) return;
-            clearTimeout(fallbackTimer);
-            settled = true;
-            resolve(blob || file); // si blob es null, usar original
-          },
-          'image/jpeg',
-          0.82
-        );
-      } catch {
-        clearTimeout(fallbackTimer);
-        settled = true;
-        URL.revokeObjectURL(url);
-        resolve(file); // fallback: subir original
-      }
-    };
-    img.onerror = () => {
-      if (settled) return;
-      clearTimeout(fallbackTimer);
-      settled = true;
-      URL.revokeObjectURL(url);
-      resolve(file); // fallback: subir original
-    };
-    img.src = url;
-  });
+// ── prepareImage: redimensiona + convierte a JPEG sin depender de toBlob ──
+// Compatible con Samsung WebView, HEIC, WebP, archivos grandes de cámara.
+async function prepareImage(file) {
+  const MAX_BYTES = 10 * 1024 * 1024
+  if (file.size > MAX_BYTES) {
+    throw new Error('La foto pesa más de 10 MB. Toma una foto con menor resolución.')
+  }
+  const MAX_PX = 1280
+  const QUALITY = 0.82
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image()
+      const t = setTimeout(() => reject(new Error('timeout_load')), 15000)
+      i.onload  = () => { clearTimeout(t); resolve(i) }
+      i.onerror = () => { clearTimeout(t); reject(new Error('No se pudo leer la imagen')) }
+      i.src = objectUrl
+    })
+    const isStandard = file.type === 'image/jpeg' || file.type === 'image/png'
+    if (file.size < 800 * 1024 && isStandard) return file
+    let { width, height } = img
+    if (width > MAX_PX || height > MAX_PX) {
+      if (width > height) { height = Math.round(height * MAX_PX / width); width = MAX_PX }
+      else                { width = Math.round(width * MAX_PX / height); height = MAX_PX }
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = width; canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return file
+    ctx.drawImage(img, 0, 0, width, height)
+    // Usar fetch(dataURL) en lugar de toBlob — más confiable en Samsung WebView
+    const dataUrl = canvas.toDataURL('image/jpeg', QUALITY)
+    if (!dataUrl || dataUrl === 'data:,') return file
+    const res  = await fetch(dataUrl)
+    const blob = await res.blob()
+    return blob.size > 0 ? blob : file
+  } catch (err) {
+    if (err.message === 'timeout_load') {
+      throw new Error('La imagen tardó demasiado. Intenta con otra foto.')
+    }
+    return file // fallback: subir original
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
 }
 
 const OperatorView = () => {
@@ -365,12 +353,12 @@ const OperatorView = () => {
     setChecklist([]);
   };
 
-  // ── FIXED: Upload foto con compressImage confiable ────────────
+  // ── Upload foto con prepareImage — compatible Samsung/HEIC/WebP ──
   const handlePhotoUpload = async (file, bookingId, type) => {
     if (!file) return;
     setUploadingPhoto(true);
     setUploadError('');
-    setUploadProgress('Procesando imagen...');
+    setUploadProgress('Leyendo imagen...');
 
     const TYPE_TO_COLUMN = {
       front_before:   'photo_front_before',
@@ -380,17 +368,30 @@ const OperatorView = () => {
     };
 
     try {
-      // 1. Comprimir
-      setUploadProgress('Comprimiendo imagen...');
-      const compressed = await compressImage(file);
+      // 1. Validar tamaño
+      if (file.size > 10 * 1024 * 1024) {
+        throw new Error('La foto pesa más de 10 MB. Toma una foto con menor resolución.');
+      }
 
-      // 2. Subir a Storage
+      // 2. Preparar imagen
+      setUploadProgress('Optimizando imagen...');
+      const compressed = await prepareImage(file);
+
+      // 3. Subir a Storage
       setUploadProgress('Subiendo foto...');
       const path = `${bookingId}/${type}_${Date.now()}.jpg`;
       const { error: upErr } = await supabase.storage
         .from('service-photos')
         .upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
-      if (upErr) throw upErr;
+      if (upErr) {
+        if (upErr.message?.includes('Payload too large') || upErr.statusCode === 413) {
+          throw new Error('Foto demasiado grande. Toma una nueva con menor resolución.');
+        }
+        if (upErr.message?.includes('network') || upErr.message?.includes('fetch')) {
+          throw new Error('Error de conexión. Verifica tu red e intenta de nuevo.');
+        }
+        throw upErr;
+      }
 
       // 3. Guardar path en BD
       setUploadProgress('Guardando...');
