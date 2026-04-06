@@ -31,6 +31,18 @@ function useIsMobile() {
   return isMobile;
 }
 
+// ── Helpers ────────────────────────────────────────────────────
+const getPhotoStorageUrl = (path) => {
+  if (!path) return null;
+  if (path.startsWith('http')) return path;
+  return `${SUPABASE_URL}/storage/v1/object/public/service-photos/${path}`;
+};
+
+const WORK_DAYS_LABELS = {
+  lun: 'Lunes', mar: 'Martes', mie: 'Miércoles', jue: 'Jueves',
+  vie: 'Viernes', sab: 'Sábado', dom: 'Domingo'
+};
+
 const AdminView = () => {
   const isMobile = useIsMobile();
   const [bookings, setBookings]         = useState([]);
@@ -94,6 +106,16 @@ const AdminView = () => {
   const [savingChecklist, setSavingChecklist] = useState(false);
   const [checklistServiceId, setChecklistServiceId] = useState(null);
 
+  // ── Operadores pendientes de aprobación ─────────────────────────
+  const [pendingOperators, setPendingOperators]         = useState([]);
+  const [reviewModal, setReviewModal]                   = useState(false);
+  const [reviewingOp, setReviewingOp]                   = useState(null);
+  const [reviewAction, setReviewAction]                 = useState(null); // 'approve' | 'reject'
+  const [rejectionReason, setRejectionReason]           = useState('');
+  const [savingReview, setSavingReview]                 = useState(false);
+  const [reviewError, setReviewError]                   = useState('');
+  const [reviewPhotoModal, setReviewPhotoModal]         = useState(null);
+
   useEffect(() => {
     fetchData();
     const channel = supabase
@@ -105,7 +127,7 @@ const AdminView = () => {
 
   useEffect(() => {
     if (activeTab === 'catalog') fetchServices();
-    if (activeTab === 'operators') fetchIncidents();
+    if (activeTab === 'operators') { fetchIncidents(); fetchPendingOperators(); }
   }, [activeTab]);
 
   const fetchData = async () => {
@@ -140,6 +162,68 @@ const AdminView = () => {
       console.error('Error fetching admin data:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ── Operadores pendientes ────────────────────────────────────────
+  const fetchPendingOperators = async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('role', 'operador')
+      .eq('operator_status', 'pendiente')
+      .order('created_at', { ascending: false });
+    if (!error) setPendingOperators(data || []);
+  };
+
+  const openReviewModal = (op) => {
+    setReviewingOp(op);
+    setReviewAction(null);
+    setRejectionReason('');
+    setReviewError('');
+    setReviewModal(true);
+  };
+
+  const submitReview = async () => {
+    if (!reviewAction) { setReviewError('Selecciona una acción.'); return; }
+    if (reviewAction === 'reject' && !rejectionReason.trim()) {
+      setReviewError('El motivo de rechazo es obligatorio.'); return;
+    }
+    setSavingReview(true);
+    setReviewError('');
+    try {
+      const updatePayload = {
+        operator_status: reviewAction === 'approve' ? 'aprobado' : 'rechazado',
+        onboarding_done: reviewAction === 'approve' ? true : false,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: (await supabase.auth.getUser()).data.user?.id || null,
+        ...(reviewAction === 'reject' ? { rejection_reason: rejectionReason.trim() } : {})
+      };
+      const { error } = await supabase.from('profiles').update(updatePayload).eq('id', reviewingOp.id);
+      if (error) throw error;
+
+      // WhatsApp de notificación
+      const phone = reviewingOp.phone;
+      if (phone) {
+        const templateKey = reviewAction === 'approve' ? 'operator_approved' : 'operator_rejected';
+        try {
+          await sendWhatsApp(templateKey, phone, {
+            operator_name: reviewingOp.full_name,
+            rejection_reason: rejectionReason || ''
+          });
+        } catch (wsErr) { console.warn('WhatsApp omitido:', wsErr.message); }
+      }
+
+      setPendingOperators(prev => prev.filter(o => o.id !== reviewingOp.id));
+      setOperators(prev => prev.map(o => o.id === reviewingOp.id
+        ? { ...o, operator_status: reviewAction === 'approve' ? 'aprobado' : 'rechazado', onboarding_done: reviewAction === 'approve' }
+        : o
+      ));
+      setReviewModal(false);
+    } catch (err) {
+      setReviewError(err.message);
+    } finally {
+      setSavingReview(false);
     }
   };
 
@@ -403,7 +487,6 @@ const AdminView = () => {
     finally { setCreatingOperator(false); }
   };
 
-  // ── FIXED: getOperatorStatus filtra por fecha y hora del booking a asignar ──
   const getOperatorStatus = (operatorId, forBooking = null) => {
     if (forBooking) {
       const [fH, fM] = forBooking.scheduled_time.split(':').map(Number);
@@ -477,6 +560,14 @@ const AdminView = () => {
     { label: '% Completado', value: `${stats.completionRate}%`,           icon: '📈', color: '#7c3aed' },
   ];
 
+  // ── Helper: mapa estático de zona ────────────────────────────────
+  const getZoneMapUrl = (lat, lng, radius = 3000) => {
+    if (!lat || !lng) return null;
+    const GOOGLE_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
+    const zoom = radius > 5000 ? 11 : radius > 2000 ? 12 : 13;
+    return `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${zoom}&size=400x200&maptype=roadmap&markers=color:blue%7C${lat},${lng}&key=${GOOGLE_KEY}`;
+  };
+
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6', paddingBottom: 48 }}>
 
@@ -507,7 +598,7 @@ const AdminView = () => {
         <div style={{ display: 'flex', gap: 4, marginTop: 20, background: '#e5e7eb', padding: 4, borderRadius: 12, overflowX: 'auto', scrollbarWidth: 'none' }}>
           {[
             { id: 'bookings',  label: '📋 Reservaciones' },
-            { id: 'operators', label: `👷 Operadores${incidents.length > 0 ? ` ⚠️${incidents.length}` : ''}` },
+            { id: 'operators', label: `👷 Operadores${incidents.length > 0 || pendingOperators.length > 0 ? ` ⚠️${incidents.length + pendingOperators.length}` : ''}` },
             { id: 'catalog',   label: '🛎 Catálogo' },
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
@@ -619,6 +710,121 @@ const AdminView = () => {
         {activeTab === 'operators' && (
           <div style={{ marginTop: 16, display: 'grid', gap: 16 }}>
 
+            {/* ── SECCIÓN: OPERADORES PENDIENTES DE APROBACIÓN ── */}
+            {pendingOperators.length > 0 && (
+              <div style={{ background: '#fffbeb', borderRadius: 14, border: '2px solid #fde68a', padding: isMobile ? '16px' : '20px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <h2 style={{ fontSize: 15, fontWeight: 700, color: '#92400e', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    🕐 Operadores Pendientes de Aprobación
+                    <span style={{ background: '#f59e0b', color: '#fff', fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 20 }}>
+                      {pendingOperators.length}
+                    </span>
+                  </h2>
+                  <button onClick={fetchPendingOperators}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#92400e', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, minHeight: 36, padding: '6px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.12)' }}>
+                    ↻ Refrescar
+                  </button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(320px,1fr))', gap: 12 }}>
+                  {pendingOperators.map(op => {
+                    const step = op.onboarding_step || 0;
+                    const progressPct = Math.round((step / 5) * 100);
+                    const workDays = Array.isArray(op.work_days) ? op.work_days : [];
+                    return (
+                      <div key={op.id} style={{ background: '#fff', borderRadius: 12, border: '1.5px solid #fde68a', padding: 16, display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 2px 12px rgba(245,158,11,0.1)' }}>
+                        {/* Cabecera */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ position: 'relative', flexShrink: 0 }}>
+                            {op.kit_photo_url ? (
+                              <img src={getPhotoStorageUrl(op.kit_photo_url)} alt="kit"
+                                style={{ height: 52, width: 52, borderRadius: '50%', objectFit: 'cover', border: '2px solid #fde68a' }} />
+                            ) : (
+                              <div style={{ height: 52, width: 52, borderRadius: '50%', background: 'linear-gradient(135deg,#f59e0b,#fbbf24)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 20 }}>
+                                {op.full_name?.charAt(0) || '?'}
+                              </div>
+                            )}
+                            <span style={{ position: 'absolute', bottom: -2, right: -2, background: '#f59e0b', borderRadius: '50%', width: 18, height: 18, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff' }}>⏳</span>
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }}>{op.full_name}</div>
+                            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 1 }}>{op.phone || 'Sin teléfono'}</div>
+                            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>
+                              {new Date(op.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Progreso onboarding */}
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Onboarding completado</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>{progressPct}%</span>
+                          </div>
+                          <div style={{ background: '#f3f4f6', borderRadius: 20, height: 6, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${progressPct}%`, background: 'linear-gradient(90deg,#f59e0b,#fbbf24)', borderRadius: 20, transition: 'width 0.4s' }} />
+                          </div>
+                          <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 3 }}>Paso {step} de 5</div>
+                        </div>
+
+                        {/* Info rápida */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          {/* Zona */}
+                          <div style={{ background: '#f0f9ff', borderRadius: 8, padding: '8px 10px', border: '1px solid #bae6fd' }}>
+                            <div style={{ fontSize: 10, color: '#0284c7', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 }}>📍 Zona</div>
+                            <div style={{ fontSize: 11, color: '#0369a1', fontWeight: 600 }}>
+                              {op.coverage_zones?.length > 0
+                                ? op.coverage_zones.join(', ').substring(0, 30) + (op.coverage_zones.join(', ').length > 30 ? '…' : '')
+                                : op.photos_geo_lat ? `${Number(op.photos_geo_lat).toFixed(4)}, ${Number(op.photos_geo_lng).toFixed(4)}` : '—'}
+                            </div>
+                            {op.coverage_radius && <div style={{ fontSize: 10, color: '#7dd3fc' }}>Radio: {op.coverage_radius} km</div>}
+                          </div>
+                          {/* Banco */}
+                          <div style={{ background: '#f0fdf4', borderRadius: 8, padding: '8px 10px', border: '1px solid #bbf7d0' }}>
+                            <div style={{ fontSize: 10, color: '#059669', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 }}>🏦 Banco</div>
+                            <div style={{ fontSize: 11, color: '#065f46', fontWeight: 600 }}>{op.bank_name || '—'}</div>
+                            <div style={{ fontSize: 10, color: '#6ee7b7' }}>{op.clabe ? `CLABE: ···${op.clabe.slice(-4)}` : 'Sin CLABE'}</div>
+                          </div>
+                        </div>
+
+                        {/* Días laborales */}
+                        {workDays.length > 0 && (
+                          <div>
+                            <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 5 }}>📅 Horario</div>
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                              {workDays.map(d => (
+                                <span key={d} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: '#eff6ff', color: '#1e40af', fontWeight: 600, border: '1px solid #bfdbfe' }}>
+                                  {WORK_DAYS_LABELS[d] || d}
+                                </span>
+                              ))}
+                              {op.work_start && op.work_end && (
+                                <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: '#f3f4f6', color: '#374151', fontWeight: 600 }}>
+                                  {op.work_start}–{op.work_end}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Botón revisar */}
+                        <button onClick={() => openReviewModal(op)}
+                          style={{ width: '100%', padding: '12px', background: 'linear-gradient(135deg,#f59e0b,#d97706)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48, boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
+                          🔍 Revisar y Decidir
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Si no hay pendientes, mostrar mensaje vacío sutil */}
+            {pendingOperators.length === 0 && (
+              <div style={{ background: '#f0fdf4', borderRadius: 12, border: '1.5px solid #bbf7d0', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 18 }}>✅</span>
+                <span style={{ fontSize: 13, color: '#166534', fontWeight: 600 }}>Sin operadores pendientes de aprobación</span>
+              </div>
+            )}
+
             {incidents.length > 0 && (
               <div style={{ background: '#fef2f2', borderRadius: 14, border: '2px solid #fecaca', padding: isMobile ? '16px' : '20px 24px' }}>
                 <h2 style={{ fontSize: 15, fontWeight: 700, color: '#991b1b', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -653,6 +859,7 @@ const AdminView = () => {
                     const opBookings = bookings.filter(b => b.operator_id === op.id && b.status === 'finalizado');
                     const totalRev = opBookings.reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
                     const commission = totalRev * ((op.commission_pct || 15) / 100);
+                    const opStatusBadge = op.operator_status;
                     return (
                       <div key={op.id} style={{ background: '#f9fafb', borderRadius: 12, border: '1.5px solid #e5e7eb', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -660,7 +867,15 @@ const AdminView = () => {
                             {op.full_name?.charAt(0)}
                           </div>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }}>{op.full_name}</div>
+                            <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              {op.full_name}
+                              {opStatusBadge === 'rechazado' && (
+                                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 20, background: '#fee2e2', color: '#991b1b', fontWeight: 700 }}>Rechazado</span>
+                              )}
+                              {opStatusBadge === 'pendiente' && (
+                                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 20, background: '#fef9c3', color: '#854d0e', fontWeight: 700 }}>Pendiente</span>
+                              )}
+                            </div>
                             <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>{op.phone || 'Sin teléfono'}</div>
                           </div>
                           <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: status.color }}>
@@ -854,6 +1069,173 @@ const AdminView = () => {
           </div>
         )}
       </div>
+
+      {/* ════ MODAL: REVISAR OPERADOR PENDIENTE ════ */}
+      {reviewModal && reviewingOp && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16, overflowY: 'auto' }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '24px 24px 0 0' : 20, boxShadow: '0 8px 48px rgba(0,0,0,0.25)', width: '100%', maxWidth: isMobile ? '100%' : 600, overflow: 'hidden', margin: isMobile ? 0 : 'auto' }}>
+
+            {/* Header */}
+            <div style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>🔍 Revisión de Operador</h3>
+                <div style={{ color: '#fef3c7', fontSize: 12, marginTop: 2 }}>{reviewingOp.full_name}</div>
+              </div>
+              <button onClick={() => setReviewModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 22, borderRadius: 8, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+
+            <div style={{ padding: isMobile ? '16px' : 24, maxHeight: isMobile ? '75vh' : '70vh', overflowY: 'auto', display: 'grid', gap: 20 }}>
+
+              {/* Datos personales */}
+              <div style={{ background: '#f9fafb', borderRadius: 12, padding: '14px 16px', border: '1px solid #e5e7eb' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>👤 Datos Personales</div>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+                  {[
+                    { label: 'Nombre', value: reviewingOp.full_name },
+                    { label: 'Teléfono', value: reviewingOp.phone || '—' },
+                    { label: 'Solicitud', value: new Date(reviewingOp.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }) },
+                    { label: 'Onboarding', value: `Paso ${reviewingOp.onboarding_step || 0}/5` },
+                  ].map(({ label, value }) => (
+                    <div key={label}>
+                      <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600 }}>{label}</div>
+                      <div style={{ fontSize: 13, color: '#1f2937', fontWeight: 600, marginTop: 2 }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Datos bancarios */}
+              <div style={{ background: '#f0fdf4', borderRadius: 12, padding: '14px 16px', border: '1.5px solid #bbf7d0' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>🏦 Datos Bancarios</div>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+                  {[
+                    { label: 'Banco', value: reviewingOp.bank_name || '—' },
+                    { label: 'Titular', value: reviewingOp.clabe_holder || '—' },
+                    { label: 'CLABE', value: reviewingOp.clabe || '—' },
+                  ].map(({ label, value }) => (
+                    <div key={label}>
+                      <div style={{ fontSize: 10, color: '#059669', fontWeight: 600 }}>{label}</div>
+                      <div style={{ fontSize: 13, color: '#065f46', fontWeight: 600, marginTop: 2, fontFamily: label === 'CLABE' ? 'monospace' : 'inherit' }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Zona de operación */}
+              <div style={{ background: '#f0f9ff', borderRadius: 12, padding: '14px 16px', border: '1.5px solid #bae6fd' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>📍 Zona de Operación</div>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8, marginBottom: reviewingOp.photos_geo_lat ? 12 : 0 }}>
+                  {[
+                    { label: 'Colonias/Zonas', value: reviewingOp.coverage_zones?.join(', ') || '—' },
+                    { label: 'Radio de cobertura', value: reviewingOp.coverage_radius ? `${reviewingOp.coverage_radius} km` : '—' },
+                    { label: 'Días de trabajo', value: Array.isArray(reviewingOp.work_days) && reviewingOp.work_days.length > 0 ? reviewingOp.work_days.map(d => WORK_DAYS_LABELS[d] || d).join(', ') : '—' },
+                    { label: 'Horario', value: reviewingOp.work_start && reviewingOp.work_end ? `${reviewingOp.work_start} – ${reviewingOp.work_end}` : '—' },
+                  ].map(({ label, value }) => (
+                    <div key={label}>
+                      <div style={{ fontSize: 10, color: '#0284c7', fontWeight: 600 }}>{label}</div>
+                      <div style={{ fontSize: 13, color: '#0369a1', fontWeight: 600, marginTop: 2 }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Mapa estático */}
+                {reviewingOp.photos_geo_lat && reviewingOp.photos_geo_lng && (() => {
+                  const mapUrl = getZoneMapUrl(reviewingOp.photos_geo_lat, reviewingOp.photos_geo_lng, reviewingOp.coverage_radius ? reviewingOp.coverage_radius * 1000 : 3000);
+                  return mapUrl ? (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#0284c7', fontWeight: 600, marginBottom: 6 }}>🗺 Mapa de referencia (ubicación del kit)</div>
+                      <img src={mapUrl} alt="zona de operación"
+                        style={{ width: '100%', borderRadius: 10, border: '1.5px solid #bae6fd', maxHeight: 180, objectFit: 'cover', display: 'block' }}
+                        onError={e => { e.target.style.display = 'none'; }} />
+                      <div style={{ fontSize: 10, color: '#7dd3fc', marginTop: 4 }}>
+                        Coordenadas: {Number(reviewingOp.photos_geo_lat).toFixed(5)}, {Number(reviewingOp.photos_geo_lng).toFixed(5)}
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+              </div>
+
+              {/* Foto del kit */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>📸 Foto del Kit</div>
+                {reviewingOp.kit_photo_url ? (
+                  <button onClick={() => setReviewPhotoModal(getPhotoStorageUrl(reviewingOp.kit_photo_url))}
+                    style={{ background: 'none', border: 'none', cursor: 'zoom-in', padding: 0, display: 'block', width: '100%' }}>
+                    <img src={getPhotoStorageUrl(reviewingOp.kit_photo_url)} alt="Kit del operador"
+                      style={{ width: '100%', maxHeight: 220, objectFit: 'cover', borderRadius: 12, border: '1.5px solid #e5e7eb', display: 'block' }} />
+                    <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4, textAlign: 'center' }}>Toca para ampliar</div>
+                  </button>
+                ) : (
+                  <div style={{ background: '#f9fafb', borderRadius: 12, border: '2px dashed #e5e7eb', padding: '24px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 28, marginBottom: 6 }}>📷</div>
+                    <div style={{ fontSize: 13, color: '#9ca3af' }}>Sin foto del kit</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Acción: aprobar o rechazar */}
+              <div style={{ background: '#f9fafb', borderRadius: 12, padding: '16px', border: '1px solid #e5e7eb' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>⚖️ Decisión</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+                  <button onClick={() => setReviewAction('approve')}
+                    style={{ padding: '14px', borderRadius: 12, border: reviewAction === 'approve' ? '2.5px solid #10b981' : '1.5px solid #e5e7eb', background: reviewAction === 'approve' ? '#f0fdf4' : '#fff', color: reviewAction === 'approve' ? '#065f46' : '#374151', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 56, transition: 'all 0.15s' }}>
+                    ✅ Aprobar
+                  </button>
+                  <button onClick={() => setReviewAction('reject')}
+                    style={{ padding: '14px', borderRadius: 12, border: reviewAction === 'reject' ? '2.5px solid #ef4444' : '1.5px solid #e5e7eb', background: reviewAction === 'reject' ? '#fef2f2' : '#fff', color: reviewAction === 'reject' ? '#991b1b' : '#374151', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 56, transition: 'all 0.15s' }}>
+                    ❌ Rechazar
+                  </button>
+                </div>
+
+                {/* Motivo de rechazo — obligatorio */}
+                {reviewAction === 'reject' && (
+                  <div style={{ marginBottom: 4 }}>
+                    <label style={{ ...labelStyle, color: '#991b1b' }}>Motivo de rechazo * <span style={{ fontWeight: 400, color: '#9ca3af' }}>(obligatorio, se enviará al operador)</span></label>
+                    <textarea
+                      placeholder="Ej: Las fotos del kit no son claras, la CLABE no coincide con el titular…"
+                      value={rejectionReason}
+                      onChange={e => setRejectionReason(e.target.value)}
+                      style={{ ...inputStyle, height: 80, resize: 'vertical', borderColor: '#fecaca', background: '#fff5f5' }}
+                    />
+                  </div>
+                )}
+
+                {reviewAction === 'approve' && (
+                  <div style={{ background: '#f0fdf4', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>ℹ️</span>
+                    <span style={{ fontSize: 12, color: '#065f46' }}>Al aprobar, el operador podrá recibir servicios de inmediato y recibirá un WhatsApp de bienvenida.</span>
+                  </div>
+                )}
+
+                {reviewError && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 12, color: '#dc2626', fontSize: 13 }}>⚠️ {reviewError}</div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer con botón confirmar */}
+            <div style={{ padding: '14px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setReviewModal(false)}
+                style={{ padding: '12px 22px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>
+                Cancelar
+              </button>
+              <button onClick={submitReview} disabled={savingReview || !reviewAction}
+                style={{ padding: '12px 28px', background: savingReview || !reviewAction ? '#9ca3af' : reviewAction === 'approve' ? '#10b981' : '#ef4444', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: !reviewAction ? 'not-allowed' : 'pointer', minHeight: 48, display: 'flex', alignItems: 'center', gap: 6, transition: 'background 0.2s' }}>
+                {savingReview ? '⏳ Guardando...' : reviewAction === 'approve' ? '✅ Confirmar Aprobación' : reviewAction === 'reject' ? '❌ Confirmar Rechazo' : 'Selecciona una acción'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════ MODAL: FOTO AMPLIADA (revisión) ════ */}
+      {reviewPhotoModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setReviewPhotoModal(null)}>
+          <div style={{ position: 'relative', maxWidth: 600, width: '100%' }}>
+            <button onClick={() => setReviewPhotoModal(null)} style={{ position: 'absolute', top: -44, right: 0, background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 24, borderRadius: 8, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            <img src={reviewPhotoModal} alt="Kit del operador" style={{ width: '100%', borderRadius: 16, maxHeight: '82vh', objectFit: 'contain' }} />
+          </div>
+        </div>
+      )}
 
       {/* ════ MODAL: ASIGNAR OPERADOR ════ */}
       {isModalOpen && selectedBooking && (
@@ -1194,7 +1576,7 @@ const AdminView = () => {
         </div>
       )}
 
-      {/* ════ MODAL: FOTO ════ */}
+      {/* ════ MODAL: FOTO (reservación) ════ */}
       {photoModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPhotoModal(null)}>
           <div style={{ position: 'relative', maxWidth: 600, width: '100%' }}>
