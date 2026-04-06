@@ -20,30 +20,60 @@ function useIsMobile() {
   return isMobile;
 }
 
-// ── Comprimir imagen (createObjectURL — más confiable en móvil) ──
+// ── Comprimir imagen con fallback para Samsung/Android WebView ──
 function compressImage(file) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
+    // Si el archivo ya es pequeño (<800KB) subir directo sin comprimir
+    if (file.size < 800 * 1024) { resolve(file); return; }
+
     const MAX = 1200;
     const url = URL.createObjectURL(file);
     const img = new Image();
+
+    // Timeout de seguridad: si toBlob no responde en 8s, usar archivo original
+    let settled = false;
+    const fallbackTimer = setTimeout(() => {
+      if (!settled) { settled = true; URL.revokeObjectURL(url); resolve(file); }
+    }, 8000);
+
     img.onload = () => {
       let { width, height } = img;
       if (width > MAX || height > MAX) {
         if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
         else { width = Math.round(width * MAX / height); height = MAX; }
       }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      URL.revokeObjectURL(url);
-      canvas.toBlob(
-        blob => { if (blob) resolve(blob); else reject(new Error('No se pudo comprimir la imagen')); },
-        'image/jpeg',
-        0.82
-      );
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { clearTimeout(fallbackTimer); settled = true; URL.revokeObjectURL(url); resolve(file); return; }
+        ctx.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(
+          blob => {
+            if (settled) return;
+            clearTimeout(fallbackTimer);
+            settled = true;
+            resolve(blob || file); // si blob es null, usar original
+          },
+          'image/jpeg',
+          0.82
+        );
+      } catch {
+        clearTimeout(fallbackTimer);
+        settled = true;
+        URL.revokeObjectURL(url);
+        resolve(file); // fallback: subir original
+      }
     };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen')); };
+    img.onerror = () => {
+      if (settled) return;
+      clearTimeout(fallbackTimer);
+      settled = true;
+      URL.revokeObjectURL(url);
+      resolve(file); // fallback: subir original
+    };
     img.src = url;
   });
 }
