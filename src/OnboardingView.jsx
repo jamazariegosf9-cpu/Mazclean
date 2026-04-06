@@ -39,6 +39,34 @@ function useIsMobile() {
   return isMobile
 }
 
+// ── Comprimir imagen (createObjectURL — más confiable en móvil) ──
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const MAX = 1200
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      let { width, height } = img
+      if (width > MAX || height > MAX) {
+        if (width > height) { height = Math.round(height * MAX / width); width = MAX }
+        else { width = Math.round(width * MAX / height); height = MAX }
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+      URL.revokeObjectURL(url)
+      canvas.toBlob(
+        blob => { if (blob) resolve(blob); else reject(new Error('No se pudo comprimir la imagen')) },
+        'image/jpeg',
+        0.82
+      )
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen')) }
+    img.src = url
+  })
+}
+
 export default function OnboardingView({ onComplete }) {
   const { user, profile } = useAuth()
   const isMobile = useIsMobile()
@@ -54,6 +82,7 @@ export default function OnboardingView({ onComplete }) {
   const [kitPhoto, setKitPhoto]           = useState(null)
   const [kitPhotoUrl, setKitPhotoUrl]     = useState(profile?.kit_photo_url || '')
   const [uploadingKit, setUploadingKit]   = useState(false)
+  const [uploadProgress, setUploadProgress] = useState('')
 
   // ── Paso 3: Zona de trabajo ───────────────────────────────
   const [selectedZones, setSelectedZones] = useState(profile?.coverage_zones || [])
@@ -63,10 +92,10 @@ export default function OnboardingView({ onComplete }) {
   const [workEnd, setWorkEnd]             = useState(profile?.work_end?.slice(0,5) || '18:00')
 
   // ── Paso 4: Datos de pago ─────────────────────────────────
-  const [clabe, setClabe]           = useState('')
+  const [clabe, setClabe]             = useState('')
   const [clabeHolder, setClabeHolder] = useState(profile?.clabe_holder || '')
-  const [bankName, setBankName]     = useState(profile?.bank_name || '')
-  const [clabeError, setClabeError] = useState('')
+  const [bankName, setBankName]       = useState(profile?.bank_name || '')
+  const [clabeError, setClabeError]   = useState('')
 
   // ── Sincronizar step con profile ──────────────────────────
   useEffect(() => {
@@ -101,22 +130,35 @@ export default function OnboardingView({ onComplete }) {
     await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,'') }, 2)
   }
 
+  // ── FIXED: handleKitUpload con compresión confiable ───────
   const handleKitUpload = async (file) => {
     if (!file) return
     setUploadingKit(true)
+    setError('')
+    setUploadProgress('Procesando imagen...')
     try {
-      const path = `kits/${user.id}/kit.jpg`
+      // 1. Comprimir
+      setUploadProgress('Comprimiendo imagen...')
+      const compressed = await compressImage(file)
+
+      // 2. Subir a Supabase Storage
+      setUploadProgress('Subiendo foto...')
+      const path = `kits/${user.id}/kit_${Date.now()}.jpg`
       const { error: upErr } = await supabase.storage
         .from('service-photos')
-        .upload(path, file, { upsert: true, contentType: 'image/jpeg' })
+        .upload(path, compressed, { upsert: true, contentType: 'image/jpeg' })
       if (upErr) throw upErr
+
+      // 3. Construir URL pública
       const url = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/service-photos/${path}`
       setKitPhotoUrl(url)
       setKitPhoto(file)
+      setUploadProgress('')
     } catch (e) {
       setError(`Error al subir foto: ${e.message}`)
+      setUploadProgress('')
     } finally {
-      setUploadingKit(false)
+      setUploadingKit(false) // siempre se libera, aunque falle
     }
   }
 
@@ -160,27 +202,26 @@ export default function OnboardingView({ onComplete }) {
     if (!clabeHolder.trim()) { setError('El nombre del titular es requerido.'); return }
     if (!bankName)           { setError('Selecciona un banco.'); return }
 
-    // Guardar solo últimos 4 dígitos visibles
     const clabeToSave = clabeClean
       ? '****' + clabeClean.slice(14)
       : profile?.clabe
 
     await saveStep({
-      clabe:        clabeToSave,
-      clabe_holder: clabeHolder.trim(),
-      bank_name:    bankName,
-      operator_status: 'pending_review',
+      clabe:           clabeToSave,
+      clabe_holder:    clabeHolder.trim(),
+      bank_name:       bankName,
+      operator_status: 'pendiente',
       onboarding_done: true,
     }, 5)
   }
 
   // Progreso visual
   const STEPS = [
-    { n: 1, label: 'Datos',      icon: '👤' },
-    { n: 2, label: 'Kit',        icon: '🧴' },
-    { n: 3, label: 'Zona',       icon: '📍' },
-    { n: 4, label: 'Pago',       icon: '💳' },
-    { n: 5, label: 'Revisión',   icon: '✅' },
+    { n: 1, label: 'Datos',    icon: '👤' },
+    { n: 2, label: 'Kit',      icon: '🧴' },
+    { n: 3, label: 'Zona',     icon: '📍' },
+    { n: 4, label: 'Pago',     icon: '💳' },
+    { n: 5, label: 'Revisión', icon: '✅' },
   ]
 
   const inputStyle = {
@@ -219,7 +260,7 @@ export default function OnboardingView({ onComplete }) {
                     alignItems: 'center', justifyContent: 'center', fontSize: 16,
                     background: step > s.n ? '#10b981' : step === s.n ? '#3b82f6' : '#e5e7eb',
                     color: step >= s.n ? '#fff' : '#9ca3af',
-                    fontWeight: 700, fontSize: step > s.n ? 16 : 14,
+                    fontWeight: 700,
                   }}>
                     {step > s.n ? '✓' : s.icon}
                   </div>
@@ -254,7 +295,7 @@ export default function OnboardingView({ onComplete }) {
               </div>
               <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px' }}>
                 <p style={{ fontSize: 13, color: '#166534', margin: 0, lineHeight: 1.5 }}>
-                  📱 Te usaremos este número para coordinar servicios y enviarte notificaciones importantes.
+                  📱 Usaremos este número para coordinar servicios y enviarte notificaciones importantes.
                 </p>
               </div>
             </div>
@@ -301,26 +342,40 @@ export default function OnboardingView({ onComplete }) {
               </div>
             )}
 
+            {/* Progreso de upload */}
             {uploadingKit && (
               <div style={{ background: '#eff6ff', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 18, height: 18, border: '3px solid #bfdbfe', borderTop: '3px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                <span style={{ fontSize: 13, color: '#1e40af', fontWeight: 600 }}>Subiendo foto...</span>
+                <div style={{ width: 18, height: 18, border: '3px solid #bfdbfe', borderTop: '3px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: '#1e40af', fontWeight: 600 }}>{uploadProgress || 'Procesando...'}</span>
               </div>
             )}
 
-            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploadingKit ? '#f3f4f6' : '#6366f1', color: uploadingKit ? '#9ca3af' : '#fff', fontSize: 15, fontWeight: 700, cursor: uploadingKit ? 'not-allowed' : 'pointer', pointerEvents: uploadingKit ? 'none' : 'auto', minHeight: 50, marginBottom: 12 }}>
-              📷 {kitPhotoUrl ? 'Cambiar foto' : 'Tomar / Subir foto del kit'}
-              <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
-                onChange={e => { if (e.target.files[0]) handleKitUpload(e.target.files[0]) }} />
-            </label>
-
             {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginBottom: 12, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
+
+            {/* Botón subir foto */}
+            <label style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              padding: '13px 0', borderRadius: 12,
+              background: uploadingKit ? '#f3f4f6' : '#6366f1',
+              color: uploadingKit ? '#9ca3af' : '#fff',
+              fontSize: 15, fontWeight: 700,
+              cursor: uploadingKit ? 'not-allowed' : 'pointer',
+              pointerEvents: uploadingKit ? 'none' : 'auto',
+              minHeight: 50, marginBottom: 12,
+            }}>
+              📷 {kitPhotoUrl ? 'Cambiar foto' : 'Tomar / Subir foto del kit'}
+              <input
+                type="file" accept="image/*" capture="environment"
+                style={{ display: 'none' }}
+                onChange={e => { if (e.target.files[0]) handleKitUpload(e.target.files[0]) }}
+              />
+            </label>
 
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setStep(1)} style={{ flex: 1, padding: '13px 0', background: '#f3f4f6', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 52 }}>← Atrás</button>
-              <button onClick={handleStep2} disabled={saving || !kitPhotoUrl}
-                style={{ flex: 2, padding: '13px 0', background: saving || !kitPhotoUrl ? '#9ca3af' : '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: saving || !kitPhotoUrl ? 'not-allowed' : 'pointer', minHeight: 52 }}>
-                {saving ? '⏳ Guardando...' : 'Continuar →'}
+              <button onClick={handleStep2} disabled={saving || !kitPhotoUrl || uploadingKit}
+                style={{ flex: 2, padding: '13px 0', background: saving || !kitPhotoUrl || uploadingKit ? '#9ca3af' : '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: saving || !kitPhotoUrl || uploadingKit ? 'not-allowed' : 'pointer', minHeight: 52 }}>
+                {saving ? '⏳ Guardando...' : uploadingKit ? '⏳ Espera...' : 'Continuar →'}
               </button>
             </div>
           </div>
@@ -435,7 +490,7 @@ export default function OnboardingView({ onComplete }) {
 
             <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginTop: 16 }}>
               <p style={{ fontSize: 12, color: '#854d0e', margin: 0, lineHeight: 1.5 }}>
-                🔒 Tus datos bancarios se almacenan de forma segura. Solo mostramos los últimos 4 dígitos de tu CLABE después del registro. Las liquidaciones se realizan cada lunes por la semana anterior.
+                🔒 Tus datos bancarios se almacenan de forma segura. Solo mostramos los últimos 4 dígitos de tu CLABE. Las liquidaciones se realizan cada lunes por la semana anterior.
               </p>
             </div>
 
@@ -467,10 +522,10 @@ export default function OnboardingView({ onComplete }) {
             <div style={{ background: '#f9fafb', borderRadius: 12, padding: '16px 20px', marginBottom: 24, textAlign: 'left' }}>
               <p style={{ fontSize: 13, fontWeight: 700, color: '#374151', margin: '0 0 12px' }}>📋 Estado de tu solicitud:</p>
               {[
-                { label: 'Datos personales',   done: true },
-                { label: 'Foto del kit',        done: !!profile?.kit_photo_url },
-                { label: 'Zona de trabajo',     done: !!profile?.coverage_zones?.length },
-                { label: 'Datos bancarios',     done: !!profile?.clabe },
+                { label: 'Datos personales', done: true },
+                { label: 'Foto del kit',     done: !!profile?.kit_photo_url },
+                { label: 'Zona de trabajo',  done: !!profile?.coverage_zones?.length },
+                { label: 'Datos bancarios',  done: !!profile?.clabe },
               ].map(item => (
                 <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                   <span style={{ fontSize: 16 }}>{item.done ? '✅' : '⏳'}</span>
@@ -482,7 +537,7 @@ export default function OnboardingView({ onComplete }) {
               ))}
             </div>
 
-            {profile?.operator_status === 'active' && (
+            {profile?.operator_status === 'aprobado' && (
               <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
                 <p style={{ fontSize: 15, fontWeight: 700, color: '#166534', margin: 0 }}>
                   🎉 ¡Tu cuenta está activa! Ya puedes recibir servicios.
@@ -490,7 +545,7 @@ export default function OnboardingView({ onComplete }) {
               </div>
             )}
 
-            {profile?.operator_status === 'rejected' && profile?.rejection_reason && (
+            {profile?.operator_status === 'rechazado' && profile?.rejection_reason && (
               <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
                 <p style={{ fontSize: 14, fontWeight: 700, color: '#dc2626', margin: '0 0 6px' }}>❌ Solicitud rechazada</p>
                 <p style={{ fontSize: 13, color: '#991b1b', margin: 0, lineHeight: 1.5 }}>{profile.rejection_reason}</p>
@@ -500,7 +555,7 @@ export default function OnboardingView({ onComplete }) {
               </div>
             )}
 
-            {profile?.operator_status === 'active' && (
+            {profile?.operator_status === 'aprobado' && (
               <button onClick={onComplete}
                 style={{ width: '100%', padding: '15px 0', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
                 Ir al Panel de Operador →
