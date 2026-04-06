@@ -255,7 +255,7 @@ function BookingViewProtected({ onNavigate, onShowAuth }) {
 }
 
 function AppInner() {
-  const { loading, user } = useAuth()
+  const { loading, user, profile } = useAuth()
   const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
 
