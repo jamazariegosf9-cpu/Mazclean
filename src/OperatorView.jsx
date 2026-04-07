@@ -512,8 +512,9 @@ const OperatorView = () => {
     { id: 'completados', label: 'Historial',  icon: '📖', count: completedServices.length },
   ];
 
-  // ── Guard: operador sin onboarding completo ────────────────────
-  if (profile && !profile.onboarding_done) {
+  // ── Guard: operador sin onboarding completo (o profile aún cargando) ──
+  if (!profile || !profile.onboarding_done) {
+    const step = profile?.onboarding_step || 1
     return (
       <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ background: 'rgba(59,130,246,0.08)', border: '1.5px solid rgba(59,130,246,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
@@ -524,15 +525,15 @@ const OperatorView = () => {
           <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 8, lineHeight: 1.6 }}>
             Para acceder al panel necesitas completar tu proceso de alta como operador.
           </p>
-          {profile.onboarding_step > 1 && (
+          {step > 1 && (
             <p style={{ color: '#60a5fa', fontSize: 13, marginBottom: 24 }}>
-              Continuarás desde el paso {profile.onboarding_step} de 5
+              Continuarás desde el paso {step} de 5
             </p>
           )}
           <button
             onClick={() => window.location.reload()}
             style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', border: 'none', borderRadius: 12, color: '#fff', fontWeight: 700, fontSize: 16, cursor: 'pointer', marginBottom: 12 }}>
-            {profile.onboarding_step > 1 ? `Continuar registro (Paso ${profile.onboarding_step}/5)` : 'Iniciar registro →'}
+            {step > 1 ? `Continuar registro (Paso ${step}/5)` : 'Iniciar registro →'}
           </button>
           <button onClick={() => signOut()}
             style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: '#8CA0BF', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
