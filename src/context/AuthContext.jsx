@@ -2,68 +2,54 @@
 // MAZ CLEAN — AuthContext
 // src/context/AuthContext.jsx
 // ============================================================
-import { createContext, useContext, useEffect, useState, useRef } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [user, setUser]       = useState(null)
-  const [profile, setProfile] = useState(null)
-  const [loading, setLoading] = useState(true)
-  // Evita que initAuth y onAuthStateChange corran loadProfile en paralelo
-  const loadingProfileRef = useRef(false)
-  const initializedRef    = useRef(false)
+  // Estado único y atómico — nunca se actualiza user sin profile ni viceversa
+  const [authState, setAuthState] = useState({
+    user:    null,
+    profile: null,
+    loading: true,
+  })
 
-  const loadProfile = async (userId) => {
-    // Si ya hay una carga en curso, esperar
-    if (loadingProfileRef.current) return null
-    loadingProfileRef.current = true
+  // Carga el profile y retorna {user, profile} para setear atómicamente
+  const loadProfile = async (user) => {
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', userId)
+        .eq('id', user.id)
         .single()
       if (!error && data?.role) {
-        setProfile(data)
-        return data
+        return { user, profile: data }
       }
-      // Si no tiene role, mantener profile como null (no setear {})
-      return null
     } catch (err) {
       console.error('Error cargando perfil:', err)
-      return null
-    } finally {
-      loadingProfileRef.current = false
     }
+    return { user, profile: null }
   }
 
   useEffect(() => {
     const initAuth = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession()
-
-        if (error) {
-          console.warn('Sesión inválida:', error.message)
-          await supabase.auth.signOut({ scope: 'local' })
-          setUser(null)
-          setProfile(null)
+        if (error || !session?.user) {
+          if (error) {
+            try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
+          }
+          setAuthState({ user: null, profile: null, loading: false })
           return
         }
-
-        if (session?.user) {
-          setUser(session.user)
-          await loadProfile(session.user.id)
-        }
+        // Cargar user + profile juntos, setear atómicamente
+        const result = await loadProfile(session.user)
+        setAuthState({ ...result, loading: false })
       } catch (err) {
         console.error('Error en initAuth:', err)
         try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
-        setUser(null)
-        setProfile(null)
-      } finally {
-        initializedRef.current = true
-        setLoading(false)
+        setAuthState({ user: null, profile: null, loading: false })
       }
     }
 
@@ -71,40 +57,21 @@ export function AuthProvider({ children }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        // Ignorar eventos que llegan antes de que initAuth termine
-        // initAuth ya se encarga del estado inicial
-        if (!initializedRef.current) return
-
+        if (event === 'SIGNED_OUT') {
+          setAuthState({ user: null, profile: null, loading: false })
+          return
+        }
         if (event === 'TOKEN_REFRESHED' && !session) {
           try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
-          setUser(null)
-          setProfile(null)
+          setAuthState({ user: null, profile: null, loading: false })
           return
         }
-
         if (event === 'TOKEN_REFRESHED') return
-
-        if (event === 'SIGNED_OUT') {
-          setUser(null)
-          setProfile(null)
-          return
-        }
-
         if (event === 'SIGNED_IN' && session?.user) {
-          setUser(session.user)
-          // Solo cargar profile si no hay uno ya cargado para este usuario
-          setProfile(prev => {
-            if (prev?.id === session.user.id) return prev
-            // Cargar en background
-            loadProfile(session.user.id)
-            return prev
-          })
-          return
-        }
-
-        if (!session) {
-          setUser(null)
-          setProfile(null)
+          // Mostrar loading mientras carga el profile — nunca user sin profile
+          setAuthState(prev => ({ ...prev, loading: true }))
+          const result = await loadProfile(session.user)
+          setAuthState({ ...result, loading: false })
         }
       }
     )
@@ -152,28 +119,38 @@ export function AuthProvider({ children }) {
 
   const signOut = async () => {
     try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
-    setUser(null)
-    setProfile(null)
+    setAuthState({ user: null, profile: null, loading: false })
   }
 
   const updateProfile = async (updates) => {
     const { data, error } = await supabase
       .from('profiles')
       .update(updates)
-      .eq('id', user.id)
+      .eq('id', authState.user.id)
       .select()
       .single()
-    if (!error && data?.role) setProfile(data)
+    if (!error && data?.role) {
+      setAuthState(prev => ({ ...prev, profile: data }))
+    }
     return { data, error }
   }
 
+  const loadProfileManual = async () => {
+    if (!authState.user) return
+    const result = await loadProfile(authState.user)
+    setAuthState(prev => ({ ...prev, profile: result.profile }))
+  }
+
   const value = {
-    user, profile, loading,
-    isClient:   profile?.role === 'cliente',
-    isOperator: profile?.role === 'operador',
-    isAdmin:    profile?.role === 'admin',
+    user:    authState.user,
+    profile: authState.profile,
+    loading: authState.loading,
+    isClient:   authState.profile?.role === 'cliente',
+    isOperator: authState.profile?.role === 'operador',
+    isAdmin:    authState.profile?.role === 'admin',
     signUp, signIn, signInWithGoogle, signInWithPhone,
-    verifyOTP, resetPassword, signOut, updateProfile, loadProfile,
+    verifyOTP, resetPassword, signOut, updateProfile,
+    loadProfile: loadProfileManual,
   }
 
   return (
