@@ -721,7 +721,7 @@ const AdminView = () => {
                     </span>
                   </h2>
                   <button onClick={fetchPendingOperators}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#92400e', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, minHeight: 36, padding: '6px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.12)' }}>
+                    style={{ border: 'none', cursor: 'pointer', color: '#92400e', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, minHeight: 36, padding: '6px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.12)' }}>
                     ↻ Refrescar
                   </button>
                 </div>
