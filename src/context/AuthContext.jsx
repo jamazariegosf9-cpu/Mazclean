@@ -2,7 +2,7 @@
 // MAZ CLEAN — AuthContext
 // src/context/AuthContext.jsx
 // ============================================================
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
@@ -11,9 +11,14 @@ export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  // Evita que initAuth y onAuthStateChange corran loadProfile en paralelo
+  const loadingProfileRef = useRef(false)
+  const initializedRef    = useRef(false)
 
-  // ── Cargar perfil — solo guarda si tiene role válido ─────────
   const loadProfile = async (userId) => {
+    // Si ya hay una carga en curso, esperar
+    if (loadingProfileRef.current) return null
+    loadingProfileRef.current = true
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -24,10 +29,14 @@ export function AuthProvider({ children }) {
         setProfile(data)
         return data
       }
+      // Si no tiene role, mantener profile como null (no setear {})
+      return null
     } catch (err) {
       console.error('Error cargando perfil:', err)
+      return null
+    } finally {
+      loadingProfileRef.current = false
     }
-    return null
   }
 
   useEffect(() => {
@@ -36,11 +45,10 @@ export function AuthProvider({ children }) {
         const { data: { session }, error } = await supabase.auth.getSession()
 
         if (error) {
-          console.warn('Sesión inválida, limpiando:', error.message)
+          console.warn('Sesión inválida:', error.message)
           await supabase.auth.signOut({ scope: 'local' })
           setUser(null)
           setProfile(null)
-          setLoading(false)
           return
         }
 
@@ -54,6 +62,7 @@ export function AuthProvider({ children }) {
         setUser(null)
         setProfile(null)
       } finally {
+        initializedRef.current = true
         setLoading(false)
       }
     }
@@ -62,8 +71,11 @@ export function AuthProvider({ children }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        // Ignorar eventos que llegan antes de que initAuth termine
+        // initAuth ya se encarga del estado inicial
+        if (!initializedRef.current) return
+
         if (event === 'TOKEN_REFRESHED' && !session) {
-          console.warn('Refresh token inválido, cerrando sesión')
           try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
           setUser(null)
           setProfile(null)
@@ -80,11 +92,17 @@ export function AuthProvider({ children }) {
 
         if (event === 'SIGNED_IN' && session?.user) {
           setUser(session.user)
-          await loadProfile(session.user.id)
+          // Solo cargar profile si no hay uno ya cargado para este usuario
+          setProfile(prev => {
+            if (prev?.id === session.user.id) return prev
+            // Cargar en background
+            loadProfile(session.user.id)
+            return prev
+          })
           return
         }
 
-        if (!session && (event === 'USER_UPDATED' || event === 'INITIAL_SESSION')) {
+        if (!session) {
           setUser(null)
           setProfile(null)
         }
