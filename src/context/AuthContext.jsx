@@ -13,8 +13,8 @@ export function AuthProvider({ children }) {
     profile: null,
     loading: true,
   })
-  // Evita que onAuthStateChange interfiera mientras initAuth corre
-  const initDone = useRef(false)
+  const initDone          = useRef(false)
+  const skipNextSignedIn  = useRef(false) // Evita que onAuthStateChange pise el state cargado por signIn
 
   const loadProfile = async (user) => {
     try {
@@ -31,12 +31,11 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    // onAuthStateChange solo maneja SIGNED_OUT y TOKEN_REFRESHED
-    // SIGNED_IN lo ignora — initAuth es el único que setea el estado inicial
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (event === 'SIGNED_OUT') {
-          initDone.current = false
+          initDone.current         = false
+          skipNextSignedIn.current = false
           setAuthState({ user: null, profile: null, loading: false })
           return
         }
@@ -45,9 +44,16 @@ export function AuthProvider({ children }) {
           setAuthState({ user: null, profile: null, loading: false })
           return
         }
-        // SIGNED_IN: solo actuar si initAuth ya terminó
-        // (es un login posterior, no el inicial)
-        if (event === 'SIGNED_IN' && session?.user && initDone.current) {
+        if (event === 'TOKEN_REFRESHED') return
+        if (event === 'SIGNED_IN' && session?.user) {
+          // Si signIn ya manejó este login — ignorar
+          if (skipNextSignedIn.current) {
+            skipNextSignedIn.current = false
+            return
+          }
+          // Si initAuth aún no terminó — ignorar (initAuth lo manejará)
+          if (!initDone.current) return
+          // Login posterior (ej: Google OAuth) — cargar profile
           setAuthState(prev => ({ ...prev, loading: true }))
           const result = await loadProfile(session.user)
           setAuthState({ ...result, loading: false })
@@ -92,8 +98,9 @@ export function AuthProvider({ children }) {
 
   const signIn = async ({ email, password }) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    // Después del login exitoso, cargar profile directamente sin esperar onAuthStateChange
     if (!error && data?.user) {
+      // Marcar para que onAuthStateChange ignore el SIGNED_IN que viene después
+      skipNextSignedIn.current = true
       setAuthState(prev => ({ ...prev, loading: true }))
       const result = await loadProfile(data.user)
       setAuthState({ ...result, loading: false })
