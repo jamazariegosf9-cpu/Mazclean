@@ -217,9 +217,9 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
       })
       if (signUpError) throw signUpError
 
-      // 2. Insertar/actualizar profile con role operador
+      // 2. Insertar profile con role operador
       if (data?.user?.id) {
-        const { error: profileError } = await supabase.from('profiles').upsert({
+        await supabase.from('profiles').upsert({
           id: data.user.id,
           full_name: fullName,
           phone,
@@ -230,10 +230,21 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
           status: 'activo',
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' })
-        if (profileError) console.warn('Profile upsert:', profileError.message)
       }
 
-      setSuccess('¡Cuenta de operador creada! Ahora inicia sesión para completar tu registro.')
+      // 3. Auto-login para ir directo al onboarding
+      const { error: loginError } = await signIn({ email, password })
+      if (loginError) {
+        // Si el email no está confirmado, pedir que lo confirme
+        if (loginError.message.includes('Email not confirmed')) {
+          setSuccess('¡Cuenta creada! Confirma tu correo electrónico y luego inicia sesión para completar tu registro.')
+        } else {
+          setSuccess('¡Cuenta creada! Inicia sesión para completar tu registro de operador.')
+        }
+        return
+      }
+      // Login exitoso → App.jsx detecta onboarding_done=false y redirige al onboarding
+      onClose()
     } catch (err) {
       setError(translateError(err.message))
     } finally {
