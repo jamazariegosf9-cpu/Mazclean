@@ -20,50 +20,70 @@ function useIsMobile() {
   return isMobile;
 }
 
-// ── prepareImage: redimensiona + convierte a JPEG sin depender de toBlob ──
-// Compatible con Samsung WebView, HEIC, WebP, archivos grandes de cámara.
-async function prepareImage(file) {
-  const MAX_BYTES = 10 * 1024 * 1024
-  if (file.size > MAX_BYTES) {
-    throw new Error('La foto pesa más de 10 MB. Toma una foto con menor resolución.')
+// ── compressForMobile: doble fallback probado en Samsung F24 ──
+// OffscreenCanvas → canvas DOM + FileReader → archivo original
+async function compressForMobile(file) {
+  if (file.size < 500 * 1024) return file;
+  const MAX = 1000; const QUALITY = 0.78; const TIMEOUT = 5000;
+
+  // Intento 1: OffscreenCanvas
+  if (typeof OffscreenCanvas !== 'undefined') {
+    try {
+      const bitmap = await Promise.race([
+        createImageBitmap(file),
+        new Promise((_, r) => setTimeout(() => r(new Error('t')), TIMEOUT)),
+      ]);
+      let w = bitmap.width, h = bitmap.height;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else       { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      const oc = new OffscreenCanvas(w, h);
+      oc.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+      bitmap.close();
+      const blob = await Promise.race([
+        oc.convertToBlob({ type: 'image/jpeg', quality: QUALITY }),
+        new Promise((_, r) => setTimeout(() => r(new Error('t')), TIMEOUT)),
+      ]);
+      if (blob && blob.size > 0) return blob;
+    } catch { /* siguiente intento */ }
   }
-  const MAX_PX = 1280
-  const QUALITY = 0.82
-  const objectUrl = URL.createObjectURL(file)
+
+  // Intento 2: canvas DOM + FileReader con timeouts
   try {
-    const img = await new Promise((resolve, reject) => {
-      const i = new Image()
-      const t = setTimeout(() => reject(new Error('timeout_load')), 15000)
-      i.onload  = () => { clearTimeout(t); resolve(i) }
-      i.onerror = () => { clearTimeout(t); reject(new Error('No se pudo leer la imagen')) }
-      i.src = objectUrl
-    })
-    const isStandard = file.type === 'image/jpeg' || file.type === 'image/png'
-    if (file.size < 800 * 1024 && isStandard) return file
-    let { width, height } = img
-    if (width > MAX_PX || height > MAX_PX) {
-      if (width > height) { height = Math.round(height * MAX_PX / width); width = MAX_PX }
-      else                { width = Math.round(width * MAX_PX / height); height = MAX_PX }
-    }
-    const canvas = document.createElement('canvas')
-    canvas.width = width; canvas.height = height
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return file
-    ctx.drawImage(img, 0, 0, width, height)
-    // Usar fetch(dataURL) en lugar de toBlob — más confiable en Samsung WebView
-    const dataUrl = canvas.toDataURL('image/jpeg', QUALITY)
-    if (!dataUrl || dataUrl === 'data:,') return file
-    const res  = await fetch(dataUrl)
-    const blob = await res.blob()
-    return blob.size > 0 ? blob : file
-  } catch (err) {
-    if (err.message === 'timeout_load') {
-      throw new Error('La imagen tardó demasiado. Intenta con otra foto.')
-    }
-    return file // fallback: subir original
-  } finally {
-    URL.revokeObjectURL(objectUrl)
-  }
+    return await new Promise((resolve) => {
+      const safe = setTimeout(() => resolve(file), 10000);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            let w = img.width, h = img.height;
+            if (w > MAX || h > MAX) {
+              if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+              else       { w = Math.round(w * MAX / h); h = MAX; }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { clearTimeout(safe); resolve(file); return; }
+            ctx.drawImage(img, 0, 0, w, h);
+            let done = false;
+            canvas.toBlob((b) => {
+              if (done) return; done = true;
+              clearTimeout(safe);
+              resolve(b && b.size > 0 ? b : file);
+            }, 'image/jpeg', QUALITY);
+            setTimeout(() => { if (!done) { done = true; clearTimeout(safe); resolve(file); } }, 5000);
+          } catch { clearTimeout(safe); resolve(file); }
+        };
+        img.onerror = () => { clearTimeout(safe); resolve(file); };
+        img.src = e.target.result;
+      };
+      reader.onerror = () => { clearTimeout(safe); resolve(file); };
+      reader.readAsDataURL(file);
+    });
+  } catch { return file; }
 }
 
 const OperatorView = () => {
@@ -104,6 +124,9 @@ const OperatorView = () => {
   const [trackingBookingId, setTrackingBookingId] = useState(null);
   const [gpsError, setGpsError]               = useState('');
 
+  // ── Token cacheado para uploads XHR en Samsung ─────────────────
+  const [sessionToken, setSessionToken]       = useState(null);
+
   // ── Realtime ───────────────────────────────────────────────────
   useEffect(() => {
     if (user) {
@@ -118,6 +141,17 @@ const OperatorView = () => {
       return () => supabase.removeChannel(channel);
     }
   }, [user]);
+
+  // ── Cachear token al montar — nunca await durante el upload ────
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.access_token) setSessionToken(session.access_token);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (session?.access_token) setSessionToken(session.access_token);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   // ── GPS watchPosition cuando status es en_camino ───────────────
   useEffect(() => {
@@ -353,12 +387,12 @@ const OperatorView = () => {
     setChecklist([]);
   };
 
-  // ── Upload foto con prepareImage — compatible Samsung/HEIC/WebP ──
+  // ── Upload con XHR + token cacheado — probado Samsung F24 ───────
   const handlePhotoUpload = async (file, bookingId, type) => {
     if (!file) return;
     setUploadingPhoto(true);
     setUploadError('');
-    setUploadProgress('Leyendo imagen...');
+    setUploadProgress('Comprimiendo...');
 
     const TYPE_TO_COLUMN = {
       front_before:   'photo_front_before',
@@ -368,32 +402,40 @@ const OperatorView = () => {
     };
 
     try {
-      // 1. Validar tamaño
-      if (file.size > 10 * 1024 * 1024) {
-        throw new Error('La foto pesa más de 10 MB. Toma una foto con menor resolución.');
+      if (file.size > 15 * 1024 * 1024) {
+        throw new Error('La foto pesa más de 15 MB. Toma una con menor resolución.');
       }
 
-      // 2. Preparar imagen
-      setUploadProgress('Optimizando imagen...');
-      const compressed = await prepareImage(file);
+      // Comprimir con doble fallback
+      const compressed = await compressForMobile(file);
+      setUploadProgress('Subiendo...');
 
-      // 3. Subir a Storage
-      setUploadProgress('Subiendo foto...');
-      const path = `${bookingId}/${type}_${Date.now()}.jpg`;
-      const { error: upErr } = await supabase.storage
-        .from('service-photos')
-        .upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
-      if (upErr) {
-        if (upErr.message?.includes('Payload too large') || upErr.statusCode === 413) {
-          throw new Error('Foto demasiado grande. Toma una nueva con menor resolución.');
-        }
-        if (upErr.message?.includes('network') || upErr.message?.includes('fetch')) {
-          throw new Error('Error de conexión. Verifica tu red e intenta de nuevo.');
-        }
-        throw upErr;
-      }
+      // XHR con token cacheado — nunca await getSession() aquí
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const token = sessionToken || supabaseKey;
+      const path  = `${bookingId}/${type}_${Date.now()}.jpg`;
 
-      // 3. Guardar path en BD
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`);
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.setRequestHeader('apikey', supabaseKey);
+        xhr.setRequestHeader('Content-Type', 'image/jpeg');
+        xhr.setRequestHeader('x-upsert', 'true');
+        xhr.timeout = 60000;
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setUploadProgress(`${Math.round(e.loaded/e.total*100)}%`);
+        };
+        xhr.onload  = () => xhr.status >= 200 && xhr.status < 300
+          ? resolve()
+          : reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.substring(0,100)}`));
+        xhr.onerror   = () => reject(new Error('Error de red. Verifica tu conexión.'));
+        xhr.ontimeout = () => reject(new Error('Tiempo agotado. Señal débil, intenta de nuevo.'));
+        xhr.send(compressed);
+      });
+
+      // Guardar path en BD
       setUploadProgress('Guardando...');
       const column = TYPE_TO_COLUMN[type] || type;
       const { error: dbErr } = await supabase.from('bookings')
@@ -401,7 +443,7 @@ const OperatorView = () => {
         .eq('id', bookingId);
       if (dbErr) throw dbErr;
 
-      // 4. Actualizar estado local — desbloquea botón Siguiente
+      // Actualizar estado local — desbloquea botón Siguiente
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, [column]: path } : b));
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, [column]: path }));
       if (photoBooking?.id === bookingId)    setPhotoBooking(prev =>    ({ ...prev, [column]: path }));
@@ -413,8 +455,7 @@ const OperatorView = () => {
       setUploadError(err.message || 'Error al subir. Intenta de nuevo.');
       setUploadProgress('');
     } finally {
-      // SIEMPRE liberar — evita que la pantalla se quede congelada
-      setUploadingPhoto(false);
+      setUploadingPhoto(false); // SIEMPRE se ejecuta
     }
   };
 
@@ -470,6 +511,57 @@ const OperatorView = () => {
     { id: 'activos',     label: 'Activos',    icon: '⚡', count: activeServices.length },
     { id: 'completados', label: 'Historial',  icon: '📖', count: completedServices.length },
   ];
+
+  // ── Guard: operador sin onboarding completo ────────────────────
+  if (profile && !profile.onboarding_done) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ background: 'rgba(59,130,246,0.08)', border: '1.5px solid rgba(59,130,246,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>📋</div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F0F6FF', marginBottom: 12 }}>
+            Completa tu registro
+          </h2>
+          <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 8, lineHeight: 1.6 }}>
+            Para acceder al panel necesitas completar tu proceso de alta como operador.
+          </p>
+          {profile.onboarding_step > 1 && (
+            <p style={{ color: '#60a5fa', fontSize: 13, marginBottom: 24 }}>
+              Continuarás desde el paso {profile.onboarding_step} de 5
+            </p>
+          )}
+          <button
+            onClick={() => window.location.reload()}
+            style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', border: 'none', borderRadius: 12, color: '#fff', fontWeight: 700, fontSize: 16, cursor: 'pointer', marginBottom: 12 }}>
+            {profile.onboarding_step > 1 ? `Continuar registro (Paso ${profile.onboarding_step}/5)` : 'Iniciar registro →'}
+          </button>
+          <button onClick={() => signOut()}
+            style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: '#8CA0BF', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+            Cerrar sesión
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Guard: operador pendiente de aprobación ────────────────────
+  if (profile && profile.onboarding_done &&
+      (profile.operator_status === 'pending_review' || profile.operator_status === 'pendiente')) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ background: 'rgba(59,130,246,0.08)', border: '1.5px solid rgba(59,130,246,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>⏳</div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F0F6FF', marginBottom: 12 }}>Perfil en revisión</h2>
+          <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 24, lineHeight: 1.6 }}>
+            Tu registro está siendo revisado por el administrador. Te notificaremos cuando sea aprobado.
+          </p>
+          <button onClick={() => signOut()}
+            style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: '#8CA0BF', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+            Cerrar sesión
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6', paddingBottom: isMobile ? 72 : 80 }}>
