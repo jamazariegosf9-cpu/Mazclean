@@ -2,7 +2,7 @@
 // MAZ CLEAN — AuthContext
 // src/context/AuthContext.jsx
 // ============================================================
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
@@ -13,8 +13,9 @@ export function AuthProvider({ children }) {
     profile: null,
     loading: true,
   })
+  // Evita que onAuthStateChange interfiera mientras initAuth corre
+  const initDone = useRef(false)
 
-  // Carga profile y retorna {user, profile} para setear atómicamente
   const loadProfile = async (user) => {
     try {
       const { data, error } = await supabase
@@ -30,6 +31,30 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
+    // onAuthStateChange solo maneja SIGNED_OUT y TOKEN_REFRESHED
+    // SIGNED_IN lo ignora — initAuth es el único que setea el estado inicial
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'SIGNED_OUT') {
+          initDone.current = false
+          setAuthState({ user: null, profile: null, loading: false })
+          return
+        }
+        if (event === 'TOKEN_REFRESHED' && !session) {
+          try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
+          setAuthState({ user: null, profile: null, loading: false })
+          return
+        }
+        // SIGNED_IN: solo actuar si initAuth ya terminó
+        // (es un login posterior, no el inicial)
+        if (event === 'SIGNED_IN' && session?.user && initDone.current) {
+          setAuthState(prev => ({ ...prev, loading: true }))
+          const result = await loadProfile(session.user)
+          setAuthState({ ...result, loading: false })
+        }
+      }
+    )
+
     const initAuth = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession()
@@ -48,31 +73,12 @@ export function AuthProvider({ children }) {
         console.error('Error en initAuth:', err)
         try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
         setAuthState({ user: null, profile: null, loading: false })
+      } finally {
+        initDone.current = true
       }
     }
 
     initAuth()
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'SIGNED_OUT') {
-          setAuthState({ user: null, profile: null, loading: false })
-          return
-        }
-        if (event === 'TOKEN_REFRESHED' && !session) {
-          try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
-          setAuthState({ user: null, profile: null, loading: false })
-          return
-        }
-        if (event === 'TOKEN_REFRESHED') return
-        if (event === 'SIGNED_IN' && session?.user) {
-          setAuthState(prev => ({ ...prev, loading: true }))
-          const result = await loadProfile(session.user)
-          setAuthState({ ...result, loading: false })
-        }
-      }
-    )
-
     return () => subscription.unsubscribe()
   }, [])
 
@@ -84,7 +90,6 @@ export function AuthProvider({ children }) {
     return { data, error }
   }
 
-  // signIn acepta objeto {email, password} para compatibilidad con AuthModal
   const signIn = async ({ email, password }) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     return { data, error }
