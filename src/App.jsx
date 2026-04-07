@@ -269,9 +269,7 @@ function AppInner() {
   }, [])
 
   useEffect(() => {
-    if (!loading && !user) {
-      setView('home')
-    }
+    if (!loading && !user) setView('home')
   }, [loading, user])
 
   // ── Ruta pública de tracking ───────────────────────────────────
@@ -283,54 +281,98 @@ function AppInner() {
     )
   }
 
-  // ── FIX: esperar loading Y que el profile llegue si hay user ───
-  // Sin esto, el operador entra al panel antes de que llegue su profile
-  if (loading || (user && !profile)) {
+  // ── Esperar a que loading termine (AuthContext carga user+profile juntos) ──
+  if (loading) {
     return <div style={{ minHeight: '100vh', background: '#050A14' }} />
   }
 
-  // ── Operador desactivado — mostrar pantalla de bloqueo ──────────
-  if (profile?.role === 'operador' && profile?.status === 'desactivado') {
-    return (
-      <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div style={{ background: 'rgba(239,68,68,0.08)', border: '1.5px solid rgba(239,68,68,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🚫</div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F0F6FF', marginBottom: 10 }}>Cuenta desactivada</h2>
-          <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 24, lineHeight: 1.6 }}>
-            Tu cuenta ha sido desactivada. Contacta al administrador para más información.
-          </p>
-          <button onClick={signOut}
-            style={{ padding: '12px 32px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 10, color: '#F0F6FF', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
-            Cerrar sesión
-          </button>
+  // ── FLUJO OPERADOR — cada estado tiene su propia pantalla ──────
+  if (profile?.role === 'operador') {
+
+    // 1. Desactivado
+    if (profile.status === 'desactivado') {
+      return (
+        <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'rgba(239,68,68,0.08)', border: '1.5px solid rgba(239,68,68,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🚫</div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F0F6FF', marginBottom: 10 }}>Cuenta desactivada</h2>
+            <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 24, lineHeight: 1.6 }}>Tu cuenta ha sido desactivada. Contacta al administrador para más información.</p>
+            <button onClick={signOut} style={{ padding: '12px 32px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 10, color: '#F0F6FF', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>Cerrar sesión</button>
+          </div>
         </div>
-      </div>
-    )
-  }
+      )
+    }
 
-  // ── Detectar operador sin onboarding completo ──────────────────
-  const needsOnboarding = (
-    profile?.role === 'operador' &&
-    !profile?.onboarding_done
-  )
+    // 2. Sin onboarding — registro obligatorio
+    if (!profile.onboarding_done) {
+      return (
+        <div style={{ minHeight: '100vh', background: '#050A14' }}>
+          <OnboardingView onComplete={() => window.location.reload()} />
+        </div>
+      )
+    }
 
-  // ── Onboarding obligatorio para operadores nuevos ──────────────
-  if (needsOnboarding) {
+    // 3. Onboarding completo — pendiente de aprobación del Admin
+    if (profile.operator_status === 'pending_review' || profile.operator_status === 'pendiente') {
+      return (
+        <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'rgba(59,130,246,0.08)', border: '1.5px solid rgba(59,130,246,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F0F6FF', marginBottom: 10 }}>Perfil en revisión</h2>
+            <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 24, lineHeight: 1.6 }}>Tu registro está siendo revisado por el administrador. Te notificaremos cuando sea aprobado.</p>
+            <button onClick={signOut} style={{ padding: '12px 32px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 10, color: '#F0F6FF', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>Cerrar sesión</button>
+          </div>
+        </div>
+      )
+    }
+
+    // 4. Rechazado
+    if (profile.operator_status === 'rechazado') {
+      return (
+        <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'rgba(239,68,68,0.08)', border: '1.5px solid rgba(239,68,68,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>❌</div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F0F6FF', marginBottom: 10 }}>Solicitud rechazada</h2>
+            <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 8, lineHeight: 1.6 }}>Tu solicitud como operador no fue aprobada.</p>
+            {profile.rejection_reason && (
+              <p style={{ color: '#fca5a5', fontSize: 14, marginBottom: 24, background: 'rgba(239,68,68,0.1)', padding: '10px 16px', borderRadius: 10 }}>Motivo: {profile.rejection_reason}</p>
+            )}
+            <button onClick={signOut} style={{ padding: '12px 32px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 10, color: '#F0F6FF', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>Cerrar sesión</button>
+          </div>
+        </div>
+      )
+    }
+
+    // 5. Aprobado — panel de operador
     return (
       <div style={{ minHeight: '100vh', background: '#050A14' }}>
-        <OnboardingView onComplete={() => setView('operator')} />
+        <OperatorView onNavigate={setView} />
       </div>
     )
   }
 
+  // ── FLUJO ADMIN ────────────────────────────────────────────────
+  if (profile?.role === 'admin') {
+    return (
+      <div style={{ minHeight: '100vh', background: '#050A14' }}>
+        <Navbar view={view} setView={setView} onShowAuth={(tab) => setAuthModal(tab)} />
+        {view === 'home'     && <HomeView setView={setView} onShowAuth={(tab) => setAuthModal(tab)} />}
+        {view === 'booking'  && <BookingViewProtected onNavigate={setView} onShowAuth={(tab) => setAuthModal(tab)} />}
+        {view === 'client'   && <ClientView onNavigate={setView} />}
+        {view === 'operator' && <OperatorView onNavigate={setView} />}
+        {view === 'admin'    && <AdminView onNavigate={setView} />}
+        {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
+      </div>
+    )
+  }
+
+  // ── FLUJO CLIENTE / NO LOGUEADO ────────────────────────────────
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>
       <Navbar view={view} setView={setView} onShowAuth={(tab) => setAuthModal(tab)} />
       {view === 'home'     && <HomeView setView={setView} onShowAuth={(tab) => setAuthModal(tab)} />}
       {view === 'booking'  && <BookingViewProtected onNavigate={setView} onShowAuth={(tab) => setAuthModal(tab)} />}
       {view === 'client'   && <ClientView onNavigate={setView} />}
-      {view === 'operator' && <OperatorView onNavigate={setView} />}
-      {view === 'admin'    && <AdminView onNavigate={setView} />}
       {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
     </div>
   )

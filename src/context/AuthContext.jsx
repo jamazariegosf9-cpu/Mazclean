@@ -8,14 +8,13 @@ import { supabase } from '../lib/supabase'
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  // Estado único y atómico — nunca se actualiza user sin profile ni viceversa
   const [authState, setAuthState] = useState({
     user:    null,
     profile: null,
     loading: true,
   })
 
-  // Carga el profile y retorna {user, profile} para setear atómicamente
+  // Carga profile y retorna {user, profile} para setear atómicamente
   const loadProfile = async (user) => {
     try {
       const { data, error } = await supabase
@@ -23,9 +22,7 @@ export function AuthProvider({ children }) {
         .select('*')
         .eq('id', user.id)
         .single()
-      if (!error && data?.role) {
-        return { user, profile: data }
-      }
+      if (!error && data?.role) return { user, profile: data }
     } catch (err) {
       console.error('Error cargando perfil:', err)
     }
@@ -36,14 +33,15 @@ export function AuthProvider({ children }) {
     const initAuth = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession()
-        if (error || !session?.user) {
-          if (error) {
-            try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
-          }
+        if (error) {
+          try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
           setAuthState({ user: null, profile: null, loading: false })
           return
         }
-        // Cargar user + profile juntos, setear atómicamente
+        if (!session?.user) {
+          setAuthState({ user: null, profile: null, loading: false })
+          return
+        }
         const result = await loadProfile(session.user)
         setAuthState({ ...result, loading: false })
       } catch (err) {
@@ -68,7 +66,6 @@ export function AuthProvider({ children }) {
         }
         if (event === 'TOKEN_REFRESHED') return
         if (event === 'SIGNED_IN' && session?.user) {
-          // Mostrar loading mientras carga el profile — nunca user sin profile
           setAuthState(prev => ({ ...prev, loading: true }))
           const result = await loadProfile(session.user)
           setAuthState({ ...result, loading: false })
@@ -87,6 +84,7 @@ export function AuthProvider({ children }) {
     return { data, error }
   }
 
+  // signIn acepta objeto {email, password} para compatibilidad con AuthModal
   const signIn = async ({ email, password }) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     return { data, error }
@@ -129,13 +127,11 @@ export function AuthProvider({ children }) {
       .eq('id', authState.user.id)
       .select()
       .single()
-    if (!error && data?.role) {
-      setAuthState(prev => ({ ...prev, profile: data }))
-    }
+    if (!error && data?.role) setAuthState(prev => ({ ...prev, profile: data }))
     return { data, error }
   }
 
-  const loadProfileManual = async () => {
+  const refreshProfile = async () => {
     if (!authState.user) return
     const result = await loadProfile(authState.user)
     setAuthState(prev => ({ ...prev, profile: result.profile }))
@@ -150,7 +146,7 @@ export function AuthProvider({ children }) {
     isAdmin:    authState.profile?.role === 'admin',
     signUp, signIn, signInWithGoogle, signInWithPhone,
     verifyOTP, resetPassword, signOut, updateProfile,
-    loadProfile: loadProfileManual,
+    loadProfile: refreshProfile,
   }
 
   return (
