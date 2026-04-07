@@ -290,7 +290,7 @@ console.log('PROFILE:', JSON.stringify({
 
   // -- FIX: esperar loading Y que el profile llegue si hay user ---
   // Sin esto, el operador entra al panel antes de que llegue su profile
-  if (loading || (user && !profile)) {
+  if (loading || (user && !profile?.role)) {
     return <div style={{ minHeight: '100vh', background: '#050A14' }} />
   }
 
