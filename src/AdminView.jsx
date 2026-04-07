@@ -116,6 +116,11 @@ const AdminView = () => {
   const [reviewError, setReviewError]                   = useState('');
   const [reviewPhotoModal, setReviewPhotoModal]         = useState(null);
 
+  // ── Gestión de status y acciones rápidas ────────────────────────
+  const [updatingOpStatus, setUpdatingOpStatus]         = useState(null);
+  const [resetOnboardingModal, setResetOnboardingModal] = useState(null);
+  const [savingOpAction, setSavingOpAction]             = useState(false);
+
   useEffect(() => {
     fetchData();
     const channel = supabase
@@ -194,7 +199,10 @@ const AdminView = () => {
     try {
       const updatePayload = {
         operator_status: reviewAction === 'approve' ? 'aprobado' : 'rechazado',
-        onboarding_done: reviewAction === 'approve' ? true : false,
+        // Al aprobar: onboarding_done = false → operador debe completar onboarding
+        // Al rechazar: onboarding_done = false (puede reintentar)
+        onboarding_done: false,
+        status: reviewAction === 'approve' ? 'activo' : undefined,
         reviewed_at: new Date().toISOString(),
         reviewed_by: (await supabase.auth.getUser()).data.user?.id || null,
         ...(reviewAction === 'reject' ? { rejection_reason: rejectionReason.trim() } : {})
@@ -225,6 +233,77 @@ const AdminView = () => {
     } finally {
       setSavingReview(false);
     }
+  };
+
+  // ── Actualizar status del operador ─────────────────────────────
+  const updateOperatorStatus = async (opId, newStatus) => {
+    setUpdatingOpStatus(opId);
+    try {
+      const { error } = await supabase.from('profiles')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', opId);
+      if (error) throw error;
+      setOperators(prev => prev.map(o => o.id === opId ? { ...o, status: newStatus } : o));
+    } catch (err) { alert(`Error: ${err.message}`); }
+    finally { setUpdatingOpStatus(null); }
+  };
+
+  // ── Reiniciar onboarding ─────────────────────────────────────────
+  const resetOnboarding = async (op) => {
+    setSavingOpAction(true);
+    try {
+      const { error } = await supabase.from('profiles')
+        .update({
+          onboarding_done: false,
+          onboarding_step: 1,
+          operator_status: 'pendiente',
+          kit_photo_url: null,
+          coverage_zones: null,
+          work_days: null,
+          clabe: null,
+          clabe_holder: null,
+          bank_name: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', op.id);
+      if (error) throw error;
+      setOperators(prev => prev.map(o => o.id === op.id
+        ? { ...o, onboarding_done: false, onboarding_step: 1, operator_status: 'pendiente' }
+        : o
+      ));
+      setResetOnboardingModal(null);
+      alert(`✅ Onboarding reiniciado para ${op.full_name}. El operador deberá completar los 5 pasos de nuevo.`);
+    } catch (err) { alert(`Error: ${err.message}`); }
+    finally { setSavingOpAction(false); }
+  };
+
+  // ── Helpers de estado de operador ───────────────────────────────
+  const OPERATOR_STATUS_CONFIG = {
+    activo:       { label: 'Activo',        color: '#10b981', bg: '#f0fdf4', border: '#bbf7d0', icon: '🟢' },
+    observacion:  { label: 'En Observación',color: '#f59e0b', bg: '#fffbeb', border: '#fde68a', icon: '🟡' },
+    suspendido:   { label: 'Suspendido',    color: '#ef4444', bg: '#fef2f2', border: '#fecaca', icon: '🔴' },
+    desactivado:  { label: 'Desactivado',   color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb', icon: '⚫' },
+  };
+
+  const StarRating = ({ rating, size = 14 }) => {
+    if (!rating) return <span style={{ fontSize: 11, color: '#9ca3af' }}>Sin calificaciones</span>;
+    const stars = [];
+    for (let i = 1; i <= 5; i++) {
+      stars.push(
+        <Star key={i} size={size}
+          fill={i <= Math.round(rating) ? '#f59e0b' : 'none'}
+          color={i <= Math.round(rating) ? '#f59e0b' : '#d1d5db'}
+          style={{ display: 'inline-block' }} />
+      );
+    }
+    return (
+      <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        {stars}
+        <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 4, fontWeight: 600 }}>
+          {Number(rating).toFixed(1)}
+        </span>
+      </span>
+    );
   };
 
   const fetchIncidents = async () => {
@@ -860,51 +939,92 @@ const AdminView = () => {
                     const totalRev = opBookings.reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
                     const commission = totalRev * ((op.commission_pct || 15) / 100);
                     const opStatusBadge = op.operator_status;
+                    const opStatusCfg = OPERATOR_STATUS_CONFIG[op.status || 'activo'] || OPERATOR_STATUS_CONFIG.activo;
+                    const showObsAlert = op.status === 'observacion' || (op.rating_avg && op.rating_avg < 4.0 && op.status === 'activo');
                     return (
-                      <div key={op.id} style={{ background: '#f9fafb', borderRadius: 12, border: '1.5px solid #e5e7eb', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      <div key={op.id} style={{ background: '#f9fafb', borderRadius: 12, border: `1.5px solid ${opStatusCfg.border}`, padding: 16, display: 'flex', flexDirection: 'column', gap: 10, opacity: op.status === 'desactivado' ? 0.7 : 1 }}>
+
+                        {/* Alerta observación */}
+                        {showObsAlert && (
+                          <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <AlertTriangle size={14} color="#f59e0b" />
+                            <span style={{ fontSize: 11, color: '#92400e', fontWeight: 600 }}>
+                              {op.status === 'observacion' ? 'Operador en observación — calificación baja' : `Calificación ${op.rating_avg?.toFixed(1)} — considera ponerlo en observación`}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Header */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                           <div style={{ height: 48, width: 48, borderRadius: '50%', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 20, flexShrink: 0 }}>
                             {op.full_name?.charAt(0)}
                           </div>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              {op.full_name}
-                              {opStatusBadge === 'rechazado' && (
-                                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 20, background: '#fee2e2', color: '#991b1b', fontWeight: 700 }}>Rechazado</span>
-                              )}
-                              {opStatusBadge === 'pendiente' && (
-                                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 20, background: '#fef9c3', color: '#854d0e', fontWeight: 700 }}>Pendiente</span>
-                              )}
-                            </div>
-                            <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>{op.phone || 'Sin teléfono'}</div>
+                            <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }}>{op.full_name}</div>
+                            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 1 }}>{op.phone || 'Sin teléfono'}</div>
+                            <div style={{ marginTop: 4 }}><StarRating rating={op.rating_avg} /></div>
                           </div>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: status.color }}>
-                            <span style={{ height: 8, width: 8, borderRadius: '50%', background: status.dot, display: 'inline-block' }}></span>
-                            {status.label}
-                          </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                            <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 20, background: opStatusCfg.bg, color: opStatusCfg.color, border: `1px solid ${opStatusCfg.border}`, fontWeight: 700 }}>
+                              {opStatusCfg.icon} {opStatusCfg.label}
+                            </span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: status.color }}>
+                              <span style={{ height: 7, width: 7, borderRadius: '50%', background: status.dot, display: 'inline-block' }} />
+                              {status.label}
+                            </span>
+                          </div>
                         </div>
+
+                        {/* Stats */}
                         <div style={{ background: '#fff', borderRadius: 8, padding: '8px 12px', border: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 }}>Comisión ({op.commission_pct || 15}%)</div>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: '#059669' }}>${commission.toFixed(2)}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#059669' }}>${commission.toFixed(2)}</div>
                           </div>
-                          <div>
+                          <div style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 }}>Servicios</div>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: '#1f2937' }}>{opBookings.length}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#1f2937' }}>{opBookings.length}</div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 }}>Rating</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: op.rating_avg >= 4 ? '#10b981' : op.rating_avg ? '#f59e0b' : '#9ca3af' }}>
+                              {op.rating_avg ? `${Number(op.rating_avg).toFixed(1)} ⭐` : '—'}
+                            </div>
                           </div>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+
+                        {/* Selector de status */}
+                        <div>
+                          <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 5 }}>Cambiar estado operativo</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4 }}>
+                            {Object.entries(OPERATOR_STATUS_CONFIG).map(([key, cfg]) => (
+                              <button key={key}
+                                onClick={() => updateOperatorStatus(op.id, key)}
+                                disabled={updatingOpStatus === op.id || op.status === key}
+                                style={{ padding: '6px 2px', borderRadius: 8, border: `1.5px solid ${op.status === key ? cfg.color : '#e5e7eb'}`, background: op.status === key ? cfg.bg : '#fff', color: op.status === key ? cfg.color : '#6b7280', fontSize: 9, fontWeight: 700, cursor: op.status === key ? 'default' : 'pointer', textAlign: 'center', minHeight: 36, lineHeight: 1.3 }}>
+                                {cfg.icon}<br/>{cfg.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Acciones */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 5 }}>
                           <button onClick={() => fetchOperatorHistory(op.id)}
-                            style={{ padding: '10px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 44 }}>
-                            📊 Historial
+                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 40 }}>
+                            📊<br/>Historial
                           </button>
                           <button onClick={() => openCommissionModal(op)}
-                            style={{ padding: '10px 0', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 44 }}>
-                            💰 Comisión
+                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 40 }}>
+                            💰<br/>Comisión
                           </button>
                           <button onClick={() => fetchOperatorKpis(op)}
-                            style={{ padding: '10px 0', borderRadius: 8, border: '1.5px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 44 }}>
-                            ⏱ Tiempos
+                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 40 }}>
+                            ⏱<br/>Tiempos
+                          </button>
+                          <button onClick={() => setResetOnboardingModal(op)}
+                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #fde68a', background: '#fffbeb', color: '#92400e', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 40 }}>
+                            🔄<br/>Onboard
                           </button>
                         </div>
                       </div>
@@ -1570,6 +1690,35 @@ const AdminView = () => {
               <button onClick={saveService} disabled={savingService}
                 style={{ padding: '12px 28px', background: savingService ? '#9ca3af' : '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, minHeight: 48 }}>
                 <Save size={15} /> {savingService ? 'Guardando...' : editingService ? 'Actualizar' : 'Crear Servicio'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════ MODAL: RESET ONBOARDING ════ */}
+      {resetOnboardingModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 20, boxShadow: '0 8px 40px rgba(0,0,0,0.2)', width: '100%', maxWidth: 400, overflow: 'hidden' }}>
+            <div style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)', padding: '16px 20px' }}>
+              <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>🔄 Reiniciar Onboarding</h3>
+            </div>
+            <div style={{ padding: 24 }}>
+              <p style={{ fontSize: 14, color: '#374151', margin: '0 0 8px', lineHeight: 1.6 }}>
+                ¿Confirmas que deseas reiniciar el onboarding de <strong>{resetOnboardingModal.full_name}</strong>?
+              </p>
+              <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#854d0e', lineHeight: 1.5 }}>
+                ⚠️ El operador deberá volver a completar los 5 pasos: datos, foto del kit, zona, pago y revisión. Sus datos bancarios y de cobertura serán eliminados.
+              </div>
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10 }}>
+              <button onClick={() => setResetOnboardingModal(null)}
+                style={{ flex: 1, padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>
+                Cancelar
+              </button>
+              <button onClick={() => resetOnboarding(resetOnboardingModal)} disabled={savingOpAction}
+                style={{ flex: 1, padding: '12px', background: savingOpAction ? '#9ca3af' : '#f59e0b', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>
+                {savingOpAction ? '⏳ Procesando...' : '🔄 Confirmar'}
               </button>
             </div>
           </div>

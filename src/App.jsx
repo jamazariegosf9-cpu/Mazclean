@@ -42,7 +42,7 @@ function Navbar({ view, setView, onShowAuth }) {
   }
   if (profile?.role === 'admin') {
     navLinks.push(['operator', 'Panel Operador'])
-    navLinks.push(['admin',     'Admin'])
+    navLinks.push(['admin',    'Admin'])
   }
 
   const roleBadge = {
@@ -221,6 +221,7 @@ function HomeView({ setView, onShowAuth }) {
   )
 }
 
+// ── Wrapper de BookingView con protección de login ─────────────
 function BookingViewProtected({ onNavigate, onShowAuth }) {
   const { user } = useAuth()
 
@@ -254,7 +255,7 @@ function BookingViewProtected({ onNavigate, onShowAuth }) {
 }
 
 function AppInner() {
-  const { loading, user, profile } = useAuth()
+  const { loading, user, profile, signOut } = useAuth()
   const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
 
@@ -282,13 +283,32 @@ function AppInner() {
     )
   }
 
+  // ── FIX: esperar loading Y que el profile llegue si hay user ───
+  // Sin esto, el operador entra al panel antes de que llegue su profile
   if (loading || (user && !profile)) {
     return <div style={{ minHeight: '100vh', background: '#050A14' }} />
   }
 
+  // ── Operador desactivado — mostrar pantalla de bloqueo ──────────
+  if (profile?.role === 'operador' && profile?.status === 'desactivado') {
+    return (
+      <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ background: 'rgba(239,68,68,0.08)', border: '1.5px solid rgba(239,68,68,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🚫</div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F0F6FF', marginBottom: 10 }}>Cuenta desactivada</h2>
+          <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 24, lineHeight: 1.6 }}>
+            Tu cuenta ha sido desactivada. Contacta al administrador para más información.
+          </p>
+          <button onClick={signOut}
+            style={{ padding: '12px 32px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 10, color: '#F0F6FF', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
+            Cerrar sesión
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // ── Detectar operador sin onboarding completo ──────────────────
-  // CAMBIO CLAVE: Usamos !profile?.onboarding_done para atrapar 
-  // tanto 'false' como 'null' (casos de nuevos operadores)
   const needsOnboarding = (
     profile?.role === 'operador' &&
     !profile?.onboarding_done
