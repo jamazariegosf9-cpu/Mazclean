@@ -1,4 +1,4 @@
-﻿import ClientView from './ClientView'
+import ClientView from './ClientView'
 import OperatorView from './OperatorView'
 import AdminView from './AdminView'
 import TrackingPublic from './TrackingPublic'
@@ -9,14 +9,14 @@ import BookingView from './BookingView'
 import OnboardingView from './OnboardingView'
 import { Menu, X } from 'lucide-react'
 
-// ── Detectar ruta /tracking/:id ────────────────────────────────
+// -- Detectar ruta /tracking/:id --------------------------------
 function getTrackingId() {
   const path = window.location.pathname
   const match = path.match(/^\/tracking\/([a-zA-Z0-9-]+)$/)
   return match ? match[1] : null
 }
 
-// ── Hook móvil ─────────────────────────────────────────────────
+// -- Hook m�vil -------------------------------------------------
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   useEffect(() => {
@@ -67,7 +67,7 @@ function Navbar({ view, setView, onShowAuth }) {
 
           {/* Logo */}
           <button onClick={() => handleNav('home')} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#F0F6FF', flexShrink: 0 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 10, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>💧</div>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>??</div>
             <span style={{ fontWeight: 800, fontSize: 16 }}>Maz Clean</span>
           </button>
 
@@ -110,14 +110,14 @@ function Navbar({ view, setView, onShowAuth }) {
             </div>
           )}
 
-          {/* Móvil: nombre usuario */}
+          {/* M�vil: nombre usuario */}
           {isMobile && user && (
             <span style={{ color: '#8CA0BF', fontSize: 12, whiteSpace: 'nowrap' }}>
               {profile?.full_name?.split(' ')[0] || 'Usuario'}
             </span>
           )}
 
-          {/* Móvil: botón hamburguesa */}
+          {/* M�vil: bot�n hamburguesa */}
           {isMobile && (
             <button onClick={() => setMenuOpen(o => !o)}
               style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '8px', cursor: 'pointer', color: '#F0F6FF', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 40, minHeight: 40 }}>
@@ -127,12 +127,12 @@ function Navbar({ view, setView, onShowAuth }) {
         </div>
       </nav>
 
-      {/* ── Menú desplegable móvil ── */}
+      {/* -- Men� desplegable m�vil -- */}
       {isMobile && menuOpen && (
         <div style={{ position: 'fixed', top: 56, left: 0, right: 0, bottom: 0, zIndex: 99, background: 'rgba(0,0,0,0.5)' }} onClick={() => setMenuOpen(false)}>
           <div style={{ background: 'rgba(5,10,20,0.98)', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '8px 0' }} onClick={e => e.stopPropagation()}>
 
-            {/* Links de navegación */}
+            {/* Links de navegaci�n */}
             {navLinks.map(([id, label]) => (
               <button key={id + label} onClick={() => handleNav(id)}
                 style={{ display: 'block', width: '100%', padding: '14px 20px', border: 'none', cursor: 'pointer', background: view === id ? 'rgba(0,200,255,0.10)' : 'transparent', color: view === id ? '#00C8FF' : '#F0F6FF', fontWeight: view === id ? 700 : 500, fontSize: 15, textAlign: 'left', borderLeft: view === id ? '3px solid #00C8FF' : '3px solid transparent' }}>
@@ -155,14 +155,14 @@ function Navbar({ view, setView, onShowAuth }) {
                 )}
                 <button onClick={() => { signOut(); setMenuOpen(false) }}
                   style={{ width: '100%', padding: '12px', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 10, background: 'rgba(248,113,113,0.08)', color: '#F87171', cursor: 'pointer', fontSize: 15, fontWeight: 600 }}>
-                  Cerrar sesión
+                  Cerrar sesi�n
                 </button>
               </div>
             ) : (
               <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <button onClick={() => { onShowAuth('login'); setMenuOpen(false) }}
                   style={{ width: '100%', padding: '12px', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 10, background: 'none', color: '#F0F6FF', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
-                  Iniciar Sesión
+                  Iniciar Sesi�n
                 </button>
                 <button onClick={() => { onShowAuth('register'); setMenuOpen(false) }}
                   style={{ width: '100%', padding: '12px', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', border: 'none', borderRadius: 10, color: '#050A14', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
@@ -209,7 +209,7 @@ function HomeView({ setView, onShowAuth }) {
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', width: '100%', maxWidth: 400 }}>
           <button onClick={() => onShowAuth('login')}
             style={{ padding: '14px 32px', fontSize: 15, borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: 'none', color: '#F0F6FF', fontWeight: 700, flex: 1, minHeight: 52 }}>
-            Iniciar Sesión
+            Iniciar Sesi�n
           </button>
           <button onClick={() => onShowAuth('register')}
             style={{ padding: '14px 32px', fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, flex: 1, minHeight: 52 }}>
@@ -221,7 +221,7 @@ function HomeView({ setView, onShowAuth }) {
   )
 }
 
-// ── Wrapper de BookingView con protección de login ─────────────
+// -- Wrapper de BookingView con protecci�n de login -------------
 function BookingViewProtected({ onNavigate, onShowAuth }) {
   const { user } = useAuth()
 
@@ -229,17 +229,17 @@ function BookingViewProtected({ onNavigate, onShowAuth }) {
     return (
       <div style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24 }}>
         <div style={{ background: 'rgba(0,200,255,0.08)', border: '1.5px solid rgba(0,200,255,0.25)', borderRadius: 20, padding: '40px 32px', maxWidth: 440, width: '100%' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>??</div>
           <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F0F6FF', marginBottom: 10 }}>
             Necesitas una cuenta
           </h2>
           <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 32, lineHeight: 1.6 }}>
-            Para reservar un servicio debes iniciar sesión o crear una cuenta. Es rápido y gratuito.
+            Para reservar un servicio debes iniciar sesi�n o crear una cuenta. Es r�pido y gratuito.
           </p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
             <button onClick={() => onShowAuth('login')}
               style={{ padding: '12px 32px', fontSize: 15, borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: 'none', color: '#F0F6FF', fontWeight: 600, flex: 1, minHeight: 48 }}>
-              Iniciar Sesión
+              Iniciar Sesi�n
             </button>
             <button onClick={() => onShowAuth('register')}
               style={{ padding: '12px 32px', fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, flex: 1, minHeight: 48 }}>
@@ -274,7 +274,7 @@ function AppInner() {
     }
   }, [loading, user])
 
-  // ── Ruta pública de tracking ───────────────────────────────────
+  // -- Ruta p�blica de tracking -----------------------------------
   if (trackingId) {
     return (
       <div style={{ minHeight: '100vh', background: '#f3f4f6' }}>
@@ -283,38 +283,38 @@ function AppInner() {
     )
   }
 
-  // ── FIX: esperar loading Y que el profile llegue si hay user ───
+  // -- FIX: esperar loading Y que el profile llegue si hay user ---
   // Sin esto, el operador entra al panel antes de que llegue su profile
   if (loading || (user && !profile)) {
     return <div style={{ minHeight: '100vh', background: '#050A14' }} />
   }
 
-  // ── Operador desactivado — mostrar pantalla de bloqueo ──────────
+  // -- Operador desactivado � mostrar pantalla de bloqueo ----------
   if (profile?.role === 'operador' && profile?.status === 'desactivado') {
     return (
       <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ background: 'rgba(239,68,68,0.08)', border: '1.5px solid rgba(239,68,68,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🚫</div>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>??</div>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F0F6FF', marginBottom: 10 }}>Cuenta desactivada</h2>
           <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 24, lineHeight: 1.6 }}>
-            Tu cuenta ha sido desactivada. Contacta al administrador para más información.
+            Tu cuenta ha sido desactivada. Contacta al administrador para m�s informaci�n.
           </p>
           <button onClick={signOut}
             style={{ padding: '12px 32px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 10, color: '#F0F6FF', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
-            Cerrar sesión
+            Cerrar sesi�n
           </button>
         </div>
       </div>
     )
   }
 
-  // ── Detectar operador sin onboarding completo ──────────────────
+  // -- Detectar operador sin onboarding completo ------------------
   const needsOnboarding = (
     profile?.role === 'operador' &&
     !profile?.onboarding_done
   )
 
-  // ── Onboarding obligatorio para operadores nuevos ──────────────
+  // -- Onboarding obligatorio para operadores nuevos --------------
   if (needsOnboarding) {
     return (
       <div style={{ minHeight: '100vh', background: '#050A14' }}>
