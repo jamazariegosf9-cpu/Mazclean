@@ -30,34 +30,69 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    // Verificar sesión inicial — esperar a que el perfil esté listo
     const initAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) {
-        setUser(session.user)
-        await loadProfile(session.user.id)
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession()
+
+        // ── Token inválido o expirado → limpiar sesión ──────────
+        if (error) {
+          console.warn('Sesión inválida, limpiando:', error.message)
+          await supabase.auth.signOut({ scope: 'local' })
+          setUser(null)
+          setProfile(null)
+          setLoading(false)
+          return
+        }
+
+        if (session?.user) {
+          setUser(session.user)
+          await loadProfile(session.user.id)
+        }
+      } catch (err) {
+        // Cualquier error inesperado → limpiar y mostrar home
+        console.error('Error en initAuth:', err)
+        try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
+        setUser(null)
+        setProfile(null)
+      } finally {
+        setLoading(false)
       }
-      setLoading(false) // Solo apagar loading cuando el perfil está listo
     }
 
     initAuth()
 
-    // Escuchar cambios de sesión
-const { data: { subscription } } = supabase.auth.onAuthStateChange(
-  async (event, session) => {
-    if (event === 'TOKEN_REFRESHED') return
-    if (event === 'SIGNED_OUT') {
-      setUser(null)
-      setProfile(null)
-      return
-    }
-    if (event === 'SIGNED_IN' && session?.user) {
-      setUser(session.user)
-      await loadProfile(session.user.id)
-      return
-    }
-  }
-)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        // ── Token de refresco inválido → cerrar sesión limpia ───
+        if (event === 'TOKEN_REFRESHED' && !session) {
+          console.warn('Refresh token inválido, cerrando sesión')
+          try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
+          setUser(null)
+          setProfile(null)
+          return
+        }
+
+        if (event === 'TOKEN_REFRESHED') return
+
+        if (event === 'SIGNED_OUT') {
+          setUser(null)
+          setProfile(null)
+          return
+        }
+
+        if (event === 'SIGNED_IN' && session?.user) {
+          setUser(session.user)
+          await loadProfile(session.user.id)
+          return
+        }
+
+        // ── Cualquier evento con error de auth → limpiar ────────
+        if (!session && (event === 'USER_UPDATED' || event === 'INITIAL_SESSION')) {
+          setUser(null)
+          setProfile(null)
+        }
+      }
+    )
 
     return () => subscription.unsubscribe()
   }, [])
