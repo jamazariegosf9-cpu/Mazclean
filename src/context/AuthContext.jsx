@@ -92,6 +92,12 @@ export function AuthProvider({ children }) {
 
   const signIn = async ({ email, password }) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    // Después del login exitoso, cargar profile directamente sin esperar onAuthStateChange
+    if (!error && data?.user) {
+      setAuthState(prev => ({ ...prev, loading: true }))
+      const result = await loadProfile(data.user)
+      setAuthState({ ...result, loading: false })
+    }
     return { data, error }
   }
 
