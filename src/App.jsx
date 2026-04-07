@@ -253,14 +253,14 @@ function BookingViewProtected({ onNavigate, onShowAuth }) {
 
   return <BookingView onNavigate={onNavigate} />
 }
+function AppInner() {
+  const { loading, user, profile, signOut } = useAuth()
 // En AppInner, justo antes de const needsOnboarding
 console.log('PROFILE:', JSON.stringify({
   role: profile?.role,
   onboarding_done: profile?.onboarding_done,
   status: profile?.status
 }))
-function AppInner() {
-  const { loading, user, profile, signOut } = useAuth()
   const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
 
