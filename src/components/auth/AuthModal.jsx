@@ -1,10 +1,14 @@
 // ============================================================
 // MAZ CLEAN — AuthModal
 // src/components/auth/AuthModal.jsx
-// Maneja: Login · Registro · Recuperar contraseña · OTP
+// Maneja: Login · Registro Cliente · Registro Operador · Recuperar contraseña
 // ============================================================
 import { useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { supabase } from '../../lib/supabase'
+
+const SUPABASE_URL     = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 // ── Estilos internos ──────────────────────────────────────────
 const S = {
@@ -24,6 +28,8 @@ const S = {
     width: '100%',
     maxWidth: 440,
     position: 'relative',
+    maxHeight: '90vh',
+    overflowY: 'auto',
   },
   logo: {
     display: 'flex', alignItems: 'center', gap: 10,
@@ -57,9 +63,7 @@ const S = {
     background: active ? 'rgba(0,200,255,0.15)' : 'transparent',
     color: active ? '#00C8FF' : '#8CA0BF',
   }),
-  field: {
-    marginBottom: 16,
-  },
+  field: { marginBottom: 16 },
   label: {
     display: 'block', fontSize: 13,
     color: '#8CA0BF', marginBottom: 8, fontWeight: 500,
@@ -81,13 +85,19 @@ const S = {
     fontWeight: 700, fontSize: 16, cursor: 'pointer',
     marginTop: 8, transition: 'all 0.3s',
   },
+  btnOperator: {
+    width: '100%', padding: '14px',
+    background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+    border: 'none', borderRadius: 12,
+    color: '#fff', fontFamily: "'Syne', sans-serif",
+    fontWeight: 700, fontSize: 16, cursor: 'pointer',
+    marginTop: 8, transition: 'all 0.3s',
+  },
   divider: {
     display: 'flex', alignItems: 'center', gap: 12,
     margin: '20px 0', color: '#8CA0BF', fontSize: 13,
   },
-  dividerLine: {
-    flex: 1, height: 1, background: 'rgba(255,255,255,0.08)',
-  },
+  dividerLine: { flex: 1, height: 1, background: 'rgba(255,255,255,0.08)' },
   btnGoogle: {
     width: '100%', padding: '13px',
     background: 'rgba(255,255,255,0.05)',
@@ -109,6 +119,12 @@ const S = {
     border: '1px solid rgba(0,229,200,0.3)',
     borderRadius: 10, padding: '12px 16px',
     color: '#00E5C8', fontSize: 14, marginBottom: 16,
+  },
+  infoBox: {
+    background: 'rgba(59,130,246,0.10)',
+    border: '1px solid rgba(59,130,246,0.25)',
+    borderRadius: 10, padding: '12px 16px',
+    color: '#93c5fd', fontSize: 13, marginBottom: 20, lineHeight: 1.6,
   },
   closeBtn: {
     position: 'absolute', top: 16, right: 16,
@@ -138,18 +154,18 @@ const S = {
 export default function AuthModal({ onClose, defaultTab = 'login' }) {
   const { signIn, signUp, signInWithGoogle, resetPassword } = useAuth()
 
-  const [tab, setTab]           = useState(defaultTab)  // 'login' | 'register' | 'forgot'
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState('')
-  const [success, setSuccess]   = useState('')
+  // 'login' | 'register' | 'operator' | 'forgot'
+  const [tab, setTab]         = useState(defaultTab)
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState('')
+  const [success, setSuccess] = useState('')
 
-  // Form fields
-  const [email, setEmail]         = useState('')
-  const [password, setPassword]   = useState('')
-  const [confirm, setConfirm]     = useState('')
-  const [fullName, setFullName]   = useState('')
-  const [phone, setPhone]         = useState('')
-  const [showPass, setShowPass]   = useState(false)
+  const [email, setEmail]       = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm]   = useState('')
+  const [fullName, setFullName] = useState('')
+  const [phone, setPhone]       = useState('')
+  const [showPass, setShowPass] = useState(false)
 
   const reset = () => { setError(''); setSuccess('') }
 
@@ -165,7 +181,7 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
     onClose()
   }
 
-  // ── REGISTRO ──────────────────────────────────────────────
+  // ── REGISTRO CLIENTE ──────────────────────────────────────
   const handleRegister = async (e) => {
     e.preventDefault()
     reset()
@@ -180,6 +196,49 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
     setLoading(false)
     if (error) return setError(translateError(error.message))
     setSuccess('¡Cuenta creada! Revisa tu correo para confirmar tu registro.')
+  }
+
+  // ── REGISTRO OPERADOR ─────────────────────────────────────
+  const handleRegisterOperator = async (e) => {
+    e.preventDefault()
+    reset()
+    if (!fullName || !email || !password || !confirm || !phone)
+      return setError('Todos los campos son obligatorios para operadores.')
+    if (password !== confirm)
+      return setError('Las contraseñas no coinciden.')
+    if (password.length < 8)
+      return setError('La contraseña debe tener al menos 8 caracteres.')
+    setLoading(true)
+    try {
+      // 1. Crear usuario en auth con role operador en metadata
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email, password,
+        options: { data: { full_name: fullName, phone, role: 'operador' } }
+      })
+      if (signUpError) throw signUpError
+
+      // 2. Insertar/actualizar profile con role operador
+      if (data?.user?.id) {
+        const { error: profileError } = await supabase.from('profiles').upsert({
+          id: data.user.id,
+          full_name: fullName,
+          phone,
+          role: 'operador',
+          operator_status: 'pending_review',
+          onboarding_done: false,
+          onboarding_step: 1,
+          status: 'activo',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' })
+        if (profileError) console.warn('Profile upsert:', profileError.message)
+      }
+
+      setSuccess('¡Cuenta de operador creada! Ahora inicia sesión para completar tu registro.')
+    } catch (err) {
+      setError(translateError(err.message))
+    } finally {
+      setLoading(false)
+    }
   }
 
   // ── RECUPERAR CONTRASEÑA ──────────────────────────────────
@@ -201,7 +260,6 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
     if (error) setError(translateError(error.message))
   }
 
-  // ── Traducir errores de Supabase ──────────────────────────
   const translateError = (msg) => {
     if (msg.includes('Invalid login credentials')) return 'Correo o contraseña incorrectos.'
     if (msg.includes('Email not confirmed'))       return 'Confirma tu correo antes de iniciar sesión.'
@@ -210,6 +268,46 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
     if (msg.includes('rate limit'))                return 'Demasiados intentos. Espera un momento.'
     return msg
   }
+
+  // ── Formulario de campos comunes ──────────────────────────
+  const renderPasswordField = (label = 'Contraseña', autocomplete = 'new-password') => (
+    <div style={S.field}>
+      <label style={S.label}>{label}</label>
+      <div style={{ position: 'relative' }}>
+        <input
+          style={{ ...S.input, paddingRight: 44 }}
+          type={showPass ? 'text' : 'password'}
+          placeholder="Mínimo 8 caracteres"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          autoComplete={autocomplete}
+        />
+        <button type="button" onClick={() => setShowPass(v => !v)} style={{
+          position: 'absolute', right: 12, top: '50%',
+          transform: 'translateY(-50%)',
+          background: 'none', border: 'none',
+          color: '#8CA0BF', cursor: 'pointer', fontSize: 16,
+        }}>
+          {showPass ? '🙈' : '👁️'}
+        </button>
+      </div>
+      {password && (
+        <div style={{ marginTop: 8, display: 'flex', gap: 4 }}>
+          {[0,1,2].map(i => {
+            const strength = password.length < 8 ? 0 : password.length < 12 ? 1 : 2
+            return (
+              <div key={i} style={{
+                flex: 1, height: 3, borderRadius: 2,
+                background: i <= strength
+                  ? ['#F87171','#FFD166','#00E5C8'][strength]
+                  : 'rgba(255,255,255,0.1)',
+              }}/>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <div style={S.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -247,9 +345,74 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
               </button>
             </p>
           </>
-        ) : (
+
+        ) : tab === 'operator' ? (
+          /* ── REGISTRO OPERADOR ── */
           <>
-            {/* Tabs login / register */}
+            <h2 style={S.title}>Únete como Operador</h2>
+            <p style={S.subtitle}>Registra tu cuenta para ofrecer servicios de lavado</p>
+
+            <div style={S.infoBox}>
+              🚗 Después de crear tu cuenta completarás un proceso de registro de 5 pasos. Tu perfil será revisado por el administrador antes de poder recibir servicios.
+            </div>
+
+            {error && <div style={S.errorBox}>{error}</div>}
+            {success ? (
+              <>
+                <div style={S.successBox}>{success}</div>
+                <button style={S.btnPrimary} onClick={() => { setTab('login'); reset(); setSuccess('') }}>
+                  Iniciar sesión →
+                </button>
+              </>
+            ) : (
+              <form onSubmit={handleRegisterOperator}>
+                <div style={S.field}>
+                  <label style={S.label}>Nombre completo *</label>
+                  <input style={S.input} type="text" placeholder="Tu nombre completo"
+                    value={fullName} onChange={e => setFullName(e.target.value)} autoComplete="name" />
+                </div>
+                <div style={S.field}>
+                  <label style={S.label}>Teléfono *</label>
+                  <input style={S.input} type="tel" placeholder="+52 55 1234 5678"
+                    value={phone} onChange={e => setPhone(e.target.value)} autoComplete="tel" />
+                </div>
+                <div style={S.field}>
+                  <label style={S.label}>Correo electrónico *</label>
+                  <input style={S.input} type="email" placeholder="tu@correo.com"
+                    value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
+                </div>
+                {renderPasswordField('Contraseña *')}
+                <div style={S.field}>
+                  <label style={S.label}>Confirmar contraseña *</label>
+                  <input
+                    style={{ ...S.input, borderColor: confirm && confirm !== password ? 'rgba(248,113,113,0.6)' : 'rgba(255,255,255,0.10)' }}
+                    type={showPass ? 'text' : 'password'}
+                    placeholder="Repite tu contraseña"
+                    value={confirm}
+                    onChange={e => setConfirm(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                </div>
+                <button style={{
+                  ...S.btnOperator,
+                  opacity: loading ? 0.6 : 1,
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                }} type="submit" disabled={loading}>
+                  {loading ? 'Creando cuenta...' : '🚗 Registrarme como Operador →'}
+                </button>
+              </form>
+            )}
+            <p style={S.switchText}>
+              ¿Ya tienes cuenta?{' '}
+              <button style={S.switchLink} onClick={() => { setTab('login'); reset() }}>
+                Iniciar sesión
+              </button>
+            </p>
+          </>
+
+        ) : (
+          /* ── LOGIN / REGISTRO CLIENTE ── */
+          <>
             <div style={S.tabs}>
               <button style={S.tab(tab === 'login')}    onClick={() => { setTab('login');    reset() }}>Iniciar sesión</button>
               <button style={S.tab(tab === 'register')} onClick={() => { setTab('register'); reset() }}>Registrarme</button>
@@ -258,7 +421,7 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
             {error   && <div style={S.errorBox}>{error}</div>}
             {success && <div style={S.successBox}>{success}</div>}
 
-            {/* ── LOGIN FORM ── */}
+            {/* LOGIN */}
             {tab === 'login' && (
               <form onSubmit={handleLogin}>
                 <div style={S.field}>
@@ -300,10 +463,18 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
                 }} type="submit" disabled={loading}>
                   {loading ? 'Iniciando sesión...' : 'Iniciar sesión →'}
                 </button>
+
+                {/* Link para operadores */}
+                <p style={{ textAlign: 'center', marginTop: 16, fontSize: 13, color: '#8CA0BF' }}>
+                  ¿Quieres trabajar con nosotros?{' '}
+                  <button style={S.switchLink} onClick={() => { setTab('operator'); reset() }}>
+                    Regístrate como operador
+                  </button>
+                </p>
               </form>
             )}
 
-            {/* ── REGISTER FORM ── */}
+            {/* REGISTRO CLIENTE */}
             {tab === 'register' && !success && (
               <form onSubmit={handleRegister}>
                 <div style={S.field}>
@@ -321,51 +492,11 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
                   <input style={S.input} type="tel" placeholder="+52 55 1234 5678"
                     value={phone} onChange={e => setPhone(e.target.value)} autoComplete="tel" />
                 </div>
-                <div style={S.field}>
-                  <label style={S.label}>Contraseña</label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      style={{ ...S.input, paddingRight: 44 }}
-                      type={showPass ? 'text' : 'password'}
-                      placeholder="Mínimo 8 caracteres"
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      autoComplete="new-password"
-                    />
-                    <button type="button" onClick={() => setShowPass(v => !v)} style={{
-                      position: 'absolute', right: 12, top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none', border: 'none',
-                      color: '#8CA0BF', cursor: 'pointer', fontSize: 16,
-                    }}>
-                      {showPass ? '🙈' : '👁️'}
-                    </button>
-                  </div>
-                  {/* Indicador de fuerza */}
-                  {password && (
-                    <div style={{ marginTop: 8, display: 'flex', gap: 4 }}>
-                      {['Débil', 'Regular', 'Fuerte'].map((l, i) => {
-                        const strength = password.length < 8 ? 0 : password.length < 12 ? 1 : 2
-                        const colors = ['#F87171', '#FFD166', '#00E5C8']
-                        return (
-                          <div key={i} style={{
-                            flex: 1, height: 3, borderRadius: 2,
-                            background: i <= strength ? colors[strength] : 'rgba(255,255,255,0.1)',
-                            transition: 'background 0.3s',
-                          }}/>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
+                {renderPasswordField()}
                 <div style={S.field}>
                   <label style={S.label}>Confirmar contraseña</label>
                   <input
-                    style={{
-                      ...S.input,
-                      borderColor: confirm && confirm !== password
-                        ? 'rgba(248,113,113,0.6)' : 'rgba(255,255,255,0.10)',
-                    }}
+                    style={{ ...S.input, borderColor: confirm && confirm !== password ? 'rgba(248,113,113,0.6)' : 'rgba(255,255,255,0.10)' }}
                     type={showPass ? 'text' : 'password'}
                     placeholder="Repite tu contraseña"
                     value={confirm}
@@ -389,7 +520,6 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
               </form>
             )}
 
-            {/* ── Divider + Google ── */}
             {!success && (
               <>
                 <div style={S.divider}>
