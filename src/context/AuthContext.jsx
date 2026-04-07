@@ -12,6 +12,7 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  // ── Cargar perfil — solo guarda si tiene role válido ─────────
   const loadProfile = async (userId) => {
     try {
       const { data, error } = await supabase
@@ -19,7 +20,7 @@ export function AuthProvider({ children }) {
         .select('*')
         .eq('id', userId)
         .single()
-      if (!error && data) {
+      if (!error && data?.role) {
         setProfile(data)
         return data
       }
@@ -34,7 +35,6 @@ export function AuthProvider({ children }) {
       try {
         const { data: { session }, error } = await supabase.auth.getSession()
 
-        // ── Token inválido o expirado → limpiar sesión ──────────
         if (error) {
           console.warn('Sesión inválida, limpiando:', error.message)
           await supabase.auth.signOut({ scope: 'local' })
@@ -49,7 +49,6 @@ export function AuthProvider({ children }) {
           await loadProfile(session.user.id)
         }
       } catch (err) {
-        // Cualquier error inesperado → limpiar y mostrar home
         console.error('Error en initAuth:', err)
         try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
         setUser(null)
@@ -63,7 +62,6 @@ export function AuthProvider({ children }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        // ── Token de refresco inválido → cerrar sesión limpia ───
         if (event === 'TOKEN_REFRESHED' && !session) {
           console.warn('Refresh token inválido, cerrando sesión')
           try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
@@ -86,7 +84,6 @@ export function AuthProvider({ children }) {
           return
         }
 
-        // ── Cualquier evento con error de auth → limpiar ────────
         if (!session && (event === 'USER_UPDATED' || event === 'INITIAL_SESSION')) {
           setUser(null)
           setProfile(null)
@@ -99,20 +96,14 @@ export function AuthProvider({ children }) {
 
   const signUp = async ({ email, password, fullName, phone }) => {
     const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName, phone, role: 'cliente' },
-      },
+      email, password,
+      options: { data: { full_name: fullName, phone, role: 'cliente' } },
     })
     return { data, error }
   }
 
   const signIn = async ({ email, password }) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     return { data, error }
   }
 
@@ -130,9 +121,7 @@ export function AuthProvider({ children }) {
   }
 
   const verifyOTP = async (phone, token) => {
-    const { data, error } = await supabase.auth.verifyOtp({
-      phone, token, type: 'sms',
-    })
+    const { data, error } = await supabase.auth.verifyOtp({ phone, token, type: 'sms' })
     return { data, error }
   }
 
@@ -144,9 +133,7 @@ export function AuthProvider({ children }) {
   }
 
   const signOut = async () => {
-    try {
-      await supabase.auth.signOut({ scope: 'local' })
-    } catch (e) {}
+    try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
     setUser(null)
     setProfile(null)
   }
@@ -158,26 +145,17 @@ export function AuthProvider({ children }) {
       .eq('id', user.id)
       .select()
       .single()
-    if (!error) setProfile(data)
+    if (!error && data?.role) setProfile(data)
     return { data, error }
   }
 
   const value = {
-    user,
-    profile,
-    loading,
+    user, profile, loading,
     isClient:   profile?.role === 'cliente',
     isOperator: profile?.role === 'operador',
     isAdmin:    profile?.role === 'admin',
-    signUp,
-    signIn,
-    signInWithGoogle,
-    signInWithPhone,
-    verifyOTP,
-    resetPassword,
-    signOut,
-    updateProfile,
-    loadProfile,
+    signUp, signIn, signInWithGoogle, signInWithPhone,
+    verifyOTP, resetPassword, signOut, updateProfile, loadProfile,
   }
 
   return (
@@ -191,22 +169,4 @@ export const useAuth = () => {
   const ctx = useContext(AuthContext)
   if (!ctx) throw new Error('useAuth debe usarse dentro de <AuthProvider>')
   return ctx
-}
-
-const loadProfile = async (userId) => {
-  try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
-    // ── Solo guardar si tiene datos válidos con role ──
-    if (!error && data?.role) {
-      setProfile(data)
-      return data
-    }
-  } catch (err) {
-    console.error('Error cargando perfil:', err)
-  }
-  return null
 }
