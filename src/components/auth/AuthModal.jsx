@@ -415,8 +415,26 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
           <>
             <div style={S.tabs}>
               <button style={S.tab(tab === 'login')}    onClick={() => { setTab('login');    reset() }}>Iniciar sesión</button>
-              <button style={S.tab(tab === 'register')} onClick={() => { setTab('register'); reset() }}>Registrarme</button>
+              <button style={S.tab(tab === 'register' || tab === 'operator')} onClick={() => { setTab('register'); reset() }}>Registrarme</button>
             </div>
+
+            {/* Selector de tipo de cuenta al registrarse */}
+            {(tab === 'register' || tab === 'operator') && !success && (
+              <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+                <button onClick={() => { setTab('register'); reset() }}
+                  style={{ flex: 1, padding: '14px 8px', borderRadius: 12, border: `2px solid ${tab === 'register' ? '#00C8FF' : 'rgba(255,255,255,0.10)'}`, background: tab === 'register' ? 'rgba(0,200,255,0.10)' : 'rgba(255,255,255,0.03)', color: tab === 'register' ? '#00C8FF' : '#8CA0BF', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+                  <div style={{ fontSize: 24, marginBottom: 6 }}>👤</div>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>Cliente</div>
+                  <div style={{ fontSize: 11, marginTop: 3, opacity: 0.8 }}>Reservar lavados</div>
+                </button>
+                <button onClick={() => { setTab('operator'); reset() }}
+                  style={{ flex: 1, padding: '14px 8px', borderRadius: 12, border: `2px solid ${tab === 'operator' ? '#3b82f6' : 'rgba(255,255,255,0.10)'}`, background: tab === 'operator' ? 'rgba(59,130,246,0.10)' : 'rgba(255,255,255,0.03)', color: tab === 'operator' ? '#60a5fa' : '#8CA0BF', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+                  <div style={{ fontSize: 24, marginBottom: 6 }}>🚗</div>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>Operador</div>
+                  <div style={{ fontSize: 11, marginTop: 3, opacity: 0.8 }}>Ofrecer servicios</div>
+                </button>
+              </div>
+            )}
 
             {error   && <div style={S.errorBox}>{error}</div>}
             {success && <div style={S.successBox}>{success}</div>}
@@ -464,13 +482,7 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
                   {loading ? 'Iniciando sesión...' : 'Iniciar sesión →'}
                 </button>
 
-                {/* Link para operadores */}
-                <p style={{ textAlign: 'center', marginTop: 16, fontSize: 13, color: '#8CA0BF' }}>
-                  ¿Quieres trabajar con nosotros?{' '}
-                  <button style={S.switchLink} onClick={() => { setTab('operator'); reset() }}>
-                    Regístrate como operador
-                  </button>
-                </p>
+
               </form>
             )}
 
