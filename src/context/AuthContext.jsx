@@ -192,3 +192,21 @@ export const useAuth = () => {
   if (!ctx) throw new Error('useAuth debe usarse dentro de <AuthProvider>')
   return ctx
 }
+
+const loadProfile = async (userId) => {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single()
+    // ── Solo guardar si tiene datos válidos con role ──
+    if (!error && data?.role) {
+      setProfile(data)
+      return data
+    }
+  } catch (err) {
+    console.error('Error cargando perfil:', err)
+  }
+  return null
+}
