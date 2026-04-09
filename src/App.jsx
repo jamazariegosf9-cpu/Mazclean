@@ -282,7 +282,7 @@ function AppInner() {
   }
 
   // ── Esperar a que loading termine (AuthContext carga user+profile juntos) ──
-  if (loading) {
+  if (loading || (user && !profile)) {
     return <div style={{ minHeight: '100vh', background: '#050A14' }} />
   }
 
