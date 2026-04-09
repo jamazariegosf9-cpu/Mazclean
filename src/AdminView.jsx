@@ -554,12 +554,30 @@ const AdminView = () => {
   const createOperator = async () => {
     setOperatorError(''); setOperatorSuccess('');
     if (!newOperator.email || !newOperator.password || !newOperator.full_name) { setOperatorError('Nombre, email y contraseña son requeridos.'); return; }
+    if (newOperator.password.length < 8) { setOperatorError('La contraseña debe tener al menos 8 caracteres.'); return; }
     setCreatingOperator(true);
     try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/create-operator`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }, body: JSON.stringify(newOperator) });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setOperatorSuccess(`Operador ${newOperator.full_name} creado exitosamente.`);
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: newOperator.email,
+        password: newOperator.password,
+        options: { data: { full_name: newOperator.full_name, phone: newOperator.phone, role: 'operador' } }
+      });
+      if (signUpError) throw signUpError;
+      if (data?.user?.id) {
+        const { error: profileError } = await supabase.from('profiles').upsert({
+          id: data.user.id,
+          full_name: newOperator.full_name,
+          phone: newOperator.phone || '',
+          role: 'operador',
+          operator_status: 'pending_review',
+          onboarding_done: false,
+          onboarding_step: 1,
+          status: 'activo',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' });
+        if (profileError) throw profileError;
+      }
+      setOperatorSuccess(`Operador ${newOperator.full_name} creado. Debe completar el onboarding al iniciar sesión.`);
       setNewOperator({ full_name: '', phone: '', email: '', password: '' });
       fetchData();
     } catch (err) { setOperatorError(err.message); }
