@@ -2,16 +2,9 @@ import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
 
-const ZONAS = [
-  'Álvaro Obregón','Azcapotzalco','Benito Juárez','Coyoacán',
-  'Cuajimalpa','Cuauhtémoc','Gustavo A. Madero','Iztacalco',
-  'Iztapalapa','La Magdalena Contreras','Miguel Hidalgo','Milpa Alta',
-  'Tláhuac','Tlalpan','Venustiano Carranza','Xochimilco',
-  'Atizapán','Cuautitlán Izcalli','Ecatepec','Huixquilucan',
-  'Naucalpan','Nezahualcóyotl','Tlalnepantla','Tultitlán',
-]
-const DIAS   = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo']
-const BANCOS = ['BBVA','Banamex','Santander','Banorte','HSBC','Inbursa','Scotiabank','Afirme','BanBajío','Azteca','Otro']
+// Dias de la semana y bancos se mantienen igual
+const DIAS   = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo']
+const BANCOS = ['BBVA','Banamex','Santander','Banorte','HSBC','Inbursa','Scotiabank','Afirme','BanBajio','Azteca','Otro']
 
 function validarCLABE(clabe) {
   if (!/^\d{18}$/.test(clabe)) return false
@@ -56,7 +49,7 @@ async function compressForMobile(file) {
         new Promise((_, r) => setTimeout(() => r(new Error('timeout')), TIMEOUT)),
       ])
       if (blob && blob.size > 0) return blob
-    } catch { /* continuar */ }
+    } catch { }
   }
 
   try {
@@ -102,7 +95,6 @@ async function compressForMobile(file) {
 }
 
 export default function OnboardingView({ onComplete }) {
-  // ── FIX 2: importar updateProfile para mantener el contexto sincronizado ──
   const { user, profile, updateProfile } = useAuth()
   const isMobile          = useIsMobile()
   const [step, setStep]   = useState(profile?.onboarding_step || 1)
@@ -118,12 +110,17 @@ export default function OnboardingView({ onComplete }) {
   const [uploadingKit, setUploadingKit] = useState(false)
   const [debugLog, setDebugLog]         = useState([])
 
-  // Paso 3
-  const [selectedZones, setSelectedZones] = useState(profile?.coverage_zones || [])
-  const [radius, setRadius]               = useState(profile?.coverage_radius || 10)
-  const [selectedDays, setSelectedDays]   = useState(profile?.work_days || [])
-  const [workStart, setWorkStart]         = useState(profile?.work_start?.slice(0,5) || '08:00')
-  const [workEnd, setWorkEnd]             = useState(profile?.work_end?.slice(0,5) || '18:00')
+  // ── PASO 3 NUEVO: domicilio base + radio nacional ─────────────
+  const [baseAddress, setBaseAddress]   = useState(profile?.base_address || '')
+  const [baseLat, setBaseLat]           = useState(profile?.base_lat || null)
+  const [baseLng, setBaseLng]           = useState(profile?.base_lng || null)
+  const [geoLoading, setGeoLoading]     = useState(false)
+  const [geoError, setGeoError]         = useState('')
+  const [radius, setRadius]             = useState(profile?.coverage_radius || 5)
+  // Dias y horario se mantienen para el paso 3
+  const [selectedDays, setSelectedDays] = useState(profile?.work_days || [])
+  const [workStart, setWorkStart]       = useState(profile?.work_start?.slice(0,5) || '08:00')
+  const [workEnd, setWorkEnd]           = useState(profile?.work_end?.slice(0,5) || '18:00')
 
   // Paso 4
   const [clabe, setClabe]             = useState('')
@@ -141,9 +138,7 @@ export default function OnboardingView({ onComplete }) {
     setDebugLog(prev => [...prev.slice(-9), line])
   }
 
-  // ── FIX 2 CORE: saveStep ahora usa updateProfile del contexto ──────────────
-  // Esto actualiza el profile en memoria de AuthContext en cada paso,
-  // evitando que App.jsx vea datos obsoletos al evaluar los guards.
+  // saveStep usa updateProfile del contexto para mantener el profile en memoria sincronizado
   const saveStep = async (data, next) => {
     setSaving(true); setError('')
     try {
@@ -160,11 +155,11 @@ export default function OnboardingView({ onComplete }) {
 
   const handleStep1 = async () => {
     if (!fullName.trim()) { setError('El nombre completo es requerido.'); return }
-    if (!/^\d{10}$/.test(phone.replace(/\s/g,''))) { setError('El teléfono debe tener 10 dígitos.'); return }
+    if (!/^\d{10}$/.test(phone.replace(/\s/g,''))) { setError('El telefono debe tener 10 digitos.'); return }
     await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,'') }, 2)
   }
 
-  // ── Token de sesión cacheado al montar el componente ────────────────────────
+  // Token de sesion cacheado al montar
   const [sessionToken, setSessionToken] = useState(null)
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -184,7 +179,7 @@ export default function OnboardingView({ onComplete }) {
     try {
       addLog(`Archivo: ${(file.size/1024).toFixed(0)} KB | ${file.type || 'image/jpeg'}`)
       if (file.size > 15 * 1024 * 1024) {
-        throw new Error('La foto pesa más de 15 MB. Usa una foto de menor resolución.')
+        throw new Error('La foto pesa mas de 15 MB. Usa una foto de menor resolucion.')
       }
       addLog('Comprimiendo...')
       const compressed = await compressForMobile(file)
@@ -213,14 +208,14 @@ export default function OnboardingView({ onComplete }) {
           if (xhr.status >= 200 && xhr.status < 300) resolve()
           else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.substring(0,120)}`))
         }
-        xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexión'))
-        xhr.ontimeout = () => reject(new Error('Tiempo agotado (60s) — señal débil, intenta de nuevo'))
+        xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexion'))
+        xhr.ontimeout = () => reject(new Error('Tiempo agotado (60s) — senal debil, intenta de nuevo'))
         xhr.send(compressed)
       })
 
       const publicUrl = `${supabaseUrl}/storage/v1/object/public/service-photos/${path}`
       setKitPhotoUrl(publicUrl)
-      addLog('✅ Completado')
+      addLog('Completado')
     } catch (e) {
       addLog(`ERROR: ${e.name} — ${e.message}`)
       setError(e.message || 'Error al subir. Intenta de nuevo.')
@@ -234,28 +229,81 @@ export default function OnboardingView({ onComplete }) {
     await saveStep({ kit_photo_url: kitPhotoUrl }, 3)
   }
 
-  const toggleZone = (z) => setSelectedZones(p => p.includes(z) ? p.filter(x => x !== z) : [...p, z])
-  const toggleDay  = (d) => setSelectedDays(p  => p.includes(d) ? p.filter(x => x !== d) : [...p, d])
+  // ── GEOLOCALIZACIÓN ────────────────────────────────────────────
+  const handleGeolocate = () => {
+    if (!navigator.geolocation) {
+      setGeoError('Tu navegador no soporta geolocalización.')
+      return
+    }
+    setGeoLoading(true)
+    setGeoError('')
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude
+        const lng = pos.coords.longitude
+        setBaseLat(lat)
+        setBaseLng(lng)
+        // Intentar geocodificacion inversa con nominatim (gratuito, sin API key)
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=es`
+          )
+          const data = await res.json()
+          if (data?.display_name) {
+            setBaseAddress(data.display_name)
+          } else {
+            setBaseAddress(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+          }
+        } catch {
+          setBaseAddress(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+        }
+        setGeoLoading(false)
+      },
+      (err) => {
+        setGeoLoading(false)
+        if (err.code === 1) setGeoError('Permiso de ubicacion denegado. Escribe tu direccion manualmente.')
+        else setGeoError('No se pudo obtener tu ubicacion. Intenta de nuevo o escribe tu direccion.')
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    )
+  }
 
+  const toggleDay = (d) => setSelectedDays(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d])
+
+  // ── PASO 3 ACTUALIZADO ─────────────────────────────────────────
   const handleStep3 = async () => {
-    if (!selectedZones.length) { setError('Selecciona al menos una zona.'); return }
-    if (!selectedDays.length)  { setError('Selecciona al menos un día.'); return }
+    if (!baseAddress.trim()) { setError('Ingresa tu direccion o lugar de origen.'); return }
+    if (!selectedDays.length) { setError('Selecciona al menos un dia de trabajo.'); return }
     if (workStart >= workEnd)  { setError('La hora de inicio debe ser antes del cierre.'); return }
-    await saveStep({ coverage_zones: selectedZones, coverage_radius: radius, work_days: selectedDays, work_start: workStart, work_end: workEnd }, 4)
+
+    // Si el radio es mayor a 2 km, el admin debera verificar medio de transporte
+    // Se guarda un flag para que el admin lo vea en la revision
+    const requiresTransportVerification = radius > 2
+
+    await saveStep({
+      base_address:   baseAddress.trim(),
+      base_lat:       baseLat,
+      base_lng:       baseLng,
+      coverage_radius: radius,
+      coverage_zones:  null, // limpiamos el campo anterior si existia
+      work_days:      selectedDays,
+      work_start:     workStart,
+      work_end:       workEnd,
+      requires_transport_verification: requiresTransportVerification,
+    }, 4)
   }
 
   const handleStep4 = async () => {
     const clabeClean = clabe.replace(/\s/g,'')
     if (!clabeClean && !profile?.clabe) { setError('La CLABE es requerida.'); return }
-    if (clabeClean && !validarCLABE(clabeClean)) { setClabeError('CLABE inválida. Verifica los 18 dígitos.'); return }
+    if (clabeClean && !validarCLABE(clabeClean)) { setClabeError('CLABE invalida. Verifica los 18 digitos.'); return }
     if (!clabeHolder.trim()) { setError('El nombre del titular es requerido.'); return }
     if (!bankName)           { setError('Selecciona un banco.'); return }
     const clabeToSave = clabeClean ? '****' + clabeClean.slice(14) : profile?.clabe
-    // onboarding_done: true aquí es el punto de verdad — el admin NO debe sobreescribirlo al aprobar
     await saveStep({
-      clabe: clabeToSave,
-      clabe_holder: clabeHolder.trim(),
-      bank_name: bankName,
+      clabe:          clabeToSave,
+      clabe_holder:   clabeHolder.trim(),
+      bank_name:      bankName,
       operator_status: 'pendiente',
       onboarding_done: true,
     }, 5)
@@ -266,7 +314,7 @@ export default function OnboardingView({ onComplete }) {
     { n:2, label:'Kit',      icon:'🧴' },
     { n:3, label:'Zona',     icon:'📍' },
     { n:4, label:'Pago',     icon:'💳' },
-    { n:5, label:'Revisión', icon:'✅' },
+    { n:5, label:'Revision', icon:'✅' },
   ]
 
   const inp = { padding:'13px 14px', borderRadius:10, border:'1.5px solid #e5e7eb', fontSize:16, outline:'none', width:'100%', boxSizing:'border-box', fontFamily:'inherit', color:'#1f2937', minHeight:50, background:'#fff' }
@@ -304,18 +352,18 @@ export default function OnboardingView({ onComplete }) {
         {step === 1 && (
           <div style={{ background:'#fff', borderRadius:16, padding: isMobile ? '20px 16px' : 28, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize:18, fontWeight:700, color:'#1f2937', margin:'0 0 6px' }}>👤 Datos personales</h2>
-            <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 24px' }}>Confirma o actualiza tu información de contacto.</p>
+            <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 24px' }}>Confirma o actualiza tu informacion de contacto.</p>
             <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
               <div>
                 <label style={lbl}>Nombre completo *</label>
                 <input style={inp} placeholder="Ej: Juan Alberto Mazariegos" value={fullName} onChange={e => setFullName(e.target.value)} />
               </div>
               <div>
-                <label style={lbl}>Teléfono celular (10 dígitos) *</label>
+                <label style={lbl}>Telefono celular (10 digitos) *</label>
                 <input style={inp} placeholder="Ej: 5512345678" type="tel" maxLength={10} value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g,''))} />
               </div>
               <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:10, padding:'12px 14px' }}>
-                <p style={{ fontSize:13, color:'#166534', margin:0, lineHeight:1.5 }}>📱 Usaremos este número para coordinar servicios y enviarte notificaciones importantes.</p>
+                <p style={{ fontSize:13, color:'#166534', margin:0, lineHeight:1.5 }}>📱 Usaremos este numero para coordinar servicios y enviarte notificaciones importantes.</p>
               </div>
             </div>
             {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', marginTop:16, color:'#dc2626', fontSize:14 }}>⚠️ {error}</div>}
@@ -334,7 +382,7 @@ export default function OnboardingView({ onComplete }) {
 
             <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:12, padding:'14px 16px', marginBottom:20 }}>
               <p style={{ fontSize:13, fontWeight:700, color:'#1e40af', margin:'0 0 10px' }}>✅ Materiales obligatorios:</p>
-              {['Shampoo para autos','Mínimo 4 microfibras limpias','Cubeta de doble balde','Aspiradora portátil'].map(m => (
+              {['Shampoo para autos','Minimo 4 microfibras limpias','Cubeta de doble balde','Aspiradora portatil'].map(m => (
                 <div key={m} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
                   <span style={{ color:'#3b82f6' }}>•</span>
                   <span style={{ fontSize:13, color:'#1e40af' }}>{m}</span>
@@ -351,7 +399,7 @@ export default function OnboardingView({ onComplete }) {
             ) : (
               <div style={{ width:'100%', height:160, background:'#f9fafb', borderRadius:12, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', marginBottom:14, border:'2px dashed #e5e7eb' }}>
                 <span style={{ fontSize:40 }}>📦</span>
-                <span style={{ fontSize:13, color:'#9ca3af', marginTop:8 }}>Aún no has subido la foto</span>
+                <span style={{ fontSize:13, color:'#9ca3af', marginTop:8 }}>Aun no has subido la foto</span>
               </div>
             )}
 
@@ -371,7 +419,7 @@ export default function OnboardingView({ onComplete }) {
             </label>
 
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setStep(1)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52 }}>← Atrás</button>
+              <button onClick={() => setStep(1)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52 }}>← Atras</button>
               <button onClick={handleStep2} disabled={saving || !kitPhotoUrl || uploadingKit}
                 style={{ flex:2, padding:'13px 0', background: saving || !kitPhotoUrl || uploadingKit ? '#9ca3af' : '#3b82f6', color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:700, cursor: saving || !kitPhotoUrl || uploadingKit ? 'not-allowed' : 'pointer', minHeight:52 }}>
                 {saving ? '⏳ Guardando...' : uploadingKit ? '⏳ Espera...' : 'Continuar →'}
@@ -380,34 +428,95 @@ export default function OnboardingView({ onComplete }) {
           </div>
         )}
 
-        {/* ── PASO 3 ── */}
+        {/* ── PASO 3 — ZONA DE TRABAJO (NUEVO: nacional con dirección base) ── */}
         {step === 3 && (
           <div style={{ background:'#fff', borderRadius:16, padding: isMobile ? '20px 16px' : 28, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize:18, fontWeight:700, color:'#1f2937', margin:'0 0 6px' }}>📍 Zona de trabajo</h2>
-            <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 20px' }}>Define dónde y cuándo puedes atender servicios.</p>
+            <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 20px' }}>Define desde donde operas y que tan lejos puedes ir a atender servicios.</p>
 
+            {/* Dirección base */}
             <div style={{ marginBottom:20 }}>
-              <label style={lbl}>Alcaldías / Municipios de cobertura * ({selectedZones.length} seleccionadas)</label>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-                {ZONAS.map(z => (
-                  <button key={z} onClick={() => toggleZone(z)}
-                    style={{ padding:'7px 14px', borderRadius:20, fontSize:13, fontWeight:600, cursor:'pointer', border:'none', transition:'all 0.15s', background: selectedZones.includes(z) ? '#3b82f6' : '#f3f4f6', color: selectedZones.includes(z) ? '#fff' : '#374151', minHeight:36 }}>
-                    {z}
-                  </button>
-                ))}
-              </div>
+              <label style={lbl}>Direccion o lugar de origen *</label>
+              <p style={{ fontSize:12, color:'#6b7280', margin:'0 0 10px' }}>
+                Escribe tu colonia, municipio o ciudad desde donde saldras a dar servicio. Puede ser toda Mexico.
+              </p>
+              <textarea
+                style={{ ...inp, height:80, resize:'vertical', fontSize:14 }}
+                placeholder="Ej: Colonia Roma Norte, Cuauhtemoc, CDMX  /  Monterrey, Nuevo Leon  /  Guadalajara, Jalisco"
+                value={baseAddress}
+                onChange={e => {
+                  setBaseAddress(e.target.value)
+                  // Si el usuario escribe a mano, limpiamos las coords para no guardar coords de otra dir
+                  setBaseLat(null)
+                  setBaseLng(null)
+                }}
+              />
+
+              {/* Botón geolocalización */}
+              <button
+                onClick={handleGeolocate}
+                disabled={geoLoading}
+                style={{ marginTop:10, width:'100%', padding:'12px 0', background: geoLoading ? '#f3f4f6' : '#eff6ff', border:'1.5px solid #bfdbfe', borderRadius:10, color: geoLoading ? '#9ca3af' : '#1e40af', fontSize:14, fontWeight:600, cursor: geoLoading ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, minHeight:48 }}>
+                {geoLoading ? (
+                  <>
+                    <div style={{ width:16, height:16, border:'2px solid #bfdbfe', borderTop:'2px solid #3b82f6', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+                    Obteniendo ubicacion...
+                  </>
+                ) : (
+                  <>📡 Usar mi ubicacion actual</>
+                )}
+              </button>
+
+              {geoError && (
+                <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'8px 12px', marginTop:8, color:'#dc2626', fontSize:13 }}>
+                  ⚠️ {geoError}
+                </div>
+              )}
+
+              {/* Confirmación si se obtuvo coords */}
+              {baseLat && baseLng && (
+                <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:8, padding:'8px 12px', marginTop:8, display:'flex', alignItems:'center', gap:8 }}>
+                  <span style={{ fontSize:14 }}>✅</span>
+                  <span style={{ fontSize:12, color:'#166534' }}>
+                    Ubicacion registrada: {Number(baseLat).toFixed(4)}, {Number(baseLng).toFixed(4)}
+                  </span>
+                </div>
+              )}
             </div>
 
+            {/* Slider de radio */}
             <div style={{ marginBottom:20 }}>
-              <label style={lbl}>Radio máximo de traslado: <strong>{radius} km</strong></label>
-              <input type="range" min={1} max={20} value={radius} onChange={e => setRadius(Number(e.target.value))} style={{ width:'100%', accentColor:'#3b82f6' }} />
+              <label style={lbl}>
+                Radio de cobertura: <strong>{radius} km</strong>
+                {radius > 2 && (
+                  <span style={{ fontSize:11, fontWeight:500, color:'#f59e0b', marginLeft:8 }}>
+                    ⚠️ Requiere verificacion de transporte
+                  </span>
+                )}
+              </label>
+              <input
+                type="range" min={1} max={50} value={radius}
+                onChange={e => setRadius(Number(e.target.value))}
+                style={{ width:'100%', accentColor:'#3b82f6', cursor:'pointer' }}
+              />
               <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'#9ca3af', marginTop:4 }}>
-                <span>1 km</span><span>20 km</span>
+                <span>1 km</span>
+                <span>50 km</span>
               </div>
+
+              {/* Aviso si radio > 2 km */}
+              {radius > 2 && (
+                <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'10px 14px', marginTop:10 }}>
+                  <p style={{ fontSize:13, color:'#92400e', margin:0, lineHeight:1.5 }}>
+                    🚗 Como tu radio es mayor a 2 km, el administrador debera verificar que cuentas con <strong>transporte propio</strong> antes de aprobar tu cuenta.
+                  </p>
+                </div>
+              )}
             </div>
 
+            {/* Dias disponibles */}
             <div style={{ marginBottom:20 }}>
-              <label style={lbl}>Días disponibles *</label>
+              <label style={lbl}>Dias disponibles *</label>
               <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
                 {DIAS.map(d => (
                   <button key={d} onClick={() => toggleDay(d)}
@@ -418,6 +527,7 @@ export default function OnboardingView({ onComplete }) {
               </div>
             </div>
 
+            {/* Horario */}
             <div style={{ display:'flex', gap:12, marginBottom:8 }}>
               <div style={{ flex:1 }}>
                 <label style={lbl}>Hora inicio *</label>
@@ -432,7 +542,7 @@ export default function OnboardingView({ onComplete }) {
             {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', marginBottom:12, color:'#dc2626', fontSize:14 }}>⚠️ {error}</div>}
 
             <div style={{ display:'flex', gap:10, marginTop:20 }}>
-              <button onClick={() => setStep(2)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52 }}>← Atrás</button>
+              <button onClick={() => setStep(2)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52 }}>← Atras</button>
               <button onClick={handleStep3} disabled={saving}
                 style={{ flex:2, padding:'13px 0', background: saving ? '#9ca3af' : '#3b82f6', color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:700, cursor: saving ? 'not-allowed' : 'pointer', minHeight:52 }}>
                 {saving ? '⏳ Guardando...' : 'Continuar →'}
@@ -445,15 +555,15 @@ export default function OnboardingView({ onComplete }) {
         {step === 4 && (
           <div style={{ background:'#fff', borderRadius:16, padding: isMobile ? '20px 16px' : 28, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize:18, fontWeight:700, color:'#1f2937', margin:'0 0 6px' }}>💳 Datos de pago</h2>
-            <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 20px' }}>Para recibir tus liquidaciones semanales vía transferencia SPEI.</p>
+            <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 20px' }}>Para recibir tus liquidaciones semanales via transferencia SPEI.</p>
             <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
               <div>
-                <label style={lbl}>CLABE interbancaria (18 dígitos) *</label>
+                <label style={lbl}>CLABE interbancaria (18 digitos) *</label>
                 <input style={{ ...inp, borderColor: clabeError ? '#fca5a5' : '#e5e7eb' }}
                   placeholder="Ej: 012345678901234567" type="tel" maxLength={18}
                   value={clabe} onChange={e => { setClabe(e.target.value.replace(/\D/g,'')); setClabeError('') }} />
                 {clabeError && <p style={{ fontSize:12, color:'#dc2626', margin:'4px 0 0' }}>⚠️ {clabeError}</p>}
-                {clabe.length === 18 && !clabeError && validarCLABE(clabe) && <p style={{ fontSize:12, color:'#10b981', margin:'4px 0 0' }}>✅ CLABE válida</p>}
+                {clabe.length === 18 && !clabeError && validarCLABE(clabe) && <p style={{ fontSize:12, color:'#10b981', margin:'4px 0 0' }}>✅ CLABE valida</p>}
                 {profile?.clabe && !clabe && <p style={{ fontSize:12, color:'#6b7280', margin:'4px 0 0' }}>CLABE registrada: {profile.clabe} — deja en blanco para mantenerla</p>}
               </div>
               <div>
@@ -469,14 +579,14 @@ export default function OnboardingView({ onComplete }) {
               </div>
             </div>
             <div style={{ background:'#fef9c3', border:'1px solid #fde68a', borderRadius:10, padding:'12px 14px', marginTop:16 }}>
-              <p style={{ fontSize:12, color:'#854d0e', margin:0, lineHeight:1.5 }}>🔒 Tus datos bancarios se almacenan de forma segura. Solo mostramos los últimos 4 dígitos de tu CLABE. Las liquidaciones se realizan cada lunes por la semana anterior.</p>
+              <p style={{ fontSize:12, color:'#854d0e', margin:0, lineHeight:1.5 }}>🔒 Tus datos bancarios se almacenan de forma segura. Solo mostramos los ultimos 4 digitos de tu CLABE. Las liquidaciones se realizan cada lunes por la semana anterior.</p>
             </div>
             {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', marginTop:16, color:'#dc2626', fontSize:14 }}>⚠️ {error}</div>}
             <div style={{ display:'flex', gap:10, marginTop:20 }}>
-              <button onClick={() => setStep(3)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52 }}>← Atrás</button>
+              <button onClick={() => setStep(3)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52 }}>← Atras</button>
               <button onClick={handleStep4} disabled={saving}
                 style={{ flex:2, padding:'13px 0', background: saving ? '#9ca3af' : '#10b981', color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:700, cursor: saving ? 'not-allowed' : 'pointer', minHeight:52 }}>
-                {saving ? '⏳ Enviando...' : '✅ Enviar para revisión'}
+                {saving ? '⏳ Enviando...' : '✅ Enviar para revision'}
               </button>
             </div>
           </div>
@@ -487,15 +597,15 @@ export default function OnboardingView({ onComplete }) {
           <div style={{ background:'#fff', borderRadius:16, padding: isMobile ? '28px 20px' : 40, boxShadow:'0 2px 12px rgba(0,0,0,0.06)', textAlign:'center' }}>
             <div style={{ fontSize:64, marginBottom:16 }}>🎉</div>
             <h2 style={{ fontSize:22, fontWeight:800, color:'#1f2937', margin:'0 0 12px' }}>¡Registro completado!</h2>
-            <p style={{ fontSize:15, color:'#374151', margin:'0 0 8px', lineHeight:1.6 }}>Tu solicitud está siendo revisada por nuestro equipo.</p>
-            <p style={{ fontSize:14, color:'#6b7280', margin:'0 0 24px', lineHeight:1.6 }}>Recibirás una notificación en máximo <strong>4 horas hábiles</strong>. Una vez aprobado podrás empezar a recibir servicios.</p>
+            <p style={{ fontSize:15, color:'#374151', margin:'0 0 8px', lineHeight:1.6 }}>Tu solicitud esta siendo revisada por nuestro equipo.</p>
+            <p style={{ fontSize:14, color:'#6b7280', margin:'0 0 24px', lineHeight:1.6 }}>Recibiras una notificacion en maximo <strong>4 horas habiles</strong>. Una vez aprobado podras empezar a recibir servicios.</p>
 
             <div style={{ background:'#f9fafb', borderRadius:12, padding:'16px 20px', marginBottom:24, textAlign:'left' }}>
               <p style={{ fontSize:13, fontWeight:700, color:'#374151', margin:'0 0 12px' }}>📋 Estado de tu solicitud:</p>
               {[
                 { label:'Datos personales', done: true },
                 { label:'Foto del kit',     done: !!profile?.kit_photo_url },
-                { label:'Zona de trabajo',  done: !!profile?.coverage_zones?.length },
+                { label:'Zona de trabajo',  done: !!profile?.base_address },
                 { label:'Datos bancarios',  done: !!profile?.clabe },
               ].map(item => (
                 <div key={item.label} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
@@ -508,7 +618,7 @@ export default function OnboardingView({ onComplete }) {
 
             {profile?.operator_status === 'aprobado' && (
               <div style={{ background:'#f0fdf4', border:'1.5px solid #bbf7d0', borderRadius:12, padding:'14px 18px', marginBottom:20 }}>
-                <p style={{ fontSize:15, fontWeight:700, color:'#166534', margin:0 }}>🎉 ¡Tu cuenta está activa! Ya puedes recibir servicios.</p>
+                <p style={{ fontSize:15, fontWeight:700, color:'#166534', margin:0 }}>🎉 ¡Tu cuenta esta activa! Ya puedes recibir servicios.</p>
               </div>
             )}
             {profile?.operator_status === 'rechazado' && profile?.rejection_reason && (
