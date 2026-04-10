@@ -198,15 +198,18 @@ const AdminView = () => {
     setReviewError('');
     try {
       const updatePayload = {
-        operator_status: reviewAction === 'approve' ? 'aprobado' : 'rechazado',
-        // Al aprobar: onboarding_done = false → operador debe completar onboarding
-        // Al rechazar: onboarding_done = false (puede reintentar)
-        onboarding_done: false,
-        status: reviewAction === 'approve' ? 'activo' : undefined,
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: (await supabase.auth.getUser()).data.user?.id || null,
-        ...(reviewAction === 'reject' ? { rejection_reason: rejectionReason.trim() } : {})
-      };
+  operator_status: reviewAction === 'approve' ? 'aprobado' : 'rechazado',
+  // onboarding_done NO se toca aquí — el operador ya lo puso en true en paso 4
+  // Solo en rechazo lo reseteamos para que pueda corregir y reenviar
+  ...(reviewAction === 'reject' ? {
+    onboarding_done: false,
+    onboarding_step: 1,
+    rejection_reason: rejectionReason.trim()
+  } : {}),
+  status: reviewAction === 'approve' ? 'activo' : undefined,
+  reviewed_at: new Date().toISOString(),
+  reviewed_by: (await supabase.auth.getUser()).data.user?.id || null,
+}
       const { error } = await supabase.from('profiles').update(updatePayload).eq('id', reviewingOp.id);
       if (error) throw error;
 
