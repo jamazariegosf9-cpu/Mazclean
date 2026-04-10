@@ -1,16 +1,16 @@
 // ============================================================
-// MAZ CLEAN — AuthModal
+// MAZ CLEAN -- AuthModal
 // src/components/auth/AuthModal.jsx
-// Maneja: Login · Registro Cliente · Registro Operador · Recuperar contraseña
+// Maneja: Login - Registro Cliente - Registro Operador - Recuperar contrasena
 // ============================================================
 import { useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 
-const SUPABASE_URL     = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-// ── Estilos internos ──────────────────────────────────────────
+// Estilos internos
 const S = {
   overlay: {
     position: 'fixed', inset: 0, zIndex: 1000,
@@ -150,7 +150,7 @@ const S = {
   },
 }
 
-// ── Componente principal ──────────────────────────────────────
+// Componente principal
 export default function AuthModal({ onClose, defaultTab = 'login' }) {
   const { signIn, signUp, signInWithGoogle, resetPassword } = useAuth()
 
@@ -169,7 +169,7 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
 
   const reset = () => { setError(''); setSuccess('') }
 
-  // ── LOGIN ─────────────────────────────────────────────────
+  // LOGIN
   const handleLogin = async (e) => {
     e.preventDefault()
     reset()
@@ -181,33 +181,37 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
     onClose()
   }
 
-  // ── REGISTRO CLIENTE ──────────────────────────────────────
+  // REGISTRO CLIENTE
   const handleRegister = async (e) => {
     e.preventDefault()
     reset()
     if (!fullName || !email || !password || !confirm)
       return setError('Completa todos los campos.')
     if (password !== confirm)
-      return setError('Las contraseñas no coinciden.')
+      return setError('Las contrasenas no coinciden.')
     if (password.length < 8)
-      return setError('La contraseña debe tener al menos 8 caracteres.')
+      return setError('La contrasena debe tener al menos 8 caracteres.')
     setLoading(true)
     const { error } = await signUp({ email, password, fullName, phone })
     setLoading(false)
     if (error) return setError(translateError(error.message))
-    setSuccess('¡Cuenta creada! Revisa tu correo para confirmar tu registro.')
+    setSuccess('Cuenta creada! Revisa tu correo para confirmar tu registro.')
   }
 
-  // ── REGISTRO OPERADOR ─────────────────────────────────────
+  // REGISTRO OPERADOR
+  // CAMBIO: se agrega await delay(800) antes del signIn para asegurar que
+  // el trigger handle_new_user y el upsert del perfil terminen antes de
+  // intentar cargar el profile. Sin este delay, loadProfile puede devolver
+  // null y App.jsx no detecta role='operador' para ir al onboarding.
   const handleRegisterOperator = async (e) => {
     e.preventDefault()
     reset()
     if (!fullName || !email || !password || !confirm || !phone)
       return setError('Todos los campos son obligatorios para operadores.')
     if (password !== confirm)
-      return setError('Las contraseñas no coinciden.')
+      return setError('Las contrasenas no coinciden.')
     if (password.length < 8)
-      return setError('La contraseña debe tener al menos 8 caracteres.')
+      return setError('La contrasena debe tener al menos 8 caracteres.')
     setLoading(true)
     try {
       // 1. Crear usuario en auth con role operador en metadata
@@ -217,9 +221,10 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
       })
       if (signUpError) throw signUpError
 
-      // 2. Insertar profile con role operador
+      // 2. Insertar profile con role operador directamente
+      //    No dependemos solo del trigger - hacemos upsert explicitamente
       if (data?.user?.id) {
-        await supabase.from('profiles').upsert({
+        const { error: profileError } = await supabase.from('profiles').upsert({
           id: data.user.id,
           full_name: fullName,
           phone,
@@ -230,20 +235,26 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
           status: 'activo',
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' })
+        if (profileError) console.warn('[AuthModal] upsert profile error:', profileError.message)
       }
 
-      // 3. Auto-login para ir directo al onboarding
+      // 3. CAMBIO: delay de 800ms para que Supabase termine de procesar
+      //    el trigger y el upsert antes de intentar el login
+      await new Promise(resolve => setTimeout(resolve, 800))
+
+      // 4. Auto-login - AuthContext.signIn usa loadProfileWithRetry (3 reintentos)
+      //    para manejar casos donde el profile aun no esta disponible
       const { error: loginError } = await signIn({ email, password })
       if (loginError) {
-        // Si el email no está confirmado, pedir que lo confirme
         if (loginError.message.includes('Email not confirmed')) {
-          setSuccess('¡Cuenta creada! Confirma tu correo electrónico y luego inicia sesión para completar tu registro.')
+          setSuccess('Cuenta creada! Confirma tu correo electronico y luego inicia sesion para completar tu registro de operador.')
         } else {
-          setSuccess('¡Cuenta creada! Inicia sesión para completar tu registro de operador.')
+          setSuccess('Cuenta creada! Inicia sesion para completar tu registro de operador.')
         }
         return
       }
-      // Login exitoso → App.jsx detecta onboarding_done=false y redirige al onboarding
+      // Login exitoso - App.jsx detecta role='operador' y onboarding_done=false
+      // y renderiza OnboardingView automaticamente
       onClose()
     } catch (err) {
       setError(translateError(err.message))
@@ -252,19 +263,19 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
     }
   }
 
-  // ── RECUPERAR CONTRASEÑA ──────────────────────────────────
+  // RECUPERAR CONTRASENA
   const handleForgot = async (e) => {
     e.preventDefault()
     reset()
-    if (!email) return setError('Ingresa tu correo electrónico.')
+    if (!email) return setError('Ingresa tu correo electronico.')
     setLoading(true)
     const { error } = await resetPassword(email)
     setLoading(false)
     if (error) return setError(translateError(error.message))
-    setSuccess('Te enviamos un enlace para restablecer tu contraseña.')
+    setSuccess('Te enviamos un enlace para restablecer tu contrasena.')
   }
 
-  // ── GOOGLE ────────────────────────────────────────────────
+  // GOOGLE
   const handleGoogle = async () => {
     reset()
     const { error } = await signInWithGoogle()
@@ -272,23 +283,23 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
   }
 
   const translateError = (msg) => {
-    if (msg.includes('Invalid login credentials')) return 'Correo o contraseña incorrectos.'
-    if (msg.includes('Email not confirmed'))       return 'Confirma tu correo antes de iniciar sesión.'
-    if (msg.includes('User already registered'))   return 'Este correo ya está registrado.'
-    if (msg.includes('Password should be'))        return 'La contraseña debe tener al menos 6 caracteres.'
+    if (msg.includes('Invalid login credentials')) return 'Correo o contrasena incorrectos.'
+    if (msg.includes('Email not confirmed'))       return 'Confirma tu correo antes de iniciar sesion.'
+    if (msg.includes('User already registered'))   return 'Este correo ya esta registrado.'
+    if (msg.includes('Password should be'))        return 'La contrasena debe tener al menos 6 caracteres.'
     if (msg.includes('rate limit'))                return 'Demasiados intentos. Espera un momento.'
     return msg
   }
 
-  // ── Formulario de campos comunes ──────────────────────────
-  const renderPasswordField = (label = 'Contraseña', autocomplete = 'new-password') => (
+  // Formulario de campo contrasena con indicador de fortaleza
+  const renderPasswordField = (label = 'Contrasena', autocomplete = 'new-password') => (
     <div style={S.field}>
       <label style={S.label}>{label}</label>
       <div style={{ position: 'relative' }}>
         <input
           style={{ ...S.input, paddingRight: 44 }}
           type={showPass ? 'text' : 'password'}
-          placeholder="Mínimo 8 caracteres"
+          placeholder="Minimo 8 caracteres"
           value={password}
           onChange={e => setPassword(e.target.value)}
           autoComplete={autocomplete}
@@ -323,7 +334,7 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
   return (
     <div style={S.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div style={S.card}>
-        <button style={S.closeBtn} onClick={onClose}>✕</button>
+        <button style={S.closeBtn} onClick={onClose}>x</button>
 
         {/* Logo */}
         <div style={S.logo}>
@@ -331,17 +342,17 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
           <span style={S.logoText}>Maz Clean</span>
         </div>
 
-        {/* ── FORGOT PASSWORD ── */}
+        {/* FORGOT PASSWORD */}
         {tab === 'forgot' ? (
           <>
-            <h2 style={S.title}>Recuperar contraseña</h2>
+            <h2 style={S.title}>Recuperar contrasena</h2>
             <p style={S.subtitle}>Te enviaremos un enlace a tu correo</p>
-            {error && <div style={S.errorBox}>{error}</div>}
+            {error   && <div style={S.errorBox}>{error}</div>}
             {success && <div style={S.successBox}>{success}</div>}
             {!success && (
               <form onSubmit={handleForgot}>
                 <div style={S.field}>
-                  <label style={S.label}>Correo electrónico</label>
+                  <label style={S.label}>Correo electronico</label>
                   <input style={S.input} type="email" placeholder="tu@correo.com"
                     value={email} onChange={e => setEmail(e.target.value)} />
                 </div>
@@ -352,19 +363,19 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
             )}
             <p style={S.switchText}>
               <button style={S.switchLink} onClick={() => { setTab('login'); reset() }}>
-                ← Volver al inicio de sesión
+                Volver al inicio de sesion
               </button>
             </p>
           </>
 
         ) : tab === 'operator' ? (
-          /* ── REGISTRO OPERADOR ── */
+          /* REGISTRO OPERADOR */
           <>
-            <h2 style={S.title}>Únete como Operador</h2>
+            <h2 style={S.title}>Unete como Operador</h2>
             <p style={S.subtitle}>Registra tu cuenta para ofrecer servicios de lavado</p>
 
             <div style={S.infoBox}>
-              🚗 Después de crear tu cuenta completarás un proceso de registro de 5 pasos. Tu perfil será revisado por el administrador antes de poder recibir servicios.
+              🚗 Despues de crear tu cuenta completaras un proceso de registro de 5 pasos. Tu perfil sera revisado por el administrador antes de poder recibir servicios.
             </div>
 
             {error && <div style={S.errorBox}>{error}</div>}
@@ -372,7 +383,7 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
               <>
                 <div style={S.successBox}>{success}</div>
                 <button style={S.btnPrimary} onClick={() => { setTab('login'); reset(); setSuccess('') }}>
-                  Iniciar sesión →
+                  Iniciar sesion
                 </button>
               </>
             ) : (
@@ -383,22 +394,22 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
                     value={fullName} onChange={e => setFullName(e.target.value)} autoComplete="name" />
                 </div>
                 <div style={S.field}>
-                  <label style={S.label}>Teléfono *</label>
+                  <label style={S.label}>Telefono *</label>
                   <input style={S.input} type="tel" placeholder="+52 55 1234 5678"
                     value={phone} onChange={e => setPhone(e.target.value)} autoComplete="tel" />
                 </div>
                 <div style={S.field}>
-                  <label style={S.label}>Correo electrónico *</label>
+                  <label style={S.label}>Correo electronico *</label>
                   <input style={S.input} type="email" placeholder="tu@correo.com"
                     value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
                 </div>
-                {renderPasswordField('Contraseña *')}
+                {renderPasswordField('Contrasena *')}
                 <div style={S.field}>
-                  <label style={S.label}>Confirmar contraseña *</label>
+                  <label style={S.label}>Confirmar contrasena *</label>
                   <input
                     style={{ ...S.input, borderColor: confirm && confirm !== password ? 'rgba(248,113,113,0.6)' : 'rgba(255,255,255,0.10)' }}
                     type={showPass ? 'text' : 'password'}
-                    placeholder="Repite tu contraseña"
+                    placeholder="Repite tu contrasena"
                     value={confirm}
                     onChange={e => setConfirm(e.target.value)}
                     autoComplete="new-password"
@@ -409,37 +420,43 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
                   opacity: loading ? 0.6 : 1,
                   cursor: loading ? 'not-allowed' : 'pointer',
                 }} type="submit" disabled={loading}>
-                  {loading ? 'Creando cuenta...' : '🚗 Registrarme como Operador →'}
+                  {loading ? 'Creando cuenta...' : '🚗 Registrarme como Operador'}
                 </button>
               </form>
             )}
             <p style={S.switchText}>
-              ¿Ya tienes cuenta?{' '}
+              Ya tienes cuenta?{' '}
               <button style={S.switchLink} onClick={() => { setTab('login'); reset() }}>
-                Iniciar sesión
+                Iniciar sesion
               </button>
             </p>
           </>
 
         ) : (
-          /* ── LOGIN / REGISTRO CLIENTE ── */
+          /* LOGIN / REGISTRO CLIENTE */
           <>
             <div style={S.tabs}>
-              <button style={S.tab(tab === 'login')}    onClick={() => { setTab('login');    reset() }}>Iniciar sesión</button>
-              <button style={S.tab(tab === 'register' || tab === 'operator')} onClick={() => { setTab('register'); reset() }}>Registrarme</button>
+              <button style={S.tab(tab === 'login')}
+                onClick={() => { setTab('login'); reset() }}>
+                Iniciar sesion
+              </button>
+              <button style={S.tab(tab === 'register' || tab === 'operator')}
+                onClick={() => { setTab('register'); reset() }}>
+                Registrarme
+              </button>
             </div>
 
             {/* Selector de tipo de cuenta al registrarse */}
             {(tab === 'register' || tab === 'operator') && !success && (
               <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
                 <button onClick={() => { setTab('register'); reset() }}
-                  style={{ flex: 1, padding: '14px 8px', borderRadius: 12, border: `2px solid ${tab === 'register' ? '#00C8FF' : 'rgba(255,255,255,0.10)'}`, background: tab === 'register' ? 'rgba(0,200,255,0.10)' : 'rgba(255,255,255,0.03)', color: tab === 'register' ? '#00C8FF' : '#8CA0BF', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+                  style={{ flex: 1, padding: '14px 8px', borderRadius: 12, border: '2px solid ' + (tab === 'register' ? '#00C8FF' : 'rgba(255,255,255,0.10)'), background: tab === 'register' ? 'rgba(0,200,255,0.10)' : 'rgba(255,255,255,0.03)', color: tab === 'register' ? '#00C8FF' : '#8CA0BF', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
                   <div style={{ fontSize: 24, marginBottom: 6 }}>👤</div>
                   <div style={{ fontWeight: 700, fontSize: 13 }}>Cliente</div>
                   <div style={{ fontSize: 11, marginTop: 3, opacity: 0.8 }}>Reservar lavados</div>
                 </button>
                 <button onClick={() => { setTab('operator'); reset() }}
-                  style={{ flex: 1, padding: '14px 8px', borderRadius: 12, border: `2px solid ${tab === 'operator' ? '#3b82f6' : 'rgba(255,255,255,0.10)'}`, background: tab === 'operator' ? 'rgba(59,130,246,0.10)' : 'rgba(255,255,255,0.03)', color: tab === 'operator' ? '#60a5fa' : '#8CA0BF', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+                  style={{ flex: 1, padding: '14px 8px', borderRadius: 12, border: '2px solid ' + (tab === 'operator' ? '#3b82f6' : 'rgba(255,255,255,0.10)'), background: tab === 'operator' ? 'rgba(59,130,246,0.10)' : 'rgba(255,255,255,0.03)', color: tab === 'operator' ? '#60a5fa' : '#8CA0BF', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
                   <div style={{ fontSize: 24, marginBottom: 6 }}>🚗</div>
                   <div style={{ fontWeight: 700, fontSize: 13 }}>Operador</div>
                   <div style={{ fontSize: 11, marginTop: 3, opacity: 0.8 }}>Ofrecer servicios</div>
@@ -454,16 +471,16 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
             {tab === 'login' && (
               <form onSubmit={handleLogin}>
                 <div style={S.field}>
-                  <label style={S.label}>Correo electrónico</label>
+                  <label style={S.label}>Correo electronico</label>
                   <input style={S.input} type="email" placeholder="tu@correo.com"
                     value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
                 </div>
                 <div style={S.field}>
                   <label style={S.label}>
-                    Contraseña
+                    Contrasena
                     <button type="button" style={S.forgotLink}
                       onClick={() => { setTab('forgot'); reset() }}>
-                      ¿Olvidaste tu contraseña?
+                      Olvidaste tu contrasena?
                     </button>
                   </label>
                   <div style={{ position: 'relative' }}>
@@ -490,10 +507,8 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
                   opacity: loading ? 0.6 : 1,
                   cursor: loading ? 'not-allowed' : 'pointer',
                 }} type="submit" disabled={loading}>
-                  {loading ? 'Iniciando sesión...' : 'Iniciar sesión →'}
+                  {loading ? 'Iniciando sesion...' : 'Iniciar sesion'}
                 </button>
-
-
               </form>
             )}
 
@@ -506,39 +521,36 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
                     value={fullName} onChange={e => setFullName(e.target.value)} autoComplete="name" />
                 </div>
                 <div style={S.field}>
-                  <label style={S.label}>Correo electrónico</label>
+                  <label style={S.label}>Correo electronico</label>
                   <input style={S.input} type="email" placeholder="tu@correo.com"
                     value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
                 </div>
                 <div style={S.field}>
-                  <label style={S.label}>Teléfono (opcional)</label>
+                  <label style={S.label}>Telefono (opcional)</label>
                   <input style={S.input} type="tel" placeholder="+52 55 1234 5678"
                     value={phone} onChange={e => setPhone(e.target.value)} autoComplete="tel" />
                 </div>
                 {renderPasswordField()}
                 <div style={S.field}>
-                  <label style={S.label}>Confirmar contraseña</label>
+                  <label style={S.label}>Confirmar contrasena</label>
                   <input
                     style={{ ...S.input, borderColor: confirm && confirm !== password ? 'rgba(248,113,113,0.6)' : 'rgba(255,255,255,0.10)' }}
                     type={showPass ? 'text' : 'password'}
-                    placeholder="Repite tu contraseña"
+                    placeholder="Repite tu contrasena"
                     value={confirm}
                     onChange={e => setConfirm(e.target.value)}
                     autoComplete="new-password"
                   />
                 </div>
                 <p style={{ fontSize: 12, color: '#8CA0BF', marginBottom: 16, lineHeight: 1.6 }}>
-                  Al registrarte aceptas los{' '}
-                  <span style={{ color: '#00C8FF', cursor: 'pointer' }}>Términos de servicio</span>
-                  {' '}y la{' '}
-                  <span style={{ color: '#00C8FF', cursor: 'pointer' }}>Política de privacidad</span>.
+                  Al registrarte aceptas los Terminos de servicio y la Politica de privacidad.
                 </p>
                 <button style={{
                   ...S.btnPrimary,
                   opacity: loading ? 0.6 : 1,
                   cursor: loading ? 'not-allowed' : 'pointer',
                 }} type="submit" disabled={loading}>
-                  {loading ? 'Creando cuenta...' : 'Crear cuenta →'}
+                  {loading ? 'Creando cuenta...' : 'Crear cuenta'}
                 </button>
               </form>
             )}
@@ -547,7 +559,7 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
               <>
                 <div style={S.divider}>
                   <div style={S.dividerLine}/>
-                  <span>o continúa con</span>
+                  <span>o continua con</span>
                   <div style={S.dividerLine}/>
                 </div>
                 <button style={S.btnGoogle} onClick={handleGoogle}>
