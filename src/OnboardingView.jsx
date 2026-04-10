@@ -213,8 +213,18 @@ export default function OnboardingView({ onComplete }) {
         xhr.send(compressed)
       })
 
-      const publicUrl = `${supabaseUrl}/storage/v1/object/public/service-photos/${path}`
-      setKitPhotoUrl(publicUrl)
+      // Guardamos el path relativo en DB inmediatamente (igual que la version original)
+      // Esto evita perder la foto si el usuario recarga antes de presionar Continuar
+      addLog('Guardando en base de datos...')
+      const { error: dbErr } = await supabase
+        .from('profiles')
+        .update({ kit_photo_url: path, updated_at: new Date().toISOString() })
+        .eq('id', user.id)
+      if (dbErr) throw dbErr
+
+      // Guardamos el path relativo en estado local para mostrarlo
+      // getPhotoStorageUrl() en AdminView lo convierte a URL publica
+      setKitPhotoUrl(path)
       addLog('Completado')
     } catch (e) {
       addLog(`ERROR: ${e.name} — ${e.message}`)
@@ -226,7 +236,9 @@ export default function OnboardingView({ onComplete }) {
 
   const handleStep2 = async () => {
     if (!kitPhotoUrl) { setError('Sube una foto de tu kit de materiales.'); return }
-    await saveStep({ kit_photo_url: kitPhotoUrl }, 3)
+    // kit_photo_url ya fue guardado en DB dentro de handleKitUpload
+    // solo actualizamos el step sin sobreescribir la URL
+    await saveStep({}, 3)
   }
 
   // ── GEOLOCALIZACIÓN ────────────────────────────────────────────
