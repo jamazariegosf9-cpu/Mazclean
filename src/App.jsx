@@ -132,7 +132,6 @@ function Navbar({ view, setView, onShowAuth }) {
         <div style={{ position: 'fixed', top: 56, left: 0, right: 0, bottom: 0, zIndex: 99, background: 'rgba(0,0,0,0.5)' }} onClick={() => setMenuOpen(false)}>
           <div style={{ background: 'rgba(5,10,20,0.98)', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '8px 0' }} onClick={e => e.stopPropagation()}>
 
-            {/* Links de navegación */}
             {navLinks.map(([id, label]) => (
               <button key={id + label} onClick={() => handleNav(id)}
                 style={{ display: 'block', width: '100%', padding: '14px 20px', border: 'none', cursor: 'pointer', background: view === id ? 'rgba(0,200,255,0.10)' : 'transparent', color: view === id ? '#00C8FF' : '#F0F6FF', fontWeight: view === id ? 700 : 500, fontSize: 15, textAlign: 'left', borderLeft: view === id ? '3px solid #00C8FF' : '3px solid transparent' }}>
@@ -140,10 +139,8 @@ function Navbar({ view, setView, onShowAuth }) {
               </button>
             ))}
 
-            {/* Divider */}
             <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '8px 0' }} />
 
-            {/* Usuario logueado */}
             {user ? (
               <div style={{ padding: '8px 20px' }}>
                 {roleBadge && (
@@ -255,11 +252,18 @@ function BookingViewProtected({ onNavigate, onShowAuth }) {
 }
 
 function AppInner() {
-  const { loading, user, profile, signOut } = useAuth()
+  const { loading, user, profile, signOut, loadProfile: refreshProfile } = useAuth()
   const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
 
   const trackingId = getTrackingId()
+
+  // FIX 3: función nombrada — evita syntax error de async inline en JSX
+  // refreshProfile actualiza el state de AuthContext y App re-renderiza
+  // automáticamente evaluando los guards con el profile fresco de Supabase
+  const handleOnboardingComplete = () => {
+    refreshProfile()
+  }
 
   useEffect(() => {
     const style = document.createElement('style')
@@ -281,12 +285,12 @@ function AppInner() {
     )
   }
 
-  // ── Esperar a que loading termine (AuthContext carga user+profile juntos) ──
+  // ── Esperar a que loading termine ──────────────────────────────
   if (loading || (user && !profile)) {
     return <div style={{ minHeight: '100vh', background: '#050A14' }} />
   }
 
-  // ── FLUJO OPERADOR — cada estado tiene su propia pantalla ──────
+  // ── FLUJO OPERADOR ─────────────────────────────────────────────
   if (profile?.role === 'operador') {
 
     // 1. Desactivado
@@ -303,16 +307,17 @@ function AppInner() {
       )
     }
 
-    // 2. Sin onboarding — registro obligatorio
+    // 2. Sin onboarding
+    // FIX 4: !onboarding_done atrapa false, null y undefined
     if (!profile.onboarding_done) {
       return (
         <div style={{ minHeight: '100vh', background: '#050A14' }}>
-          <OnboardingView onComplete={() => window.location.reload()} />
+          <OnboardingView onComplete={handleOnboardingComplete} />
         </div>
       )
     }
 
-    // 3. Onboarding completo — pendiente de aprobación del Admin
+    // 3. Pendiente de aprobación
     if (profile.operator_status === 'pending_review' || profile.operator_status === 'pendiente') {
       return (
         <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>

@@ -30,18 +30,12 @@ function useIsMobile() {
   return isMobile
 }
 
-// ── Compresión robusta con múltiples fallbacks ─────────────────
-// Intenta OffscreenCanvas → canvas DOM → archivo original
-// Cada paso tiene timeout de 5s para no bloquear el hilo principal
 async function compressForMobile(file) {
-  // Archivos pequeños van directo
   if (file.size < 500 * 1024) return file
-
   const MAX     = 1000
   const QUALITY = 0.78
   const TIMEOUT = 5000
 
-  // ── Intento 1: OffscreenCanvas (Chrome Android moderno) ──────
   if (typeof OffscreenCanvas !== 'undefined') {
     try {
       const bitmap = await Promise.race([
@@ -62,15 +56,12 @@ async function compressForMobile(file) {
         new Promise((_, r) => setTimeout(() => r(new Error('timeout')), TIMEOUT)),
       ])
       if (blob && blob.size > 0) return blob
-    } catch { /* continuar al siguiente intento */ }
+    } catch { /* continuar */ }
   }
 
-  // ── Intento 2: canvas DOM con FileReader (máxima compatibilidad) ──
   try {
     const blob = await new Promise((resolve) => {
-      // Timeout de seguridad total: 10s → devuelve original
       const safeTimer = setTimeout(() => resolve(file), 10000)
-
       const reader = new FileReader()
       reader.onload = (e) => {
         const img = new Image()
@@ -86,8 +77,6 @@ async function compressForMobile(file) {
             const ctx = canvas.getContext('2d')
             if (!ctx) { clearTimeout(safeTimer); resolve(file); return }
             ctx.drawImage(img, 0, 0, w, h)
-
-            // toBlob con timeout propio de 5s
             let blobDone = false
             canvas.toBlob((b) => {
               if (blobDone) return
@@ -95,11 +84,9 @@ async function compressForMobile(file) {
               clearTimeout(safeTimer)
               resolve(b && b.size > 0 ? b : file)
             }, 'image/jpeg', QUALITY)
-
             setTimeout(() => {
               if (!blobDone) { blobDone = true; clearTimeout(safeTimer); resolve(file) }
             }, 5000)
-
           } catch { clearTimeout(safeTimer); resolve(file) }
         }
         img.onerror = () => { clearTimeout(safeTimer); resolve(file) }
@@ -110,12 +97,13 @@ async function compressForMobile(file) {
     })
     return blob
   } catch {
-    return file // último fallback: subir original sin comprimir
+    return file
   }
 }
 
 export default function OnboardingView({ onComplete }) {
-  const { user, profile } = useAuth()
+  // ── FIX 2: importar updateProfile para mantener el contexto sincronizado ──
+  const { user, profile, updateProfile } = useAuth()
   const isMobile          = useIsMobile()
   const [step, setStep]   = useState(profile?.onboarding_step || 1)
   const [saving, setSaving] = useState(false)
@@ -153,12 +141,17 @@ export default function OnboardingView({ onComplete }) {
     setDebugLog(prev => [...prev.slice(-9), line])
   }
 
+  // ── FIX 2 CORE: saveStep ahora usa updateProfile del contexto ──────────────
+  // Esto actualiza el profile en memoria de AuthContext en cada paso,
+  // evitando que App.jsx vea datos obsoletos al evaluar los guards.
   const saveStep = async (data, next) => {
     setSaving(true); setError('')
     try {
-      const { error: e } = await supabase.from('profiles')
-        .update({ ...data, onboarding_step: next, updated_at: new Date().toISOString() })
-        .eq('id', user.id)
+      const { error: e } = await updateProfile({
+        ...data,
+        onboarding_step: next,
+        updated_at: new Date().toISOString(),
+      })
       if (e) throw e
       setStep(next)
     } catch (e) { setError(e.message) }
@@ -171,7 +164,7 @@ export default function OnboardingView({ onComplete }) {
     await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,'') }, 2)
   }
 
-  // ── Token de sesión cacheado al montar el componente ────────
+  // ── Token de sesión cacheado al montar el componente ────────────────────────
   const [sessionToken, setSessionToken] = useState(null)
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -183,7 +176,6 @@ export default function OnboardingView({ onComplete }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  // ── Upload con XHR puro + token cacheado ─────────────────────
   const handleKitUpload = async (file) => {
     if (!file) return
     setUploadingKit(true)
@@ -191,17 +183,13 @@ export default function OnboardingView({ onComplete }) {
     setDebugLog([])
     try {
       addLog(`Archivo: ${(file.size/1024).toFixed(0)} KB | ${file.type || 'image/jpeg'}`)
-
       if (file.size > 15 * 1024 * 1024) {
         throw new Error('La foto pesa más de 15 MB. Usa una foto de menor resolución.')
       }
-
-      // Comprimir
       addLog('Comprimiendo...')
       const compressed = await compressForMobile(file)
       addLog(`Comprimido: ${(compressed.size/1024).toFixed(0)} KB`)
 
-      // Token — usar el cacheado al montar, nunca await dentro del upload
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
       const token = sessionToken || supabaseKey
@@ -216,8 +204,7 @@ export default function OnboardingView({ onComplete }) {
         xhr.setRequestHeader('apikey', supabaseKey)
         xhr.setRequestHeader('Content-Type', 'image/jpeg')
         xhr.setRequestHeader('x-upsert', 'true')
-        xhr.timeout = 60000 // 60s
-
+        xhr.timeout = 60000
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) addLog(`Progreso: ${Math.round(e.loaded/e.total*100)}%`)
         }
@@ -234,7 +221,6 @@ export default function OnboardingView({ onComplete }) {
       const publicUrl = `${supabaseUrl}/storage/v1/object/public/service-photos/${path}`
       setKitPhotoUrl(publicUrl)
       addLog('✅ Completado')
-
     } catch (e) {
       addLog(`ERROR: ${e.name} — ${e.message}`)
       setError(e.message || 'Error al subir. Intenta de nuevo.')
@@ -265,7 +251,14 @@ export default function OnboardingView({ onComplete }) {
     if (!clabeHolder.trim()) { setError('El nombre del titular es requerido.'); return }
     if (!bankName)           { setError('Selecciona un banco.'); return }
     const clabeToSave = clabeClean ? '****' + clabeClean.slice(14) : profile?.clabe
-    await saveStep({ clabe: clabeToSave, clabe_holder: clabeHolder.trim(), bank_name: bankName, operator_status: 'pendiente', onboarding_done: true }, 5)
+    // onboarding_done: true aquí es el punto de verdad — el admin NO debe sobreescribirlo al aprobar
+    await saveStep({
+      clabe: clabeToSave,
+      clabe_holder: clabeHolder.trim(),
+      bank_name: bankName,
+      operator_status: 'pendiente',
+      onboarding_done: true,
+    }, 5)
   }
 
   const STEPS = [
