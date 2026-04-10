@@ -163,7 +163,7 @@ const OperatorView = () => {
   }, [bookings, user]);
 
   // GUARD: debe ir despues de todos los hooks
-  if (!profile || profile.onboarding_done === false) {
+  if (!profile || !profile.onboarding_done) {
     const step = profile?.onboarding_step || 1;
     return (
       <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
