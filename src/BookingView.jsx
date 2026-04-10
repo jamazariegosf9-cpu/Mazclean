@@ -40,7 +40,18 @@ function generateRef() {
   return 'MCL-' + Math.random().toString(36).substring(2, 8).toUpperCase()
 }
 
-// ── Hook para detectar móvil ────────────────────────────────────
+// Distancia en km entre dos coordenadas (Haversine)
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2)
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
   useEffect(() => {
@@ -79,6 +90,10 @@ export default function BookingView() {
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [slotsError, setSlotsError]     = useState('')
 
+  // ── NUEVO: estado de validación de cobertura ──────────────────
+  const [checkingCoverage, setCheckingCoverage] = useState(false)
+  const [noCoverage, setNoCoverage]             = useState(false)
+
   const getPrice = useCallback(() => {
     if (!selectedService || !vehicleType) return null
     const service = SERVICES.find(s => s.id === selectedService)
@@ -102,6 +117,11 @@ export default function BookingView() {
     }
   }, [step, date, selectedService, vehicleType, addressDetails])
 
+  // ── NUEVO: reset de cobertura al cambiar dirección ────────────
+  useEffect(() => {
+    setNoCoverage(false)
+  }, [addressDetails])
+
   const fetchSlots = async () => {
     if (!date || !selectedService || !vehicleType || !addressDetails) return
     setLoadingSlots(true); setSlotsError(''); setTime('')
@@ -118,6 +138,68 @@ export default function BookingView() {
       setSlotsError('No se pudo cargar la disponibilidad. Intenta de nuevo.')
     } finally {
       setLoadingSlots(false)
+    }
+  }
+
+  // ── NUEVO: validar cobertura antes de avanzar al step 3 ───────
+  // Busca operadores aprobados con base_lat/base_lng cuyo radio cubre
+  // las coordenadas del cliente. Usa Haversine para calcular distancia.
+  // Si no hay ninguno, registra el intento en coverage_requests y muestra mensaje.
+  const checkCoverageAndAdvance = async () => {
+    if (!addressDetails) return
+    setCheckingCoverage(true)
+    setNoCoverage(false)
+    try {
+      // Traer operadores aprobados con geolocalización configurada
+      const { data: operators, error: opError } = await supabase
+        .from('profiles')
+        .select('id, base_lat, base_lng, coverage_radius, operator_status, status')
+        .eq('role', 'operador')
+        .eq('operator_status', 'aprobado')
+        .eq('status', 'activo')
+        .not('base_lat', 'is', null)
+        .not('base_lng', 'is', null)
+
+      if (opError) throw opError
+
+      const clientLat = addressDetails.lat
+      const clientLng = addressDetails.lng
+
+      // Verificar si algún operador cubre la zona del cliente
+      const hasCoverage = (operators || []).some(op => {
+        const distKm = haversineKm(
+          Number(op.base_lat), Number(op.base_lng),
+          clientLat, clientLng
+        )
+        return distKm <= (Number(op.coverage_radius) || 5)
+      })
+
+      if (hasCoverage) {
+        // Hay cobertura — avanzar normalmente
+        setStep(s => s + 1)
+      } else {
+        // Sin cobertura — registrar intento y mostrar mensaje
+        setNoCoverage(true)
+        // Guardar en coverage_requests para que el admin pueda ver dónde expandir
+        try {
+          await supabase.from('coverage_requests').insert({
+            client_id:  user?.id || null,
+            address:    addressDetails.formatted,
+            lat:        clientLat,
+            lng:        clientLng,
+            created_at: new Date().toISOString(),
+          })
+        } catch (e) {
+          // No interrumpir la UX si falla el registro
+          console.warn('No se pudo registrar coverage_request:', e.message)
+        }
+      }
+    } catch (err) {
+      // Si falla la validación por error de red, dejamos pasar para no bloquear al cliente
+      console.error('Error validando cobertura:', err)
+      setStep(s => s + 1)
+    } finally {
+      setCheckingCoverage(false)
     }
   }
 
@@ -168,10 +250,18 @@ export default function BookingView() {
     return true
   }
 
+  // ── NUEVO: interceptar avance del step 2 al 3 ────────────────
+  const handleNext = () => {
+    if (step === 2 && addressDetails) {
+      checkCoverageAndAdvance()
+    } else {
+      setStep(s => s + 1)
+    }
+  }
+
   const handleSubmit = async () => {
     if (!user) return
     setLoading(true); setError('')
-    // ── Timeout 15s para evitar que se trabe en móvil ─────────────
     const timeoutId = setTimeout(() => {
       setLoading(false)
       setError('La conexión tardó demasiado. Verifica tu internet e intenta de nuevo.')
@@ -212,7 +302,7 @@ export default function BookingView() {
     setStep(1); setSuccess(false); setError('')
     setSelectedService(null); setVehicleType(''); setVehicleBrand(''); setVehicleColor('')
     setAddress(''); setAddressDetails(null); setDate(''); setTime(''); setNotes('')
-    setSlots([]); setSlotsError('')
+    setSlots([]); setSlotsError(''); setNoCoverage(false)
     mapInstanceRef.current = null; markerRef.current = null; autocompleteRef.current = null
     if (inputRef.current) inputRef.current.value = ''
   }
@@ -326,6 +416,22 @@ export default function BookingView() {
             }
             {addressDetails && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#166534', marginBottom: 8 }}>✅ <strong>Dirección:</strong> {addressDetails.formatted}</div>}
             <p style={{ fontSize: 12, color: '#9ca3af', margin: '4px 0 0' }}>💡 Arrastra el pin o haz clic en el mapa para ajustar la ubicación exacta.</p>
+
+            {/* NUEVO: mensaje de sin cobertura — aparece debajo del mapa */}
+            {noCoverage && (
+              <div style={{ marginTop: 16, background: '#faf5ff', border: '1.5px solid #d8b4fe', borderRadius: 12, padding: '20px 18px', textAlign: 'center' }}>
+                <div style={{ fontSize: 36, marginBottom: 10 }}>🗺️</div>
+                <p style={{ fontSize: 15, fontWeight: 700, color: '#6d28d9', margin: '0 0 8px' }}>
+                  Aún no llegamos a tu zona
+                </p>
+                <p style={{ fontSize: 14, color: '#7c3aed', margin: '0 0 12px', lineHeight: 1.6 }}>
+                  Por el momento no contamos con operadores disponibles en tu área, pero estamos creciendo rápidamente. Te avisaremos en cuanto podamos atenderte.
+                </p>
+                <p style={{ fontSize: 12, color: '#a78bfa', margin: 0 }}>
+                  ✅ Registramos tu ubicación para priorizar la expansión hacia tu zona.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -428,12 +534,37 @@ export default function BookingView() {
         {/* Footer */}
         <div style={{ padding: isMobile ? '12px' : '16px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
           {step > 1 && (
-            <button onClick={() => setStep(s => s-1)} style={{ background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 10, padding: '14px 20px', cursor: 'pointer', fontSize: 15, fontWeight: 500, minHeight: 52 }}>← Atrás</button>
+            <button
+              onClick={() => { setStep(s => s-1); setNoCoverage(false) }}
+              style={{ background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 10, padding: '14px 20px', cursor: 'pointer', fontSize: 15, fontWeight: 500, minHeight: 52 }}>
+              ← Atrás
+            </button>
           )}
-          {step < 4
-            ? <button onClick={() => setStep(s => s+1)} disabled={!canGoNext()} style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 15, fontWeight: 600, flex: 1, opacity: canGoNext() ? 1 : 0.5, minHeight: 52 }}>Siguiente →</button>
-            : <button onClick={handleSubmit} disabled={loading} style={{ background: loading ? '#9ca3af' : '#10b981', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 15, fontWeight: 600, flex: 1, minHeight: 52 }}>{loading ? '⏳ Guardando...' : '✅ Confirmar reservación'}</button>
-          }
+          {step < 4 ? (
+            // Step 2: botón que valida cobertura antes de avanzar
+            step === 2 ? (
+              <button
+                onClick={handleNext}
+                disabled={!canGoNext() || checkingCoverage || noCoverage}
+                style={{ background: checkingCoverage ? '#9ca3af' : noCoverage ? '#e5e7eb' : '#3b82f6', color: noCoverage ? '#9ca3af' : '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: !canGoNext() || checkingCoverage || noCoverage ? 'not-allowed' : 'pointer', fontSize: 15, fontWeight: 600, flex: 1, opacity: !canGoNext() ? 0.5 : 1, minHeight: 52 }}>
+                {checkingCoverage ? '🔍 Verificando zona...' : noCoverage ? 'Sin cobertura en tu zona' : 'Siguiente →'}
+              </button>
+            ) : (
+              <button
+                onClick={() => setStep(s => s+1)}
+                disabled={!canGoNext()}
+                style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 15, fontWeight: 600, flex: 1, opacity: canGoNext() ? 1 : 0.5, minHeight: 52 }}>
+                Siguiente →
+              </button>
+            )
+          ) : (
+            <button
+              onClick={handleSubmit}
+              disabled={loading}
+              style={{ background: loading ? '#9ca3af' : '#10b981', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 15, fontWeight: 600, flex: 1, minHeight: 52 }}>
+              {loading ? '⏳ Guardando...' : '✅ Confirmar reservación'}
+            </button>
+          )}
         </div>
       </div>
     </div>
