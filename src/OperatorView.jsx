@@ -169,9 +169,7 @@ const OperatorView = () => {
       <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ background: 'rgba(59,130,246,0.08)', border: '1.5px solid rgba(59,130,246,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
           <div style={{ fontSize: 56, marginBottom: 16 }}>📋</div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F0F6FF', marginBottom: 12 }}>
-            Completa tu registro
-          </h2>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F0F6FF', marginBottom: 12 }}>Completa tu registro</h2>
           <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 8, lineHeight: 1.6 }}>
             Para acceder al panel necesitas completar tu proceso de alta como operador.
           </p>
@@ -180,8 +178,7 @@ const OperatorView = () => {
               Continuaras desde el paso {step} de 5
             </p>
           )}
-          <button
-            onClick={() => window.location.reload()}
+          <button onClick={() => window.location.reload()}
             style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', border: 'none', borderRadius: 12, color: '#fff', fontWeight: 700, fontSize: 16, cursor: 'pointer', marginBottom: 12 }}>
             {step > 1 ? 'Continuar registro (Paso ' + step + '/5)' : 'Iniciar registro'}
           </button>
@@ -287,10 +284,10 @@ const OperatorView = () => {
   };
 
   const PHOTO_STEPS = [
-    { step: 1, key: 'front_before',   phase: 'before', label: 'Foto 1 de 4 — Frontal ANTES',   desc: 'Captura el frente del auto con la placa visible',  color: '#f97316' },
-    { step: 2, key: 'side_before',    phase: 'before', label: 'Foto 2 de 4 — Lateral ANTES',   desc: 'Captura el lado mas expuesto del auto',            color: '#f97316' },
-    { step: 3, key: 'front_after',    phase: 'after',  label: 'Foto 3 de 4 — Frontal DESPUES', desc: 'Captura el frente del auto ya lavado',             color: '#10b981' },
-    { step: 4, key: 'interior_after', phase: 'after',  label: 'Foto 4 de 4 — Interior DESPUES',desc: 'Captura el interior o cajuela segun el servicio',  color: '#10b981' },
+    { step: 1, key: 'front_before',   phase: 'before', label: 'Foto 1 de 4 — Frontal ANTES',    desc: 'Captura el frente del auto con la placa visible', color: '#f97316' },
+    { step: 2, key: 'side_before',    phase: 'before', label: 'Foto 2 de 4 — Lateral ANTES',    desc: 'Captura el lado mas expuesto del auto',           color: '#f97316' },
+    { step: 3, key: 'front_after',    phase: 'after',  label: 'Foto 3 de 4 — Frontal DESPUES',  desc: 'Captura el frente del auto ya lavado',            color: '#10b981' },
+    { step: 4, key: 'interior_after', phase: 'after',  label: 'Foto 4 de 4 — Interior DESPUES', desc: 'Captura el interior o cajuela segun el servicio', color: '#10b981' },
   ];
 
   const handleStartWashing = async (booking) => {
@@ -365,13 +362,11 @@ const OperatorView = () => {
       const compressed = await compressForMobile(file);
       setUploadProgress('Subiendo...');
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-// FIX: obtener token fresco en cada upload — evita usar token expirado en móvil
-const { data: { session: freshSession } } = await supabase.auth.getSession();
-const token = freshSession?.access_token || sessionToken || supabaseKey;
-
-const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      // FIX: token fresco en cada upload — evita token expirado en movil
+      const { data: { session: freshSession } } = await supabase.auth.getSession();
+      const token = freshSession?.access_token || sessionToken || supabaseKey;
+      const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
       await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', supabaseUrl + '/storage/v1/object/service-photos/' + path);
@@ -564,8 +559,8 @@ const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
       )}
 
       {selectedBooking && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: '#f3f4f6', overflowY: 'auto' }}>
-          <div style={{ maxWidth: 600, margin: '0 auto', padding: isMobile ? 12 : 20 }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: '#f3f4f6', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ maxWidth: 600, margin: '0 auto', padding: isMobile ? 12 : 20, paddingBottom: isMobile ? 160 : 120 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <button onClick={() => setSelectedBooking(null)} style={{ background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 44 }}>← Cerrar</button>
               <div style={{ textAlign: 'center' }}>
@@ -594,30 +589,31 @@ const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
                 </a>
               </div>
             </div>
-            <div style={{ background: '#fff', borderRadius: 16, padding: '16px 18px', marginBottom: 120 }}>
+            <div style={{ background: '#fff', borderRadius: 16, padding: '16px 18px', marginBottom: 16 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', marginBottom: 10 }}>Ubicacion</div>
               <p style={{ fontWeight: 500, color: '#1f2937', fontSize: 14, margin: '0 0 14px' }}>{selectedBooking.address_line}</p>
               <button onClick={() => openInMaps(selectedBooking.address_line)} style={{ width: '100%', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 10, padding: '14px 0', fontSize: 14, fontWeight: 700, color: '#1e40af', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
                 <Navigation size={14} /> Abrir en Google Maps
               </button>
             </div>
-            <div style={{ position: 'fixed', bottom: isMobile ? 72 : 24, left: isMobile ? 12 : 20, right: isMobile ? 12 : 20 }}>
+            {/* Botones de accion inline (no fixed) para que sean accesibles con scroll */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {selectedBooking.status === 'confirmado' && (
                 <button onClick={() => updateStatus(selectedBooking.id, 'en_camino', 'on_the_way', selectedBooking)} disabled={updatingId === selectedBooking.id}
-                  style={{ width: '100%', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 56 }}>
+                  style={{ width: '100%', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 56, flexShrink: 0 }}>
                   {updatingId === selectedBooking.id ? 'Cargando...' : <><Navigation size={18} /> INICIAR VIAJE AHORA</>}
                 </button>
               )}
               {selectedBooking.status === 'en_camino' && (
                 <button onClick={() => handleStartWashing(selectedBooking)} disabled={updatingId === selectedBooking.id}
-                  style={{ width: '100%', background: '#f97316', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 56 }}>
+                  style={{ width: '100%', background: '#f97316', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 56, flexShrink: 0 }}>
                   <Play size={18} /> LLEGUE / EMPEZAR LAVADO
                 </button>
               )}
               {selectedBooking.status === 'en_proceso' && (
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button onClick={() => { setIncidentBooking(selectedBooking); setIncidentModal(true); }}
-                    style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 14, padding: '16px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, minHeight: 56 }}>
+                    style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 14, padding: '16px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, minHeight: 56, flexShrink: 0 }}>
                     <AlertTriangle size={18} />
                   </button>
                   <button onClick={() => handleFinalizeClick(selectedBooking)} disabled={updatingId === selectedBooking.id}
@@ -631,10 +627,21 @@ const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
         </div>
       )}
 
+      {/* MODAL FOTOS — FIX SCROLL: flex column + maxHeight + body scrollable */}
       {photoModal && photoBooking && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
-          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 24, width: '100%', maxWidth: isMobile ? '100%' : 420, overflow: 'hidden' }}>
-            <div style={{ background: currentPhotoConfig.phase === 'before' ? 'linear-gradient(135deg,#f97316,#fb923c)' : 'linear-gradient(135deg,#10b981,#34d399)', padding: '16px 20px' }}>
+          <div style={{
+            background: '#fff',
+            borderRadius: isMobile ? '20px 20px 0 0' : 24,
+            width: '100%',
+            maxWidth: isMobile ? '100%' : 420,
+            // FIX: flex column + maxHeight permiten scroll interno
+            display: 'flex',
+            flexDirection: 'column',
+            maxHeight: isMobile ? '92vh' : '90vh',
+          }}>
+            {/* Header fijo — no hace scroll */}
+            <div style={{ background: currentPhotoConfig.phase === 'before' ? 'linear-gradient(135deg,#f97316,#fb923c)' : 'linear-gradient(135deg,#10b981,#34d399)', padding: '16px 20px', borderRadius: isMobile ? '20px 20px 0 0' : '24px 24px 0 0', flexShrink: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                   <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 15, margin: '0 0 4px' }}>{currentPhotoConfig.label}</h3>
@@ -649,10 +656,11 @@ const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
                 ))}
               </div>
             </div>
-            <div style={{ padding: isMobile ? '18px 16px' : '20px 24px' }}>
+            {/* Cuerpo scrollable */}
+            <div style={{ padding: isMobile ? '18px 16px' : '20px 24px', overflowY: 'auto', flex: 1, WebkitOverflowScrolling: 'touch' }}>
               {getPhotoUrl(photosData[currentPhotoKey] || photoBooking['photo_' + currentPhotoKey]) ? (
                 <div style={{ position: 'relative', marginBottom: 14 }}>
-                  <img src={getPhotoUrl(photosData[currentPhotoKey] || photoBooking['photo_' + currentPhotoKey])} alt={currentPhotoConfig.label} style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 12 }} />
+                  <img src={getPhotoUrl(photosData[currentPhotoKey] || photoBooking['photo_' + currentPhotoKey])} alt={currentPhotoConfig.label} style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 12 }} onError={e => { e.target.style.display = 'none'; }} />
                   <span style={{ position: 'absolute', top: 10, right: 10, background: '#10b981', color: '#fff', fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 20 }}>Guardada</span>
                 </div>
               ) : (
@@ -672,13 +680,13 @@ const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
                   <span style={{ fontSize: 13, color: '#dc2626', fontWeight: 600 }}>{uploadError}</span>
                 </div>
               )}
-              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploadingPhoto ? '#f3f4f6' : '#3b82f6', color: uploadingPhoto ? '#9ca3af' : '#fff', fontSize: 15, fontWeight: 700, cursor: uploadingPhoto ? 'not-allowed' : 'pointer', pointerEvents: uploadingPhoto ? 'none' : 'auto', minHeight: 52, marginBottom: 10 }}>
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploadingPhoto ? '#f3f4f6' : '#3b82f6', color: uploadingPhoto ? '#9ca3af' : '#fff', fontSize: 15, fontWeight: 700, cursor: uploadingPhoto ? 'not-allowed' : 'pointer', pointerEvents: uploadingPhoto ? 'none' : 'auto', minHeight: 52, marginBottom: 10, flexShrink: 0 }}>
                 <Upload size={16} /> {photoBtnLabel}
                 <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
                   onChange={e => { if (e.target.files[0]) handlePhotoUpload(e.target.files[0], photoBooking.id, currentPhotoKey); }} />
               </label>
               <button onClick={handleNextPhotoStep} disabled={!canAdvancePhoto}
-                style={{ width: '100%', padding: '14px 0', borderRadius: 12, border: 'none', background: canAdvancePhoto ? (currentPhotoConfig.phase === 'before' ? '#f97316' : '#10b981') : '#e5e7eb', color: canAdvancePhoto ? '#fff' : '#9ca3af', fontSize: 15, fontWeight: 700, cursor: canAdvancePhoto ? 'pointer' : 'not-allowed', minHeight: 52 }}>
+                style={{ width: '100%', padding: '14px 0', borderRadius: 12, border: 'none', background: canAdvancePhoto ? (currentPhotoConfig.phase === 'before' ? '#f97316' : '#10b981') : '#e5e7eb', color: canAdvancePhoto ? '#fff' : '#9ca3af', fontSize: 15, fontWeight: 700, cursor: canAdvancePhoto ? 'pointer' : 'not-allowed', minHeight: 52, flexShrink: 0, marginBottom: isMobile ? 16 : 0 }}>
                 {photoStep < 2 ? 'Siguiente foto' : photoStep === 2 ? 'Fotos ANTES listas' : photoStep === 3 ? 'Siguiente foto' : pendingFinalize ? 'Continuar al Checklist' : 'Listo'}
               </button>
             </div>
@@ -686,16 +694,27 @@ const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
         </div>
       )}
 
+      {/* MODAL CHECKLIST — FIX SCROLL */}
       {checklistModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
-          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, width: '100%', maxWidth: isMobile ? '100%' : 460, overflow: 'hidden' }}>
-            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{
+            background: '#fff',
+            borderRadius: isMobile ? '20px 20px 0 0' : 20,
+            width: '100%',
+            maxWidth: isMobile ? '100%' : 460,
+            display: 'flex',
+            flexDirection: 'column',
+            maxHeight: isMobile ? '92vh' : '85vh',
+          }}>
+            {/* Header fijo */}
+            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: isMobile ? '20px 20px 0 0' : '20px 20px 0 0', flexShrink: 0 }}>
               <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>Checklist de Calidad</h3>
               <button onClick={() => setChecklistModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 20, borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>x</button>
             </div>
-            <div style={{ padding: isMobile ? '16px 14px' : 20 }}>
+            {/* Cuerpo scrollable */}
+            <div style={{ padding: isMobile ? '16px 14px' : 20, overflowY: 'auto', flex: 1, WebkitOverflowScrolling: 'touch' }}>
               <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 16px' }}>Confirma que cada punto fue completado antes de finalizar.</p>
-              <div style={{ display: 'grid', gap: 10, maxHeight: 320, overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gap: 10 }}>
                 {checklist.map(item => (
                   <button key={item.id} onClick={() => toggleCheckItem(item.id)}
                     style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 10, border: item.checked ? '2px solid #10b981' : '1.5px solid #e5e7eb', background: item.checked ? '#f0fdf4' : '#fff', cursor: 'pointer', textAlign: 'left', minHeight: 52 }}>
@@ -705,7 +724,8 @@ const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
                 ))}
               </div>
             </div>
-            <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10 }}>
+            {/* Footer fijo */}
+            <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, flexShrink: 0 }}>
               <button onClick={() => setChecklistModal(false)} style={{ flex: 1, padding: '12px 0', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cancelar</button>
               <button onClick={confirmFinalize} style={{ flex: 2, padding: '12px 0', background: checklist.every(i => i.checked) ? '#10b981' : '#9ca3af', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>
                 {checklist.every(i => i.checked) ? 'Confirmar y Finalizar' : 'Completa el checklist'}
@@ -715,14 +735,25 @@ const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
         </div>
       )}
 
+      {/* MODAL INCIDENCIA — FIX SCROLL */}
       {incidentModal && incidentBooking && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
-          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, width: '100%', maxWidth: isMobile ? '100%' : 420, overflow: 'hidden' }}>
-            <div style={{ background: 'linear-gradient(135deg,#dc2626,#ef4444)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{
+            background: '#fff',
+            borderRadius: isMobile ? '20px 20px 0 0' : 20,
+            width: '100%',
+            maxWidth: isMobile ? '100%' : 420,
+            display: 'flex',
+            flexDirection: 'column',
+            maxHeight: isMobile ? '92vh' : '85vh',
+          }}>
+            {/* Header fijo */}
+            <div style={{ background: 'linear-gradient(135deg,#dc2626,#ef4444)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: isMobile ? '20px 20px 0 0' : '20px 20px 0 0', flexShrink: 0 }}>
               <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>Reportar Incidencia</h3>
               <button onClick={() => { setIncidentModal(false); setIncidentNote(''); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 20, borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>x</button>
             </div>
-            <div style={{ padding: isMobile ? '16px 14px' : 20 }}>
+            {/* Cuerpo scrollable */}
+            <div style={{ padding: isMobile ? '16px 14px' : 20, overflowY: 'auto', flex: 1, WebkitOverflowScrolling: 'touch' }}>
               <div style={{ background: '#fef2f2', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 14, color: '#991b1b' }}>
                 Servicio: <strong>{incidentBooking.booking_ref}</strong> — {incidentBooking.service_name}
               </div>
@@ -731,7 +762,8 @@ const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
                 placeholder="Ej: El cliente no se encuentra en casa..."
                 style={{ width: '100%', padding: '12px', borderRadius: 8, border: '1.5px solid #fecaca', fontSize: 16, outline: 'none', height: 100, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937' }} />
             </div>
-            <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10 }}>
+            {/* Footer fijo */}
+            <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, flexShrink: 0 }}>
               <button onClick={() => { setIncidentModal(false); setIncidentNote(''); }} style={{ flex: 1, padding: '12px 0', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cancelar</button>
               <button onClick={sendIncidentReport} disabled={sendingIncident}
                 style={{ flex: 2, padding: '12px 0', background: sendingIncident ? '#9ca3af' : '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>

@@ -24,10 +24,7 @@ function useIsMobile() {
 
 async function compressForMobile(file) {
   if (file.size < 500 * 1024) return file
-  const MAX     = 1000
-  const QUALITY = 0.78
-  const TIMEOUT = 5000
-
+  const MAX = 1000; const QUALITY = 0.78; const TIMEOUT = 5000
   if (typeof OffscreenCanvas !== 'undefined') {
     try {
       const bitmap = await Promise.race([
@@ -39,7 +36,7 @@ async function compressForMobile(file) {
         if (w > h) { h = Math.round(h * MAX / w); w = MAX }
         else       { w = Math.round(w * MAX / h); h = MAX }
       }
-      const oc  = new OffscreenCanvas(w, h)
+      const oc = new OffscreenCanvas(w, h)
       const ctx = oc.getContext('2d')
       ctx.drawImage(bitmap, 0, 0, w, h)
       bitmap.close()
@@ -50,7 +47,6 @@ async function compressForMobile(file) {
       if (blob && blob.size > 0) return blob
     } catch { }
   }
-
   try {
     const blob = await new Promise((resolve) => {
       const safeTimer = setTimeout(() => resolve(file), 10000)
@@ -82,19 +78,15 @@ async function compressForMobile(file) {
           } catch { clearTimeout(safeTimer); resolve(file) }
         }
         img.onerror = () => { clearTimeout(safeTimer); resolve(file) }
-        img.src     = e.target.result
+        img.src = e.target.result
       }
       reader.onerror = () => { clearTimeout(safeTimer); resolve(file) }
       reader.readAsDataURL(file)
     })
     return blob
-  } catch {
-    return file
-  }
+  } catch { return file }
 }
 
-// CORRECCIÓN: helper para construir URL pública desde path relativo o URL completa
-// Esto resuelve que <img src="kits/abc/kit.jpg"> no funciona como src
 const getKitPhotoDisplayUrl = (pathOrUrl) => {
   if (!pathOrUrl) return null
   if (pathOrUrl.startsWith('http')) return pathOrUrl
@@ -104,32 +96,28 @@ const getKitPhotoDisplayUrl = (pathOrUrl) => {
 
 export default function OnboardingView({ onComplete }) {
   const { user, profile, updateProfile } = useAuth()
-  const isMobile          = useIsMobile()
-  const [step, setStep]   = useState(profile?.onboarding_step || 1)
+  const isMobile = useIsMobile()
+  const [step, setStep]     = useState(profile?.onboarding_step || 1)
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
 
-  // Paso 1
   const [fullName, setFullName] = useState(profile?.full_name || '')
   const [phone, setPhone]       = useState(profile?.phone || '')
 
-  // Paso 2
   const [kitPhotoUrl, setKitPhotoUrl]   = useState(profile?.kit_photo_url || '')
   const [uploadingKit, setUploadingKit] = useState(false)
   const [debugLog, setDebugLog]         = useState([])
 
-  // Paso 3
-  const [baseAddress, setBaseAddress]   = useState(profile?.base_address || '')
-  const [baseLat, setBaseLat]           = useState(profile?.base_lat || null)
-  const [baseLng, setBaseLng]           = useState(profile?.base_lng || null)
-  const [geoLoading, setGeoLoading]     = useState(false)
-  const [geoError, setGeoError]         = useState('')
-  const [radius, setRadius]             = useState(profile?.coverage_radius || 5)
+  const [baseAddress, setBaseAddress] = useState(profile?.base_address || '')
+  const [baseLat, setBaseLat]         = useState(profile?.base_lat || null)
+  const [baseLng, setBaseLng]         = useState(profile?.base_lng || null)
+  const [geoLoading, setGeoLoading]   = useState(false)
+  const [geoError, setGeoError]       = useState('')
+  const [radius, setRadius]           = useState(profile?.coverage_radius || 5)
   const [selectedDays, setSelectedDays] = useState(profile?.work_days || [])
   const [workStart, setWorkStart]       = useState(profile?.work_start?.slice(0,5) || '08:00')
   const [workEnd, setWorkEnd]           = useState(profile?.work_end?.slice(0,5) || '18:00')
 
-  // Paso 4
   const [clabe, setClabe]             = useState('')
   const [clabeHolder, setClabeHolder] = useState(profile?.clabe_holder || '')
   const [bankName, setBankName]       = useState(profile?.bank_name || '')
@@ -178,25 +166,20 @@ export default function OnboardingView({ onComplete }) {
 
   const handleKitUpload = async (file) => {
     if (!file) return
-    setUploadingKit(true)
-    setError('')
-    setDebugLog([])
+    setUploadingKit(true); setError(''); setDebugLog([])
     try {
       addLog(`Archivo: ${(file.size/1024).toFixed(0)} KB | ${file.type || 'image/jpeg'}`)
-      if (file.size > 15 * 1024 * 1024) {
-        throw new Error('La foto pesa mas de 15 MB. Usa una foto de menor resolucion.')
-      }
+      if (file.size > 15 * 1024 * 1024) throw new Error('La foto pesa mas de 15 MB. Usa una foto de menor resolucion.')
       addLog('Comprimiendo...')
       const compressed = await compressForMobile(file)
       addLog(`Comprimido: ${(compressed.size/1024).toFixed(0)} KB`)
-
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-      const token = sessionToken || supabaseKey
-      const path  = `kits/${user.id}/kit_${Date.now()}.jpg`
-
+      // FIX: token fresco en cada upload
+      const { data: { session: freshSession } } = await supabase.auth.getSession()
+      const token = freshSession?.access_token || sessionToken || supabaseKey
+      const path = `kits/${user.id}/kit_${Date.now()}.jpg`
       addLog(`Token: ${token === supabaseKey ? 'anon' : 'user'} — subiendo con XHR...`)
-
       await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest()
         xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`)
@@ -205,22 +188,13 @@ export default function OnboardingView({ onComplete }) {
         xhr.setRequestHeader('Content-Type', 'image/jpeg')
         xhr.setRequestHeader('x-upsert', 'true')
         xhr.timeout = 60000
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) addLog(`Progreso: ${Math.round(e.loaded/e.total*100)}%`)
-        }
-        xhr.onload = () => {
-          addLog(`HTTP ${xhr.status}`)
-          if (xhr.status >= 200 && xhr.status < 300) resolve()
-          else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.substring(0,120)}`))
-        }
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) addLog(`Progreso: ${Math.round(e.loaded/e.total*100)}%`) }
+        xhr.onload = () => { addLog(`HTTP ${xhr.status}`); if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.substring(0,120)}`)) }
         xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexion'))
         xhr.ontimeout = () => reject(new Error('Tiempo agotado (60s) — senal debil, intenta de nuevo'))
         xhr.send(compressed)
       })
-
       addLog('Guardando en base de datos...')
-      // CORRECCIÓN: .select() fuerza que Supabase propague el error si el UPDATE falla
-      // Sin .select(), un fallo de RLS se traga silenciosamente y no se muestra error
       const { error: dbErr } = await supabase
         .from('profiles')
         .update({ kit_photo_url: path, updated_at: new Date().toISOString() })
@@ -228,51 +202,31 @@ export default function OnboardingView({ onComplete }) {
         .select()
         .single()
       if (dbErr) throw new Error(`Error al guardar en DB: ${dbErr.message}`)
-
-      // Guardamos el path relativo — getKitPhotoDisplayUrl() lo convierte a URL para el <img>
       setKitPhotoUrl(path)
       addLog('Completado')
     } catch (e) {
       addLog(`ERROR: ${e.name} — ${e.message}`)
       setError(e.message || 'Error al subir. Intenta de nuevo.')
-    } finally {
-      setUploadingKit(false)
-    }
+    } finally { setUploadingKit(false) }
   }
 
   const handleStep2 = async () => {
     if (!kitPhotoUrl) { setError('Sube una foto de tu kit de materiales.'); return }
-    // kit_photo_url ya fue guardado en DB dentro de handleKitUpload
-    // solo actualizamos el step
     await saveStep({}, 3)
   }
 
   const handleGeolocate = () => {
-    if (!navigator.geolocation) {
-      setGeoError('Tu navegador no soporta geolocalizacion.')
-      return
-    }
-    setGeoLoading(true)
-    setGeoError('')
+    if (!navigator.geolocation) { setGeoError('Tu navegador no soporta geolocalizacion.'); return }
+    setGeoLoading(true); setGeoError('')
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        const lat = pos.coords.latitude
-        const lng = pos.coords.longitude
-        setBaseLat(lat)
-        setBaseLng(lng)
+        const lat = pos.coords.latitude; const lng = pos.coords.longitude
+        setBaseLat(lat); setBaseLng(lng)
         try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=es`
-          )
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=es`)
           const data = await res.json()
-          if (data?.display_name) {
-            setBaseAddress(data.display_name)
-          } else {
-            setBaseAddress(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)
-          }
-        } catch {
-          setBaseAddress(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)
-        }
+          setBaseAddress(data?.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+        } catch { setBaseAddress(`${lat.toFixed(5)}, ${lng.toFixed(5)}`) }
         setGeoLoading(false)
       },
       (err) => {
@@ -289,18 +243,12 @@ export default function OnboardingView({ onComplete }) {
   const handleStep3 = async () => {
     if (!baseAddress.trim()) { setError('Ingresa tu direccion o lugar de origen.'); return }
     if (!selectedDays.length) { setError('Selecciona al menos un dia de trabajo.'); return }
-    if (workStart >= workEnd)  { setError('La hora de inicio debe ser antes del cierre.'); return }
-    const requiresTransportVerification = radius > 2
+    if (workStart >= workEnd) { setError('La hora de inicio debe ser antes del cierre.'); return }
     await saveStep({
-      base_address:   baseAddress.trim(),
-      base_lat:       baseLat,
-      base_lng:       baseLng,
-      coverage_radius: radius,
-      coverage_zones:  null,
-      work_days:      selectedDays,
-      work_start:     workStart,
-      work_end:       workEnd,
-      requires_transport_verification: requiresTransportVerification,
+      base_address: baseAddress.trim(), base_lat: baseLat, base_lng: baseLng,
+      coverage_radius: radius, coverage_zones: null,
+      work_days: selectedDays, work_start: workStart, work_end: workEnd,
+      requires_transport_verification: radius > 2,
     }, 4)
   }
 
@@ -309,15 +257,9 @@ export default function OnboardingView({ onComplete }) {
     if (!clabeClean && !profile?.clabe) { setError('La CLABE es requerida.'); return }
     if (clabeClean && !validarCLABE(clabeClean)) { setClabeError('CLABE invalida. Verifica los 18 digitos.'); return }
     if (!clabeHolder.trim()) { setError('El nombre del titular es requerido.'); return }
-    if (!bankName)           { setError('Selecciona un banco.'); return }
+    if (!bankName) { setError('Selecciona un banco.'); return }
     const clabeToSave = clabeClean ? '****' + clabeClean.slice(14) : profile?.clabe
-    await saveStep({
-      clabe:          clabeToSave,
-      clabe_holder:   clabeHolder.trim(),
-      bank_name:      bankName,
-      operator_status: 'pendiente',
-      onboarding_done: true,
-    }, 5)
+    await saveStep({ clabe: clabeToSave, clabe_holder: clabeHolder.trim(), bank_name: bankName, operator_status: 'pendiente', onboarding_done: true }, 5)
   }
 
   const STEPS = [
@@ -332,7 +274,8 @@ export default function OnboardingView({ onComplete }) {
   const lbl = { fontSize:13, fontWeight:600, color:'#374151', marginBottom:6, display:'block' }
 
   return (
-    <div style={{ minHeight:'100vh', background:'#f3f4f6', padding: isMobile ? '16px 12px 40px' : '32px 16px' }}>
+    // FIX SCROLL: overflowY auto + WebkitOverflowScrolling para iOS
+    <div style={{ minHeight:'100vh', background:'#f3f4f6', padding: isMobile ? '16px 12px 60px' : '32px 16px', overflowY:'auto', WebkitOverflowScrolling:'touch' }}>
       <div style={{ maxWidth:520, margin:'0 auto' }}>
 
         {/* Header */}
@@ -378,8 +321,9 @@ export default function OnboardingView({ onComplete }) {
               </div>
             </div>
             {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', marginTop:16, color:'#dc2626', fontSize:14 }}>⚠️ {error}</div>}
+            {/* FIX: flexShrink 0 para que el boton nunca se comprima */}
             <button onClick={handleStep1} disabled={saving}
-              style={{ width:'100%', marginTop:20, padding:'14px 0', background: saving ? '#9ca3af' : '#3b82f6', color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:700, cursor: saving ? 'not-allowed' : 'pointer', minHeight:52 }}>
+              style={{ width:'100%', marginTop:20, padding:'14px 0', background: saving ? '#9ca3af' : '#3b82f6', color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:700, cursor: saving ? 'not-allowed' : 'pointer', minHeight:52, flexShrink:0 }}>
               {saving ? '⏳ Guardando...' : 'Continuar →'}
             </button>
           </div>
@@ -390,7 +334,6 @@ export default function OnboardingView({ onComplete }) {
           <div style={{ background:'#fff', borderRadius:16, padding: isMobile ? '20px 16px' : 28, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize:18, fontWeight:700, color:'#1f2937', margin:'0 0 6px' }}>🧴 Kit de materiales</h2>
             <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 16px' }}>Sube una foto de tu kit completo para verificar que tienes todo lo necesario.</p>
-
             <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:12, padding:'14px 16px', marginBottom:20 }}>
               <p style={{ fontSize:13, fontWeight:700, color:'#1e40af', margin:'0 0 10px' }}>✅ Materiales obligatorios:</p>
               {['Shampoo para autos','Minimo 4 microfibras limpias','Cubeta de doble balde','Aspiradora portatil'].map(m => (
@@ -401,16 +344,11 @@ export default function OnboardingView({ onComplete }) {
               ))}
               <p style={{ fontSize:12, color:'#6b7280', margin:'10px 0 0', fontStyle:'italic' }}>Recomendados: sellador de llantas, agua propia</p>
             </div>
-
-            {/* CORRECCIÓN: usar getKitPhotoDisplayUrl() para construir URL válida desde path relativo */}
             {getKitPhotoDisplayUrl(kitPhotoUrl) ? (
               <div style={{ position:'relative', marginBottom:14 }}>
-                <img
-                  src={getKitPhotoDisplayUrl(kitPhotoUrl)}
-                  alt="Kit"
+                <img src={getKitPhotoDisplayUrl(kitPhotoUrl)} alt="Kit"
                   style={{ width:'100%', height:200, objectFit:'cover', borderRadius:12 }}
-                  onError={e => { e.target.style.display = 'none' }}
-                />
+                  onError={e => { e.target.style.display = 'none' }} />
                 <span style={{ position:'absolute', top:10, right:10, background:'#10b981', color:'#fff', fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:20 }}>✅ Foto guardada</span>
               </div>
             ) : (
@@ -419,33 +357,27 @@ export default function OnboardingView({ onComplete }) {
                 <span style={{ fontSize:13, color:'#9ca3af', marginTop:8 }}>Aun no has subido la foto</span>
               </div>
             )}
-
             {uploadingKit && (
               <div style={{ background:'#eff6ff', borderRadius:10, padding:'10px 14px', marginBottom:12, display:'flex', alignItems:'center', gap:10 }}>
                 <div style={{ width:18, height:18, border:'3px solid #bfdbfe', borderTop:'3px solid #3b82f6', borderRadius:'50%', animation:'spin 0.8s linear infinite', flexShrink:0 }} />
                 <span style={{ fontSize:13, color:'#1e40af', fontWeight:600 }}>Subiendo foto...</span>
               </div>
             )}
-
-            {/* Log de debug visible para diagnóstico — muestra el error exacto */}
             {debugLog.length > 0 && (
               <div style={{ background:'#f9fafb', border:'1px solid #e5e7eb', borderRadius:8, padding:'8px 12px', marginBottom:12, fontSize:11, fontFamily:'monospace', color:'#374151', maxHeight:100, overflowY:'auto' }}>
                 {debugLog.map((l, i) => <div key={i}>{l}</div>)}
               </div>
             )}
-
             {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', marginBottom:12, color:'#dc2626', fontSize:14 }}>⚠️ {error}</div>}
-
-            <label style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, padding:'13px 0', borderRadius:12, background: uploadingKit ? '#f3f4f6' : '#6366f1', color: uploadingKit ? '#9ca3af' : '#fff', fontSize:15, fontWeight:700, cursor: uploadingKit ? 'not-allowed' : 'pointer', pointerEvents: uploadingKit ? 'none' : 'auto', minHeight:50, marginBottom:12 }}>
+            <label style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, padding:'13px 0', borderRadius:12, background: uploadingKit ? '#f3f4f6' : '#6366f1', color: uploadingKit ? '#9ca3af' : '#fff', fontSize:15, fontWeight:700, cursor: uploadingKit ? 'not-allowed' : 'pointer', pointerEvents: uploadingKit ? 'none' : 'auto', minHeight:50, marginBottom:12, flexShrink:0 }}>
               📷 {kitPhotoUrl ? 'Cambiar foto' : 'Tomar / Subir foto del kit'}
               <input type="file" accept="image/*" capture="environment" style={{ display:'none' }}
                 onChange={e => { if (e.target.files[0]) handleKitUpload(e.target.files[0]) }} />
             </label>
-
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setStep(1)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52 }}>← Atras</button>
+              <button onClick={() => setStep(1)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52, flexShrink:0 }}>← Atras</button>
               <button onClick={handleStep2} disabled={saving || !kitPhotoUrl || uploadingKit}
-                style={{ flex:2, padding:'13px 0', background: saving || !kitPhotoUrl || uploadingKit ? '#9ca3af' : '#3b82f6', color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:700, cursor: saving || !kitPhotoUrl || uploadingKit ? 'not-allowed' : 'pointer', minHeight:52 }}>
+                style={{ flex:2, padding:'13px 0', background: saving || !kitPhotoUrl || uploadingKit ? '#9ca3af' : '#3b82f6', color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:700, cursor: saving || !kitPhotoUrl || uploadingKit ? 'not-allowed' : 'pointer', minHeight:52, flexShrink:0 }}>
                 {saving ? '⏳ Guardando...' : uploadingKit ? '⏳ Espera...' : 'Continuar →'}
               </button>
             </div>
@@ -457,80 +389,44 @@ export default function OnboardingView({ onComplete }) {
           <div style={{ background:'#fff', borderRadius:16, padding: isMobile ? '20px 16px' : 28, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize:18, fontWeight:700, color:'#1f2937', margin:'0 0 6px' }}>📍 Zona de trabajo</h2>
             <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 20px' }}>Define desde donde operas y que tan lejos puedes ir a atender servicios.</p>
-
             <div style={{ marginBottom:20 }}>
               <label style={lbl}>Direccion o lugar de origen *</label>
-              <p style={{ fontSize:12, color:'#6b7280', margin:'0 0 10px' }}>
-                Escribe tu colonia, municipio o ciudad desde donde saldras a dar servicio. Puede ser toda Mexico.
-              </p>
+              <p style={{ fontSize:12, color:'#6b7280', margin:'0 0 10px' }}>Escribe tu colonia, municipio o ciudad desde donde saldras a dar servicio.</p>
               <textarea
                 style={{ ...inp, height:80, resize:'vertical', fontSize:14 }}
-                placeholder="Ej: Colonia Roma Norte, Cuauhtemoc, CDMX  /  Monterrey, Nuevo Leon  /  Guadalajara, Jalisco"
+                placeholder="Ej: Colonia Roma Norte, Cuauhtemoc, CDMX  /  Monterrey, Nuevo Leon"
                 value={baseAddress}
-                onChange={e => {
-                  setBaseAddress(e.target.value)
-                  setBaseLat(null)
-                  setBaseLng(null)
-                }}
+                onChange={e => { setBaseAddress(e.target.value); setBaseLat(null); setBaseLng(null) }}
               />
-
-              <button
-                onClick={handleGeolocate}
-                disabled={geoLoading}
-                style={{ marginTop:10, width:'100%', padding:'12px 0', background: geoLoading ? '#f3f4f6' : '#eff6ff', border:'1.5px solid #bfdbfe', borderRadius:10, color: geoLoading ? '#9ca3af' : '#1e40af', fontSize:14, fontWeight:600, cursor: geoLoading ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, minHeight:48 }}>
+              <button onClick={handleGeolocate} disabled={geoLoading}
+                style={{ marginTop:10, width:'100%', padding:'12px 0', background: geoLoading ? '#f3f4f6' : '#eff6ff', border:'1.5px solid #bfdbfe', borderRadius:10, color: geoLoading ? '#9ca3af' : '#1e40af', fontSize:14, fontWeight:600, cursor: geoLoading ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, minHeight:48, flexShrink:0 }}>
                 {geoLoading ? (
-                  <>
-                    <div style={{ width:16, height:16, border:'2px solid #bfdbfe', borderTop:'2px solid #3b82f6', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
-                    Obteniendo ubicacion...
-                  </>
-                ) : (
-                  <>📡 Usar mi ubicacion actual</>
-                )}
+                  <><div style={{ width:16, height:16, border:'2px solid #bfdbfe', borderTop:'2px solid #3b82f6', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} /> Obteniendo ubicacion...</>
+                ) : <>📡 Usar mi ubicacion actual</>}
               </button>
-
-              {geoError && (
-                <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'8px 12px', marginTop:8, color:'#dc2626', fontSize:13 }}>
-                  ⚠️ {geoError}
-                </div>
-              )}
-
+              {geoError && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'8px 12px', marginTop:8, color:'#dc2626', fontSize:13 }}>⚠️ {geoError}</div>}
               {baseLat && baseLng && (
                 <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:8, padding:'8px 12px', marginTop:8, display:'flex', alignItems:'center', gap:8 }}>
                   <span style={{ fontSize:14 }}>✅</span>
-                  <span style={{ fontSize:12, color:'#166534' }}>
-                    Ubicacion registrada: {Number(baseLat).toFixed(4)}, {Number(baseLng).toFixed(4)}
-                  </span>
+                  <span style={{ fontSize:12, color:'#166534' }}>Ubicacion registrada: {Number(baseLat).toFixed(4)}, {Number(baseLng).toFixed(4)}</span>
                 </div>
               )}
             </div>
-
             <div style={{ marginBottom:20 }}>
               <label style={lbl}>
                 Radio de cobertura: <strong>{radius} km</strong>
-                {radius > 2 && (
-                  <span style={{ fontSize:11, fontWeight:500, color:'#f59e0b', marginLeft:8 }}>
-                    ⚠️ Requiere verificacion de transporte
-                  </span>
-                )}
+                {radius > 2 && <span style={{ fontSize:11, fontWeight:500, color:'#f59e0b', marginLeft:8 }}>⚠️ Requiere verificacion de transporte</span>}
               </label>
-              <input
-                type="range" min={1} max={50} value={radius}
-                onChange={e => setRadius(Number(e.target.value))}
-                style={{ width:'100%', accentColor:'#3b82f6', cursor:'pointer' }}
-              />
+              <input type="range" min={1} max={50} value={radius} onChange={e => setRadius(Number(e.target.value))} style={{ width:'100%', accentColor:'#3b82f6', cursor:'pointer' }} />
               <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'#9ca3af', marginTop:4 }}>
-                <span>1 km</span>
-                <span>50 km</span>
+                <span>1 km</span><span>50 km</span>
               </div>
               {radius > 2 && (
                 <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'10px 14px', marginTop:10 }}>
-                  <p style={{ fontSize:13, color:'#92400e', margin:0, lineHeight:1.5 }}>
-                    🚗 Como tu radio es mayor a 2 km, el administrador debera verificar que cuentas con <strong>transporte propio</strong> antes de aprobar tu cuenta.
-                  </p>
+                  <p style={{ fontSize:13, color:'#92400e', margin:0, lineHeight:1.5 }}>🚗 Como tu radio es mayor a 2 km, el administrador debera verificar que cuentas con <strong>transporte propio</strong> antes de aprobar tu cuenta.</p>
                 </div>
               )}
             </div>
-
             <div style={{ marginBottom:20 }}>
               <label style={lbl}>Dias disponibles *</label>
               <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
@@ -542,7 +438,6 @@ export default function OnboardingView({ onComplete }) {
                 ))}
               </div>
             </div>
-
             <div style={{ display:'flex', gap:12, marginBottom:8 }}>
               <div style={{ flex:1 }}>
                 <label style={lbl}>Hora inicio *</label>
@@ -553,13 +448,11 @@ export default function OnboardingView({ onComplete }) {
                 <input type="time" value={workEnd} onChange={e => setWorkEnd(e.target.value)} style={inp} />
               </div>
             </div>
-
             {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', marginBottom:12, color:'#dc2626', fontSize:14 }}>⚠️ {error}</div>}
-
             <div style={{ display:'flex', gap:10, marginTop:20 }}>
-              <button onClick={() => setStep(2)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52 }}>← Atras</button>
+              <button onClick={() => setStep(2)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52, flexShrink:0 }}>← Atras</button>
               <button onClick={handleStep3} disabled={saving}
-                style={{ flex:2, padding:'13px 0', background: saving ? '#9ca3af' : '#3b82f6', color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:700, cursor: saving ? 'not-allowed' : 'pointer', minHeight:52 }}>
+                style={{ flex:2, padding:'13px 0', background: saving ? '#9ca3af' : '#3b82f6', color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:700, cursor: saving ? 'not-allowed' : 'pointer', minHeight:52, flexShrink:0 }}>
                 {saving ? '⏳ Guardando...' : 'Continuar →'}
               </button>
             </div>
@@ -598,9 +491,9 @@ export default function OnboardingView({ onComplete }) {
             </div>
             {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', marginTop:16, color:'#dc2626', fontSize:14 }}>⚠️ {error}</div>}
             <div style={{ display:'flex', gap:10, marginTop:20 }}>
-              <button onClick={() => setStep(3)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52 }}>← Atras</button>
+              <button onClick={() => setStep(3)} style={{ flex:1, padding:'13px 0', background:'#f3f4f6', border:'none', borderRadius:12, fontSize:15, fontWeight:600, color:'#374151', cursor:'pointer', minHeight:52, flexShrink:0 }}>← Atras</button>
               <button onClick={handleStep4} disabled={saving}
-                style={{ flex:2, padding:'13px 0', background: saving ? '#9ca3af' : '#10b981', color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:700, cursor: saving ? 'not-allowed' : 'pointer', minHeight:52 }}>
+                style={{ flex:2, padding:'13px 0', background: saving ? '#9ca3af' : '#10b981', color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:700, cursor: saving ? 'not-allowed' : 'pointer', minHeight:52, flexShrink:0 }}>
                 {saving ? '⏳ Enviando...' : '✅ Enviar para revision'}
               </button>
             </div>
@@ -614,7 +507,6 @@ export default function OnboardingView({ onComplete }) {
             <h2 style={{ fontSize:22, fontWeight:800, color:'#1f2937', margin:'0 0 12px' }}>¡Registro completado!</h2>
             <p style={{ fontSize:15, color:'#374151', margin:'0 0 8px', lineHeight:1.6 }}>Tu solicitud esta siendo revisada por nuestro equipo.</p>
             <p style={{ fontSize:14, color:'#6b7280', margin:'0 0 24px', lineHeight:1.6 }}>Recibiras una notificacion en maximo <strong>4 horas habiles</strong>. Una vez aprobado podras empezar a recibir servicios.</p>
-
             <div style={{ background:'#f9fafb', borderRadius:12, padding:'16px 20px', marginBottom:24, textAlign:'left' }}>
               <p style={{ fontSize:13, fontWeight:700, color:'#374151', margin:'0 0 12px' }}>📋 Estado de tu solicitud:</p>
               {[
@@ -630,7 +522,6 @@ export default function OnboardingView({ onComplete }) {
                 </div>
               ))}
             </div>
-
             {profile?.operator_status === 'aprobado' && (
               <div style={{ background:'#f0fdf4', border:'1.5px solid #bbf7d0', borderRadius:12, padding:'14px 18px', marginBottom:20 }}>
                 <p style={{ fontSize:15, fontWeight:700, color:'#166534', margin:0 }}>🎉 ¡Tu cuenta esta activa! Ya puedes recibir servicios.</p>
@@ -647,7 +538,7 @@ export default function OnboardingView({ onComplete }) {
             )}
             {profile?.operator_status === 'aprobado' && (
               <button onClick={onComplete}
-                style={{ width:'100%', padding:'15px 0', background:'#3b82f6', color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:700, cursor:'pointer', minHeight:52 }}>
+                style={{ width:'100%', padding:'15px 0', background:'#3b82f6', color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:700, cursor:'pointer', minHeight:52, flexShrink:0 }}>
                 Ir al Panel de Operador →
               </button>
             )}
