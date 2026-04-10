@@ -365,9 +365,13 @@ const OperatorView = () => {
       const compressed = await compressForMobile(file);
       setUploadProgress('Subiendo...');
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const token = sessionToken || supabaseKey;
-      const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// FIX: obtener token fresco en cada upload — evita usar token expirado en móvil
+const { data: { session: freshSession } } = await supabase.auth.getSession();
+const token = freshSession?.access_token || sessionToken || supabaseKey;
+
+const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
       await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', supabaseUrl + '/storage/v1/object/service-photos/' + path);
