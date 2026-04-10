@@ -629,16 +629,16 @@ const OperatorView = () => {
 
       {/* MODAL FOTOS — FIX SCROLL: flex column + maxHeight + body scrollable */}
       {photoModal && photoBooking && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 110, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
           <div style={{
             background: '#fff',
             borderRadius: isMobile ? '20px 20px 0 0' : 24,
             width: '100%',
             maxWidth: isMobile ? '100%' : 420,
-            // FIX: flex column + maxHeight permiten scroll interno
             display: 'flex',
             flexDirection: 'column',
-            maxHeight: isMobile ? '92vh' : '90vh',
+            // FIX: restar el nav bar (60px) para que el footer no quede tapado
+            maxHeight: isMobile ? 'calc(92vh - 60px)' : '90vh',
           }}>
             {/* Header fijo — no hace scroll */}
             <div style={{ background: currentPhotoConfig.phase === 'before' ? 'linear-gradient(135deg,#f97316,#fb923c)' : 'linear-gradient(135deg,#10b981,#34d399)', padding: '16px 20px', borderRadius: isMobile ? '20px 20px 0 0' : '24px 24px 0 0', flexShrink: 0 }}>
@@ -696,7 +696,7 @@ const OperatorView = () => {
 
       {/* MODAL CHECKLIST — FIX SCROLL */}
       {checklistModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 110, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
           <div style={{
             background: '#fff',
             borderRadius: isMobile ? '20px 20px 0 0' : 20,
@@ -704,7 +704,8 @@ const OperatorView = () => {
             maxWidth: isMobile ? '100%' : 460,
             display: 'flex',
             flexDirection: 'column',
-            maxHeight: isMobile ? '92vh' : '85vh',
+            // FIX: restar nav bar para que el botón Confirmar no quede tapado
+            maxHeight: isMobile ? 'calc(92vh - 60px)' : '85vh',
           }}>
             {/* Header fijo */}
             <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: isMobile ? '20px 20px 0 0' : '20px 20px 0 0', flexShrink: 0 }}>
@@ -737,7 +738,7 @@ const OperatorView = () => {
 
       {/* MODAL INCIDENCIA — FIX SCROLL */}
       {incidentModal && incidentBooking && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 110, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
           <div style={{
             background: '#fff',
             borderRadius: isMobile ? '20px 20px 0 0' : 20,
@@ -745,7 +746,7 @@ const OperatorView = () => {
             maxWidth: isMobile ? '100%' : 420,
             display: 'flex',
             flexDirection: 'column',
-            maxHeight: isMobile ? '92vh' : '85vh',
+            maxHeight: isMobile ? 'calc(92vh - 60px)' : '85vh',
           }}>
             {/* Header fijo */}
             <div style={{ background: 'linear-gradient(135deg,#dc2626,#ef4444)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: isMobile ? '20px 20px 0 0' : '20px 20px 0 0', flexShrink: 0 }}>
