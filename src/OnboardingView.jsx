@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
 
-// Dias de la semana y bancos se mantienen igual
 const DIAS   = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo']
 const BANCOS = ['BBVA','Banamex','Santander','Banorte','HSBC','Inbursa','Scotiabank','Afirme','BanBajio','Azteca','Otro']
 
@@ -94,6 +93,15 @@ async function compressForMobile(file) {
   }
 }
 
+// CORRECCIÓN: helper para construir URL pública desde path relativo o URL completa
+// Esto resuelve que <img src="kits/abc/kit.jpg"> no funciona como src
+const getKitPhotoDisplayUrl = (pathOrUrl) => {
+  if (!pathOrUrl) return null
+  if (pathOrUrl.startsWith('http')) return pathOrUrl
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+  return `${supabaseUrl}/storage/v1/object/public/service-photos/${pathOrUrl}`
+}
+
 export default function OnboardingView({ onComplete }) {
   const { user, profile, updateProfile } = useAuth()
   const isMobile          = useIsMobile()
@@ -110,14 +118,13 @@ export default function OnboardingView({ onComplete }) {
   const [uploadingKit, setUploadingKit] = useState(false)
   const [debugLog, setDebugLog]         = useState([])
 
-  // ── PASO 3 NUEVO: domicilio base + radio nacional ─────────────
+  // Paso 3
   const [baseAddress, setBaseAddress]   = useState(profile?.base_address || '')
   const [baseLat, setBaseLat]           = useState(profile?.base_lat || null)
   const [baseLng, setBaseLng]           = useState(profile?.base_lng || null)
   const [geoLoading, setGeoLoading]     = useState(false)
   const [geoError, setGeoError]         = useState('')
   const [radius, setRadius]             = useState(profile?.coverage_radius || 5)
-  // Dias y horario se mantienen para el paso 3
   const [selectedDays, setSelectedDays] = useState(profile?.work_days || [])
   const [workStart, setWorkStart]       = useState(profile?.work_start?.slice(0,5) || '08:00')
   const [workEnd, setWorkEnd]           = useState(profile?.work_end?.slice(0,5) || '18:00')
@@ -138,7 +145,6 @@ export default function OnboardingView({ onComplete }) {
     setDebugLog(prev => [...prev.slice(-9), line])
   }
 
-  // saveStep usa updateProfile del contexto para mantener el profile en memoria sincronizado
   const saveStep = async (data, next) => {
     setSaving(true); setError('')
     try {
@@ -159,7 +165,6 @@ export default function OnboardingView({ onComplete }) {
     await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,'') }, 2)
   }
 
-  // Token de sesion cacheado al montar
   const [sessionToken, setSessionToken] = useState(null)
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -213,17 +218,18 @@ export default function OnboardingView({ onComplete }) {
         xhr.send(compressed)
       })
 
-      // Guardamos el path relativo en DB inmediatamente (igual que la version original)
-      // Esto evita perder la foto si el usuario recarga antes de presionar Continuar
       addLog('Guardando en base de datos...')
+      // CORRECCIÓN: .select() fuerza que Supabase propague el error si el UPDATE falla
+      // Sin .select(), un fallo de RLS se traga silenciosamente y no se muestra error
       const { error: dbErr } = await supabase
         .from('profiles')
         .update({ kit_photo_url: path, updated_at: new Date().toISOString() })
         .eq('id', user.id)
-      if (dbErr) throw dbErr
+        .select()
+        .single()
+      if (dbErr) throw new Error(`Error al guardar en DB: ${dbErr.message}`)
 
-      // Guardamos el path relativo en estado local para mostrarlo
-      // getPhotoStorageUrl() en AdminView lo convierte a URL publica
+      // Guardamos el path relativo — getKitPhotoDisplayUrl() lo convierte a URL para el <img>
       setKitPhotoUrl(path)
       addLog('Completado')
     } catch (e) {
@@ -237,14 +243,13 @@ export default function OnboardingView({ onComplete }) {
   const handleStep2 = async () => {
     if (!kitPhotoUrl) { setError('Sube una foto de tu kit de materiales.'); return }
     // kit_photo_url ya fue guardado en DB dentro de handleKitUpload
-    // solo actualizamos el step sin sobreescribir la URL
+    // solo actualizamos el step
     await saveStep({}, 3)
   }
 
-  // ── GEOLOCALIZACIÓN ────────────────────────────────────────────
   const handleGeolocate = () => {
     if (!navigator.geolocation) {
-      setGeoError('Tu navegador no soporta geolocalización.')
+      setGeoError('Tu navegador no soporta geolocalizacion.')
       return
     }
     setGeoLoading(true)
@@ -255,7 +260,6 @@ export default function OnboardingView({ onComplete }) {
         const lng = pos.coords.longitude
         setBaseLat(lat)
         setBaseLng(lng)
-        // Intentar geocodificacion inversa con nominatim (gratuito, sin API key)
         try {
           const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=es`
@@ -282,22 +286,17 @@ export default function OnboardingView({ onComplete }) {
 
   const toggleDay = (d) => setSelectedDays(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d])
 
-  // ── PASO 3 ACTUALIZADO ─────────────────────────────────────────
   const handleStep3 = async () => {
     if (!baseAddress.trim()) { setError('Ingresa tu direccion o lugar de origen.'); return }
     if (!selectedDays.length) { setError('Selecciona al menos un dia de trabajo.'); return }
     if (workStart >= workEnd)  { setError('La hora de inicio debe ser antes del cierre.'); return }
-
-    // Si el radio es mayor a 2 km, el admin debera verificar medio de transporte
-    // Se guarda un flag para que el admin lo vea en la revision
     const requiresTransportVerification = radius > 2
-
     await saveStep({
       base_address:   baseAddress.trim(),
       base_lat:       baseLat,
       base_lng:       baseLng,
       coverage_radius: radius,
-      coverage_zones:  null, // limpiamos el campo anterior si existia
+      coverage_zones:  null,
       work_days:      selectedDays,
       work_start:     workStart,
       work_end:       workEnd,
@@ -403,9 +402,15 @@ export default function OnboardingView({ onComplete }) {
               <p style={{ fontSize:12, color:'#6b7280', margin:'10px 0 0', fontStyle:'italic' }}>Recomendados: sellador de llantas, agua propia</p>
             </div>
 
-            {kitPhotoUrl ? (
+            {/* CORRECCIÓN: usar getKitPhotoDisplayUrl() para construir URL válida desde path relativo */}
+            {getKitPhotoDisplayUrl(kitPhotoUrl) ? (
               <div style={{ position:'relative', marginBottom:14 }}>
-                <img src={kitPhotoUrl} alt="Kit" style={{ width:'100%', height:200, objectFit:'cover', borderRadius:12 }} />
+                <img
+                  src={getKitPhotoDisplayUrl(kitPhotoUrl)}
+                  alt="Kit"
+                  style={{ width:'100%', height:200, objectFit:'cover', borderRadius:12 }}
+                  onError={e => { e.target.style.display = 'none' }}
+                />
                 <span style={{ position:'absolute', top:10, right:10, background:'#10b981', color:'#fff', fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:20 }}>✅ Foto guardada</span>
               </div>
             ) : (
@@ -419,6 +424,13 @@ export default function OnboardingView({ onComplete }) {
               <div style={{ background:'#eff6ff', borderRadius:10, padding:'10px 14px', marginBottom:12, display:'flex', alignItems:'center', gap:10 }}>
                 <div style={{ width:18, height:18, border:'3px solid #bfdbfe', borderTop:'3px solid #3b82f6', borderRadius:'50%', animation:'spin 0.8s linear infinite', flexShrink:0 }} />
                 <span style={{ fontSize:13, color:'#1e40af', fontWeight:600 }}>Subiendo foto...</span>
+              </div>
+            )}
+
+            {/* Log de debug visible para diagnóstico — muestra el error exacto */}
+            {debugLog.length > 0 && (
+              <div style={{ background:'#f9fafb', border:'1px solid #e5e7eb', borderRadius:8, padding:'8px 12px', marginBottom:12, fontSize:11, fontFamily:'monospace', color:'#374151', maxHeight:100, overflowY:'auto' }}>
+                {debugLog.map((l, i) => <div key={i}>{l}</div>)}
               </div>
             )}
 
@@ -440,13 +452,12 @@ export default function OnboardingView({ onComplete }) {
           </div>
         )}
 
-        {/* ── PASO 3 — ZONA DE TRABAJO (NUEVO: nacional con dirección base) ── */}
+        {/* ── PASO 3 ── */}
         {step === 3 && (
           <div style={{ background:'#fff', borderRadius:16, padding: isMobile ? '20px 16px' : 28, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize:18, fontWeight:700, color:'#1f2937', margin:'0 0 6px' }}>📍 Zona de trabajo</h2>
             <p style={{ fontSize:13, color:'#6b7280', margin:'0 0 20px' }}>Define desde donde operas y que tan lejos puedes ir a atender servicios.</p>
 
-            {/* Dirección base */}
             <div style={{ marginBottom:20 }}>
               <label style={lbl}>Direccion o lugar de origen *</label>
               <p style={{ fontSize:12, color:'#6b7280', margin:'0 0 10px' }}>
@@ -458,13 +469,11 @@ export default function OnboardingView({ onComplete }) {
                 value={baseAddress}
                 onChange={e => {
                   setBaseAddress(e.target.value)
-                  // Si el usuario escribe a mano, limpiamos las coords para no guardar coords de otra dir
                   setBaseLat(null)
                   setBaseLng(null)
                 }}
               />
 
-              {/* Botón geolocalización */}
               <button
                 onClick={handleGeolocate}
                 disabled={geoLoading}
@@ -485,7 +494,6 @@ export default function OnboardingView({ onComplete }) {
                 </div>
               )}
 
-              {/* Confirmación si se obtuvo coords */}
               {baseLat && baseLng && (
                 <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:8, padding:'8px 12px', marginTop:8, display:'flex', alignItems:'center', gap:8 }}>
                   <span style={{ fontSize:14 }}>✅</span>
@@ -496,7 +504,6 @@ export default function OnboardingView({ onComplete }) {
               )}
             </div>
 
-            {/* Slider de radio */}
             <div style={{ marginBottom:20 }}>
               <label style={lbl}>
                 Radio de cobertura: <strong>{radius} km</strong>
@@ -515,8 +522,6 @@ export default function OnboardingView({ onComplete }) {
                 <span>1 km</span>
                 <span>50 km</span>
               </div>
-
-              {/* Aviso si radio > 2 km */}
               {radius > 2 && (
                 <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'10px 14px', marginTop:10 }}>
                   <p style={{ fontSize:13, color:'#92400e', margin:0, lineHeight:1.5 }}>
@@ -526,7 +531,6 @@ export default function OnboardingView({ onComplete }) {
               )}
             </div>
 
-            {/* Dias disponibles */}
             <div style={{ marginBottom:20 }}>
               <label style={lbl}>Dias disponibles *</label>
               <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
@@ -539,7 +543,6 @@ export default function OnboardingView({ onComplete }) {
               </div>
             </div>
 
-            {/* Horario */}
             <div style={{ display:'flex', gap:12, marginBottom:8 }}>
               <div style={{ flex:1 }}>
                 <label style={lbl}>Hora inicio *</label>
