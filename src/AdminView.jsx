@@ -20,7 +20,6 @@ const emptyService = {
   supplies_notes: '', is_active: true, sort_order: 99
 };
 
-// ── Hook móvil ─────────────────────────────────────────────────
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
   useEffect(() => {
@@ -31,7 +30,6 @@ function useIsMobile() {
   return isMobile;
 }
 
-// ── Helpers ────────────────────────────────────────────────────
 const getPhotoStorageUrl = (path) => {
   if (!path) return null;
   if (path.startsWith('http')) return path;
@@ -72,25 +70,21 @@ const AdminView = () => {
   const [savingEdit, setSavingEdit] = useState(false);
   const [photoModal, setPhotoModal] = useState(null);
 
-  // ── Comisiones ──────────────────────────────────────────────────
   const [commissionModal, setCommissionModal]   = useState(false);
   const [commissionOp, setCommissionOp]         = useState(null);
   const [commissionPct, setCommissionPct]       = useState(15);
   const [savingCommission, setSavingCommission] = useState(false);
   const [commissionReport, setCommissionReport] = useState(null);
 
-  // ── KPIs de tiempo ──────────────────────────────────────────────
   const [kpisModal, setKpisModal]   = useState(false);
   const [kpisOp, setKpisOp]         = useState(null);
   const [kpisData, setKpisData]     = useState(null);
   const [kpisTimeline, setKpisTimeline] = useState([]);
   const [loadingKpis, setLoadingKpis] = useState(false);
 
-  // ── Incidencias ─────────────────────────────────────────────────
   const [incidents, setIncidents]           = useState([]);
   const [incidentsHistory, setIncidentsHistory] = useState([]);
 
-  // ── Catálogo ─────────────────────────────────────────────────────
   const [services, setServices]           = useState([]);
   const [loadingServices, setLoadingServices] = useState(false);
   const [serviceModal, setServiceModal]   = useState(false);
@@ -100,26 +94,26 @@ const AdminView = () => {
   const [serviceError, setServiceError]   = useState('');
   const [serviceSuccess, setServiceSuccess] = useState('');
 
-  // ── Checklist del catálogo ───────────────────────────────────────
   const [checklistItems, setChecklistItems]   = useState([]);
   const [newChecklistItem, setNewChecklistItem] = useState('');
   const [savingChecklist, setSavingChecklist] = useState(false);
   const [checklistServiceId, setChecklistServiceId] = useState(null);
 
-  // ── Operadores pendientes de aprobación ─────────────────────────
   const [pendingOperators, setPendingOperators]         = useState([]);
   const [reviewModal, setReviewModal]                   = useState(false);
   const [reviewingOp, setReviewingOp]                   = useState(null);
-  const [reviewAction, setReviewAction]                 = useState(null); // 'approve' | 'reject'
+  const [reviewAction, setReviewAction]                 = useState(null);
   const [rejectionReason, setRejectionReason]           = useState('');
   const [savingReview, setSavingReview]                 = useState(false);
   const [reviewError, setReviewError]                   = useState('');
   const [reviewPhotoModal, setReviewPhotoModal]         = useState(null);
 
-  // ── Gestión de status y acciones rápidas ────────────────────────
   const [updatingOpStatus, setUpdatingOpStatus]         = useState(null);
   const [resetOnboardingModal, setResetOnboardingModal] = useState(null);
   const [savingOpAction, setSavingOpAction]             = useState(false);
+
+  // CAMBIO 1: loadingOperators separado para mostrar estado claro en el tab
+  const [loadingOperators, setLoadingOperators] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -151,15 +145,15 @@ const AdminView = () => {
       setBookings(bookingsData || []);
       setOperators(operatorsData || []);
 
-      const total     = bookingsData.length;
-      const completed = bookingsData.filter(b => b.status === 'finalizado').length;
-      const cancelled = bookingsData.filter(b => b.status === 'cancelado').length;
-      const revenue   = bookingsData.filter(b => b.status === 'finalizado').reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
+      const total     = (bookingsData || []).length;
+      const completed = (bookingsData || []).filter(b => b.status === 'finalizado').length;
+      const cancelled = (bookingsData || []).filter(b => b.status === 'cancelado').length;
+      const revenue   = (bookingsData || []).filter(b => b.status === 'finalizado').reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
 
       setStats({
         total, completed, cancelled,
-        pending:        bookingsData.filter(b => b.status === 'pendiente').length,
-        active:         bookingsData.filter(b => ['confirmado','en_camino','en_proceso'].includes(b.status)).length,
+        pending:        (bookingsData || []).filter(b => b.status === 'pendiente').length,
+        active:         (bookingsData || []).filter(b => ['confirmado','en_camino','en_proceso'].includes(b.status)).length,
         revenue,
         completionRate: total > 0 ? Math.round((completed / total) * 100) : 0
       });
@@ -170,15 +164,20 @@ const AdminView = () => {
     }
   };
 
-  // ── Operadores pendientes ────────────────────────────────────────
   const fetchPendingOperators = async () => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('role', 'operador')
-      .eq('operator_status', 'pendiente')
-      .order('created_at', { ascending: false });
-    if (!error) setPendingOperators(data || []);
+    try {
+      // CAMBIO 2: cubre ambos valores posibles de operator_status pendiente
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'operador')
+        .in('operator_status', ['pendiente', 'pending_review'])
+        .order('created_at', { ascending: false });
+      if (!error) setPendingOperators(data || []);
+      else console.error('fetchPendingOperators error:', error.message);
+    } catch (err) {
+      console.error('fetchPendingOperators excepcion:', err);
+    }
   };
 
   const openReviewModal = (op) => {
@@ -198,23 +197,20 @@ const AdminView = () => {
     setReviewError('');
     try {
       const updatePayload = {
-  operator_status: reviewAction === 'approve' ? 'aprobado' : 'rechazado',
-  // onboarding_done NO se toca aquí — el operador ya lo puso en true en paso 4
-  // Solo en rechazo lo reseteamos para que pueda corregir y reenviar
-  ...(reviewAction === 'reject' ? {
-    onboarding_done: false,
-    onboarding_step: 1,
-    rejection_reason: rejectionReason.trim()
-  } : {}),
-  status: reviewAction === 'approve' ? 'activo' : undefined,
-  reviewed_at: new Date().toISOString(),
-  reviewed_by: (await supabase.auth.getUser()).data.user?.id || null,
-}
+        operator_status: reviewAction === 'approve' ? 'aprobado' : 'rechazado',
+        ...(reviewAction === 'reject' ? {
+          onboarding_done: false,
+          onboarding_step: 1,
+          rejection_reason: rejectionReason.trim()
+        } : {}),
+        status: reviewAction === 'approve' ? 'activo' : undefined,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: (await supabase.auth.getUser()).data.user?.id || null,
+      };
       const { error } = await supabase.from('profiles').update(updatePayload).eq('id', reviewingOp.id);
       if (error) throw error;
 
-      // WhatsApp de notificación
-      const phone = reviewingOp.phone;
+      const phone = reviewingOp?.phone;
       if (phone) {
         const templateKey = reviewAction === 'approve' ? 'operator_approved' : 'operator_rejected';
         try {
@@ -238,7 +234,6 @@ const AdminView = () => {
     }
   };
 
-  // ── Actualizar status del operador ─────────────────────────────
   const updateOperatorStatus = async (opId, newStatus) => {
     setUpdatingOpStatus(opId);
     try {
@@ -251,7 +246,6 @@ const AdminView = () => {
     finally { setUpdatingOpStatus(null); }
   };
 
-  // ── Reiniciar onboarding ─────────────────────────────────────────
   const resetOnboarding = async (op) => {
     setSavingOpAction(true);
     try {
@@ -280,13 +274,17 @@ const AdminView = () => {
     finally { setSavingOpAction(false); }
   };
 
-  // ── Helpers de estado de operador ───────────────────────────────
+  // CAMBIO 3: fallback defensivo — cualquier status no reconocido cae en 'activo'
   const OPERATOR_STATUS_CONFIG = {
-    activo:       { label: 'Activo',        color: '#10b981', bg: '#f0fdf4', border: '#bbf7d0', icon: '🟢' },
-    observacion:  { label: 'En Observación',color: '#f59e0b', bg: '#fffbeb', border: '#fde68a', icon: '🟡' },
-    suspendido:   { label: 'Suspendido',    color: '#ef4444', bg: '#fef2f2', border: '#fecaca', icon: '🔴' },
-    desactivado:  { label: 'Desactivado',   color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb', icon: '⚫' },
+    activo:       { label: 'Activo',         color: '#10b981', bg: '#f0fdf4', border: '#bbf7d0', icon: '🟢' },
+    observacion:  { label: 'En Observación', color: '#f59e0b', bg: '#fffbeb', border: '#fde68a', icon: '🟡' },
+    suspendido:   { label: 'Suspendido',     color: '#ef4444', bg: '#fef2f2', border: '#fecaca', icon: '🔴' },
+    desactivado:  { label: 'Desactivado',    color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb', icon: '⚫' },
   };
+
+  // Helper defensivo: nunca devuelve undefined
+  const getOpStatusCfg = (status) =>
+    OPERATOR_STATUS_CONFIG[status] || OPERATOR_STATUS_CONFIG['activo'];
 
   const StarRating = ({ rating, size = 14 }) => {
     if (!rating) return <span style={{ fontSize: 11, color: '#9ca3af' }}>Sin calificaciones</span>;
@@ -310,20 +308,26 @@ const AdminView = () => {
   };
 
   const fetchIncidents = async () => {
-    const { data } = await supabase
-      .from('incidents')
-      .select('*, operator:operator_id(full_name, id)')
-      .eq('status', 'abierto')
-      .order('created_at', { ascending: false });
-    setIncidents(data || []);
+    try {
+      const { data } = await supabase
+        .from('incidents')
+        .select('*, operator:operator_id(full_name, id)')
+        .eq('status', 'abierto')
+        .order('created_at', { ascending: false });
+      setIncidents(data || []);
 
-    const { data: history } = await supabase
-      .from('incidents')
-      .select('*, operator:operator_id(full_name, id)')
-      .eq('status', 'resuelto')
-      .order('resolved_at', { ascending: false })
-      .limit(20);
-    setIncidentsHistory(history || []);
+      const { data: history } = await supabase
+        .from('incidents')
+        .select('*, operator:operator_id(full_name, id)')
+        .eq('status', 'resuelto')
+        .order('resolved_at', { ascending: false })
+        .limit(20);
+      setIncidentsHistory(history || []);
+    } catch (err) {
+      console.error('fetchIncidents error:', err);
+      setIncidents([]);
+      setIncidentsHistory([]);
+    }
   };
 
   const resolveIncident = async (incidentId) => {
@@ -331,7 +335,6 @@ const AdminView = () => {
     fetchIncidents();
   };
 
-  // ── KPIs de tiempo ──────────────────────────────────────────────
   const fetchOperatorKpis = async (op) => {
     setKpisOp(op); setLoadingKpis(true); setKpisModal(true);
     try {
@@ -370,7 +373,6 @@ const AdminView = () => {
     return new Date(isoStr).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
   };
 
-  // ── Comisiones ──────────────────────────────────────────────────
   const openCommissionModal = (op) => {
     setCommissionOp(op); setCommissionPct(op.commission_pct || 15);
     const opBookings = bookings.filter(b => b.operator_id === op.id && b.status === 'finalizado');
@@ -388,7 +390,6 @@ const AdminView = () => {
     setSavingCommission(false); setCommissionModal(false);
   };
 
-  // ── Hora del servidor ──────────────────────────────────────────
   const [serverNow, setServerNow] = useState(null);
   useEffect(() => {
     const fetchServerTime = async () => {
@@ -407,7 +408,6 @@ const AdminView = () => {
     return now > scheduled && (now - scheduled) > 10 * 60 * 1000;
   };
 
-  // ── Catálogo ─────────────────────────────────────────────────────
   const fetchServices = async () => {
     setLoadingServices(true);
     try {
@@ -589,7 +589,7 @@ const AdminView = () => {
 
   const getOperatorStatus = (operatorId, forBooking = null) => {
     if (forBooking) {
-      const [fH, fM] = forBooking.scheduled_time.split(':').map(Number);
+      const [fH, fM] = (forBooking.scheduled_time || '00:00').split(':').map(Number);
       const fStart = fH * 60 + fM;
       const fEnd = fStart + 60;
       const conflict = bookings.find(b => {
@@ -597,7 +597,7 @@ const AdminView = () => {
         if (!['confirmado','en_camino','en_proceso'].includes(b.status)) return false;
         if (b.scheduled_date !== forBooking.scheduled_date) return false;
         if (b.id === forBooking.id) return false;
-        const [bH, bM] = b.scheduled_time.split(':').map(Number);
+        const [bH, bM] = (b.scheduled_time || '00:00').split(':').map(Number);
         const bStart = bH * 60 + bM;
         const bEnd = bStart + 60;
         return fStart < bEnd && fEnd > bStart;
@@ -660,7 +660,6 @@ const AdminView = () => {
     { label: '% Completado', value: `${stats.completionRate}%`,           icon: '📈', color: '#7c3aed' },
   ];
 
-  // ── Helper: mapa estático de zona ────────────────────────────────
   const getZoneMapUrl = (lat, lng, radius = 3000) => {
     if (!lat || !lng) return null;
     const GOOGLE_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
@@ -671,7 +670,6 @@ const AdminView = () => {
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6', paddingBottom: 48 }}>
 
-      {/* ── Header ── */}
       <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: isMobile ? '20px 16px' : '28px 24px 24px', textAlign: 'center' }}>
         <h1 style={{ color: '#fff', fontSize: isMobile ? 18 : 22, fontWeight: 700, margin: '0 0 4px' }}>🛠 Dashboard de Administración</h1>
         <p style={{ color: '#bfdbfe', fontSize: 13, margin: 0 }}>Gestión integral de MazClean</p>
@@ -683,7 +681,6 @@ const AdminView = () => {
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: isMobile ? '0 12px' : '0 16px' }}>
 
-        {/* ── Stats ── */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(auto-fit,minmax(140px,1fr))', gap: isMobile ? 8 : 12, marginTop: 20 }}>
           {statCards.map((s, i) => (
             <div key={i} style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? '14px' : '16px 18px' }}>
@@ -694,7 +691,6 @@ const AdminView = () => {
           ))}
         </div>
 
-        {/* ── Tabs ── */}
         <div style={{ display: 'flex', gap: 4, marginTop: 20, background: '#e5e7eb', padding: 4, borderRadius: 12, overflowX: 'auto', scrollbarWidth: 'none' }}>
           {[
             { id: 'bookings',  label: '📋 Reservaciones' },
@@ -810,8 +806,9 @@ const AdminView = () => {
         {activeTab === 'operators' && (
           <div style={{ marginTop: 16, display: 'grid', gap: 16 }}>
 
-            {/* ── SECCIÓN: OPERADORES PENDIENTES DE APROBACIÓN ── */}
-            {pendingOperators.length > 0 && (
+            {/* OPERADORES PENDIENTES DE APROBACION */}
+            {/* CAMBIO 4: pendingOperators.length > 0 verifica existencia antes de .map() */}
+            {Array.isArray(pendingOperators) && pendingOperators.length > 0 && (
               <div style={{ background: '#fffbeb', borderRadius: 14, border: '2px solid #fde68a', padding: isMobile ? '16px' : '20px 24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                   <h2 style={{ fontSize: 15, fontWeight: 700, color: '#92400e', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -826,13 +823,13 @@ const AdminView = () => {
                   </button>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(320px,1fr))', gap: 12 }}>
-                  {pendingOperators.map(op => {
+                  {/* CAMBIO 5: guard defensivo — si op o op.id no existe se salta */}
+                  {pendingOperators.filter(op => op && op.id).map(op => {
                     const step = op.onboarding_step || 0;
                     const progressPct = Math.round((step / 5) * 100);
                     const workDays = Array.isArray(op.work_days) ? op.work_days : [];
                     return (
                       <div key={op.id} style={{ background: '#fff', borderRadius: 12, border: '1.5px solid #fde68a', padding: 16, display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 2px 12px rgba(245,158,11,0.1)' }}>
-                        {/* Cabecera */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                           <div style={{ position: 'relative', flexShrink: 0 }}>
                             {op.kit_photo_url ? (
@@ -840,21 +837,21 @@ const AdminView = () => {
                                 style={{ height: 52, width: 52, borderRadius: '50%', objectFit: 'cover', border: '2px solid #fde68a' }} />
                             ) : (
                               <div style={{ height: 52, width: 52, borderRadius: '50%', background: 'linear-gradient(135deg,#f59e0b,#fbbf24)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 20 }}>
+                                {/* CAMBIO 6: optional chaining en charAt para evitar crash si full_name es null */}
                                 {op.full_name?.charAt(0) || '?'}
                               </div>
                             )}
                             <span style={{ position: 'absolute', bottom: -2, right: -2, background: '#f59e0b', borderRadius: '50%', width: 18, height: 18, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff' }}>⏳</span>
                           </div>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }}>{op.full_name}</div>
+                            <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }}>{op.full_name || 'Sin nombre'}</div>
                             <div style={{ fontSize: 12, color: '#6b7280', marginTop: 1 }}>{op.phone || 'Sin teléfono'}</div>
                             <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>
-                              {new Date(op.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              {op.created_at ? new Date(op.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
                             </div>
                           </div>
                         </div>
 
-                        {/* Progreso onboarding */}
                         <div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                             <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Onboarding completado</span>
@@ -866,19 +863,17 @@ const AdminView = () => {
                           <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 3 }}>Paso {step} de 5</div>
                         </div>
 
-                        {/* Info rápida */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                          {/* Zona */}
                           <div style={{ background: '#f0f9ff', borderRadius: 8, padding: '8px 10px', border: '1px solid #bae6fd' }}>
                             <div style={{ fontSize: 10, color: '#0284c7', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 }}>📍 Zona</div>
                             <div style={{ fontSize: 11, color: '#0369a1', fontWeight: 600 }}>
-                              {op.coverage_zones?.length > 0
+                              {/* CAMBIO 7: optional chaining en coverage_zones */}
+                              {Array.isArray(op.coverage_zones) && op.coverage_zones.length > 0
                                 ? op.coverage_zones.join(', ').substring(0, 30) + (op.coverage_zones.join(', ').length > 30 ? '…' : '')
                                 : op.photos_geo_lat ? `${Number(op.photos_geo_lat).toFixed(4)}, ${Number(op.photos_geo_lng).toFixed(4)}` : '—'}
                             </div>
                             {op.coverage_radius && <div style={{ fontSize: 10, color: '#7dd3fc' }}>Radio: {op.coverage_radius} km</div>}
                           </div>
-                          {/* Banco */}
                           <div style={{ background: '#f0fdf4', borderRadius: 8, padding: '8px 10px', border: '1px solid #bbf7d0' }}>
                             <div style={{ fontSize: 10, color: '#059669', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 }}>🏦 Banco</div>
                             <div style={{ fontSize: 11, color: '#065f46', fontWeight: 600 }}>{op.bank_name || '—'}</div>
@@ -886,7 +881,6 @@ const AdminView = () => {
                           </div>
                         </div>
 
-                        {/* Días laborales */}
                         {workDays.length > 0 && (
                           <div>
                             <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 5 }}>📅 Horario</div>
@@ -905,7 +899,6 @@ const AdminView = () => {
                           </div>
                         )}
 
-                        {/* Botón revisar */}
                         <button onClick={() => openReviewModal(op)}
                           style={{ width: '100%', padding: '12px', background: 'linear-gradient(135deg,#f59e0b,#d97706)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48, boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
                           🔍 Revisar y Decidir
@@ -917,26 +910,29 @@ const AdminView = () => {
               </div>
             )}
 
-            {/* Si no hay pendientes, mostrar mensaje vacío sutil */}
-            {pendingOperators.length === 0 && (
+            {Array.isArray(pendingOperators) && pendingOperators.length === 0 && (
               <div style={{ background: '#f0fdf4', borderRadius: 12, border: '1.5px solid #bbf7d0', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 18 }}>✅</span>
                 <span style={{ fontSize: 13, color: '#166534', fontWeight: 600 }}>Sin operadores pendientes de aprobación</span>
               </div>
             )}
 
-            {incidents.length > 0 && (
+            {/* CAMBIO 8: guard defensivo en incidents.map() */}
+            {Array.isArray(incidents) && incidents.length > 0 && (
               <div style={{ background: '#fef2f2', borderRadius: 14, border: '2px solid #fecaca', padding: isMobile ? '16px' : '20px 24px' }}>
                 <h2 style={{ fontSize: 15, fontWeight: 700, color: '#991b1b', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
                   ⚠️ Incidencias Abiertas ({incidents.length})
                 </h2>
                 <div style={{ display: 'grid', gap: 10 }}>
-                  {incidents.map(inc => (
+                  {incidents.filter(inc => inc && inc.id).map(inc => (
                     <div key={inc.id} style={{ background: '#fff', borderRadius: 10, padding: '12px 16px', border: '1px solid #fecaca', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                       <div>
+                        {/* CAMBIO 9: optional chaining en inc.operator */}
                         <div style={{ fontWeight: 600, fontSize: 14, color: '#1f2937' }}>👷 {inc.operator?.full_name || 'Operador'}</div>
-                        <div style={{ fontSize: 13, color: '#6b7280', marginTop: 3 }}>{inc.description}</div>
-                        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>{new Date(inc.created_at).toLocaleString('es-MX')}</div>
+                        <div style={{ fontSize: 13, color: '#6b7280', marginTop: 3 }}>{inc.description || '—'}</div>
+                        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>
+                          {inc.created_at ? new Date(inc.created_at).toLocaleString('es-MX') : '—'}
+                        </div>
                       </div>
                       <button onClick={() => resolveIncident(inc.id)}
                         style={{ padding: '8px 14px', background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 8, color: '#166534', fontSize: 13, fontWeight: 600, cursor: 'pointer', flexShrink: 0, minHeight: 44 }}>
@@ -948,24 +944,25 @@ const AdminView = () => {
               </div>
             )}
 
+            {/* ESTADO EN TIEMPO REAL */}
             <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? '16px' : '20px 24px' }}>
               <h2 style={{ fontSize: 15, fontWeight: 700, color: '#1f2937', margin: '0 0 16px' }}>🟢 Estado en Tiempo Real</h2>
-              {operators.length === 0 ? (
+              {!Array.isArray(operators) || operators.length === 0 ? (
                 <p style={{ color: '#9ca3af', fontSize: 14, fontStyle: 'italic' }}>No hay operadores registrados.</p>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(280px,1fr))', gap: 12 }}>
-                  {operators.map(op => {
+                  {/* CAMBIO 10: .filter() defensivo antes del .map() */}
+                  {operators.filter(op => op && op.id).map(op => {
                     const status = getOperatorStatus(op.id);
                     const opBookings = bookings.filter(b => b.operator_id === op.id && b.status === 'finalizado');
                     const totalRev = opBookings.reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
                     const commission = totalRev * ((op.commission_pct || 15) / 100);
-                    const opStatusBadge = op.operator_status;
-                    const opStatusCfg = OPERATOR_STATUS_CONFIG[op.status || 'activo'] || OPERATOR_STATUS_CONFIG.activo;
+                    // CAMBIO 11: usa getOpStatusCfg() que nunca devuelve undefined
+                    const opStatusCfg = getOpStatusCfg(op.status);
                     const showObsAlert = op.status === 'observacion' || (op.rating_avg && op.rating_avg < 4.0 && op.status === 'activo');
                     return (
                       <div key={op.id} style={{ background: '#f9fafb', borderRadius: 12, border: `1.5px solid ${opStatusCfg.border}`, padding: 16, display: 'flex', flexDirection: 'column', gap: 10, opacity: op.status === 'desactivado' ? 0.7 : 1 }}>
 
-                        {/* Alerta observación */}
                         {showObsAlert && (
                           <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
                             <AlertTriangle size={14} color="#f59e0b" />
@@ -975,13 +972,13 @@ const AdminView = () => {
                           </div>
                         )}
 
-                        {/* Header */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                           <div style={{ height: 48, width: 48, borderRadius: '50%', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 20, flexShrink: 0 }}>
-                            {op.full_name?.charAt(0)}
+                            {/* CAMBIO 12: optional chaining en charAt */}
+                            {op.full_name?.charAt(0) || '?'}
                           </div>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }}>{op.full_name}</div>
+                            <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }}>{op.full_name || 'Sin nombre'}</div>
                             <div style={{ fontSize: 12, color: '#6b7280', marginTop: 1 }}>{op.phone || 'Sin teléfono'}</div>
                             <div style={{ marginTop: 4 }}><StarRating rating={op.rating_avg} /></div>
                           </div>
@@ -996,7 +993,6 @@ const AdminView = () => {
                           </div>
                         </div>
 
-                        {/* Stats */}
                         <div style={{ background: '#fff', borderRadius: 8, padding: '8px 12px', border: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 }}>Comisión ({op.commission_pct || 15}%)</div>
@@ -1014,7 +1010,6 @@ const AdminView = () => {
                           </div>
                         </div>
 
-                        {/* Selector de status */}
                         <div>
                           <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 5 }}>Cambiar estado operativo</div>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4 }}>
@@ -1029,7 +1024,6 @@ const AdminView = () => {
                           </div>
                         </div>
 
-                        {/* Acciones */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 5 }}>
                           <button onClick={() => fetchOperatorHistory(op.id)}
                             style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 40 }}>
@@ -1059,7 +1053,7 @@ const AdminView = () => {
               <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? '16px' : '20px 24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                   <h2 style={{ fontSize: 15, fontWeight: 700, color: '#1f2937', margin: 0 }}>
-                    📊 Historial — {operators.find(o => o.id === operatorHistory.operatorId)?.full_name}
+                    📊 Historial — {operators.find(o => o.id === operatorHistory.operatorId)?.full_name || '—'}
                   </h2>
                   <button onClick={() => setOperatorHistory(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 20, minHeight: 44, minWidth: 44 }}>×</button>
                 </div>
@@ -1076,7 +1070,8 @@ const AdminView = () => {
                     Filtrar
                   </button>
                 </div>
-                {operatorHistory.data.length === 0 ? (
+                {/* CAMBIO 13: optional chaining en operatorHistory.data */}
+                {!operatorHistory.data || operatorHistory.data.length === 0 ? (
                   <p style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: 14 }}>Sin servicios en este rango.</p>
                 ) : (
                   <div style={{ display: 'grid', gap: 8 }}>
@@ -1096,19 +1091,21 @@ const AdminView = () => {
               </div>
             )}
 
-            {incidentsHistory.length > 0 && (
+            {/* CAMBIO 14: guard defensivo en incidentsHistory.map() */}
+            {Array.isArray(incidentsHistory) && incidentsHistory.length > 0 && (
               <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? '16px' : '20px 24px' }}>
                 <h2 style={{ fontSize: 15, fontWeight: 700, color: '#1f2937', margin: '0 0 14px' }}>📋 Historial de Incidencias ({incidentsHistory.length})</h2>
                 <div style={{ display: 'grid', gap: 10 }}>
-                  {incidentsHistory.map(inc => (
+                  {incidentsHistory.filter(inc => inc && inc.id).map(inc => (
                     <div key={inc.id} style={{ background: '#f9fafb', borderRadius: 10, padding: '12px 16px', border: '1px solid #e5e7eb' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981', background: '#f0fdf4', padding: '2px 8px', borderRadius: 20 }}>✅ Resuelta</span>
+                        {/* CAMBIO 15: optional chaining en inc.operator */}
                         <span style={{ fontSize: 11, color: '#9ca3af' }}>👷 {inc.operator?.full_name || 'Operador'}</span>
                       </div>
-                      <div style={{ fontSize: 13, color: '#374151' }}>{inc.description}</div>
+                      <div style={{ fontSize: 13, color: '#374151' }}>{inc.description || '—'}</div>
                       <div style={{ display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 11, color: '#9ca3af' }}>📅 {new Date(inc.created_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                        <span style={{ fontSize: 11, color: '#9ca3af' }}>📅 {inc.created_at ? new Date(inc.created_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</span>
                         {inc.resolved_at && <span style={{ fontSize: 11, color: '#9ca3af' }}>✅ {new Date(inc.resolved_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</span>}
                       </div>
                     </div>
@@ -1215,8 +1212,6 @@ const AdminView = () => {
       {reviewModal && reviewingOp && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16, overflowY: 'auto' }}>
           <div style={{ background: '#fff', borderRadius: isMobile ? '24px 24px 0 0' : 20, boxShadow: '0 8px 48px rgba(0,0,0,0.25)', width: '100%', maxWidth: isMobile ? '100%' : 600, overflow: 'hidden', margin: isMobile ? 0 : 'auto' }}>
-
-            {/* Header */}
             <div style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>🔍 Revisión de Operador</h3>
@@ -1226,15 +1221,13 @@ const AdminView = () => {
             </div>
 
             <div style={{ padding: isMobile ? '16px' : 24, maxHeight: isMobile ? '75vh' : '70vh', overflowY: 'auto', display: 'grid', gap: 20 }}>
-
-              {/* Datos personales */}
               <div style={{ background: '#f9fafb', borderRadius: 12, padding: '14px 16px', border: '1px solid #e5e7eb' }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>👤 Datos Personales</div>
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
                   {[
                     { label: 'Nombre', value: reviewingOp.full_name },
                     { label: 'Teléfono', value: reviewingOp.phone || '—' },
-                    { label: 'Solicitud', value: new Date(reviewingOp.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }) },
+                    { label: 'Solicitud', value: reviewingOp.created_at ? new Date(reviewingOp.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }) : '—' },
                     { label: 'Onboarding', value: `Paso ${reviewingOp.onboarding_step || 0}/5` },
                   ].map(({ label, value }) => (
                     <div key={label}>
@@ -1245,7 +1238,6 @@ const AdminView = () => {
                 </div>
               </div>
 
-              {/* Datos bancarios */}
               <div style={{ background: '#f0fdf4', borderRadius: 12, padding: '14px 16px', border: '1.5px solid #bbf7d0' }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>🏦 Datos Bancarios</div>
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
@@ -1262,12 +1254,11 @@ const AdminView = () => {
                 </div>
               </div>
 
-              {/* Zona de operación */}
               <div style={{ background: '#f0f9ff', borderRadius: 12, padding: '14px 16px', border: '1.5px solid #bae6fd' }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>📍 Zona de Operación</div>
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8, marginBottom: reviewingOp.photos_geo_lat ? 12 : 0 }}>
                   {[
-                    { label: 'Colonias/Zonas', value: reviewingOp.coverage_zones?.join(', ') || '—' },
+                    { label: 'Colonias/Zonas', value: Array.isArray(reviewingOp.coverage_zones) ? reviewingOp.coverage_zones.join(', ') || '—' : '—' },
                     { label: 'Radio de cobertura', value: reviewingOp.coverage_radius ? `${reviewingOp.coverage_radius} km` : '—' },
                     { label: 'Días de trabajo', value: Array.isArray(reviewingOp.work_days) && reviewingOp.work_days.length > 0 ? reviewingOp.work_days.map(d => WORK_DAYS_LABELS[d] || d).join(', ') : '—' },
                     { label: 'Horario', value: reviewingOp.work_start && reviewingOp.work_end ? `${reviewingOp.work_start} – ${reviewingOp.work_end}` : '—' },
@@ -1278,7 +1269,6 @@ const AdminView = () => {
                     </div>
                   ))}
                 </div>
-                {/* Mapa estático */}
                 {reviewingOp.photos_geo_lat && reviewingOp.photos_geo_lng && (() => {
                   const mapUrl = getZoneMapUrl(reviewingOp.photos_geo_lat, reviewingOp.photos_geo_lng, reviewingOp.coverage_radius ? reviewingOp.coverage_radius * 1000 : 3000);
                   return mapUrl ? (
@@ -1295,7 +1285,6 @@ const AdminView = () => {
                 })()}
               </div>
 
-              {/* Foto del kit */}
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>📸 Foto del Kit</div>
                 {reviewingOp.kit_photo_url ? (
@@ -1313,7 +1302,6 @@ const AdminView = () => {
                 )}
               </div>
 
-              {/* Acción: aprobar o rechazar */}
               <div style={{ background: '#f9fafb', borderRadius: 12, padding: '16px', border: '1px solid #e5e7eb' }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>⚖️ Decisión</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
@@ -1327,7 +1315,6 @@ const AdminView = () => {
                   </button>
                 </div>
 
-                {/* Motivo de rechazo — obligatorio */}
                 {reviewAction === 'reject' && (
                   <div style={{ marginBottom: 4 }}>
                     <label style={{ ...labelStyle, color: '#991b1b' }}>Motivo de rechazo * <span style={{ fontWeight: 400, color: '#9ca3af' }}>(obligatorio, se enviará al operador)</span></label>
@@ -1353,7 +1340,6 @@ const AdminView = () => {
               </div>
             </div>
 
-            {/* Footer con botón confirmar */}
             <div style={{ padding: '14px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button onClick={() => setReviewModal(false)}
                 style={{ padding: '12px 22px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>
@@ -1398,7 +1384,7 @@ const AdminView = () => {
               </div>
               <div style={{ maxHeight: 280, overflowY: 'auto', display: 'grid', gap: 8 }}>
                 {operators.length === 0 && <p style={{ color: '#9ca3af', textAlign: 'center', padding: 16, fontSize: 14, fontStyle: 'italic' }}>No hay operadores disponibles.</p>}
-                {operators.map(op => {
+                {operators.filter(op => op && op.id).map(op => {
                   const opStatus = getOperatorStatus(op.id, selectedBooking);
                   const isAvailable = opStatus.label === 'Disponible';
                   return (
@@ -1406,10 +1392,10 @@ const AdminView = () => {
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px', borderRadius: 10, border: selectedBooking.operator_id === op.id ? '2px solid #3b82f6' : isAvailable ? '1.5px solid #bbf7d0' : '1.5px solid #fecaca', background: selectedBooking.operator_id === op.id ? '#eff6ff' : isAvailable ? '#f0fdf4' : '#fef2f2', cursor: 'pointer', minHeight: 56 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{ height: 40, width: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 16 }}>
-                          {op.full_name?.charAt(0)}
+                          {op.full_name?.charAt(0) || '?'}
                         </div>
                         <div style={{ textAlign: 'left' }}>
-                          <div style={{ fontWeight: 700, fontSize: 14, color: '#1f2937' }}>{op.full_name}</div>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: '#1f2937' }}>{op.full_name || 'Sin nombre'}</div>
                           <div style={{ fontSize: 12, color: opStatus.color, fontWeight: 600 }}>{opStatus.label}</div>
                         </div>
                       </div>
@@ -1506,7 +1492,7 @@ const AdminView = () => {
                               <span style={{ fontSize: 11, color: '#6b7280' }}>{b.service_name}</span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                              {b.logs.map((log, idx) => {
+                              {(b.logs || []).map((log, idx) => {
                                 const statusLabels = {
                                   confirmado: { label: 'Asignado', color: '#3b82f6' },
                                   en_camino:  { label: 'Salió',    color: '#6366f1' },
@@ -1522,7 +1508,7 @@ const AdminView = () => {
                                       <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>{formatTime(log.created_at)}</div>
                                       {log.duration_seconds && <div style={{ fontSize: 9, color: '#d1d5db' }}>+{formatSeconds(log.duration_seconds)}</div>}
                                     </div>
-                                    {idx < b.logs.filter(l => statusLabels[l.status]).length - 1 && (
+                                    {idx < (b.logs || []).filter(l => statusLabels[l.status]).length - 1 && (
                                       <div style={{ fontSize: 12, color: '#d1d5db', flexShrink: 0 }}>→</div>
                                     )}
                                   </React.Fragment>
