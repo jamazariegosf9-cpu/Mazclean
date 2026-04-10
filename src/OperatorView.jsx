@@ -163,7 +163,7 @@ const OperatorView = () => {
   }, [bookings, user]);
 
   // GUARD: debe ir despues de todos los hooks
-  if (!profile || !profile.onboarding_done) {
+  if (profile?.role !== 'admin' && (!profile || !profile.onboarding_done)) {
     const step = profile?.onboarding_step || 1;
     return (
       <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -194,8 +194,8 @@ const OperatorView = () => {
     );
   }
 
-  if (profile.onboarding_done &&
-      (profile.operator_status === 'pending_review' || profile.operator_status === 'pendiente')) {
+  if (profile?.role !== 'admin' && profile.onboarding_done &&
+    (profile.operator_status === 'pending_review' || profile.operator_status === 'pendiente')) {
     return (
       <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ background: 'rgba(59,130,246,0.08)', border: '1.5px solid rgba(59,130,246,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
