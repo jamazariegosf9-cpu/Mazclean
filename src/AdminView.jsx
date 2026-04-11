@@ -1183,32 +1183,7 @@ const toggleAssignmentMode = async (op) => {
                             ))}
                           </div>
                         </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 5 }}>
-                          <button onClick={() => fetchOperatorHistory(op.id)}
-                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 40 }}>
-                            📊<br/>Historial
-                          </button>
-                          <button onClick={() => openCommissionModal(op)}
-                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 40 }}>
-                            💰<br/>Comisión
-                          </button>
-                          <button onClick={() => fetchOperatorKpis(op)}
-                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 40 }}>
-                            ⏱<br/>Tiempos
-                          </button>
-                          <button onClick={() => setResetOnboardingModal(op)}
-                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #fde68a', background: '#fffbeb', color: '#92400e', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 40 }}>
-                            🔄<br/>Onboard
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
+                      
 {/* Toggle assignment_mode */}
 <div style={{ background: '#f9fafb', borderRadius: 10, padding: '10px 14px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
   <div>
@@ -1909,6 +1884,7 @@ const toggleAssignmentMode = async (op) => {
             </div>
           </div>
         </div>
+        
       )}
 
       {/* ════ MODAL: FOTO (reservación) ════ */}
