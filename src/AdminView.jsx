@@ -114,15 +114,23 @@ const AdminView = () => {
 
   // CAMBIO 1: loadingOperators separado para mostrar estado claro en el tab
   const [loadingOperators, setLoadingOperators] = useState(false);
+  const [unattendedBookings, setUnattendedBookings] = useState([]);
+  const [cancellingBooking, setCancellingBooking]   = useState(null);
+  const [assigningManual, setAssigningManual]       = useState(null);
 
   useEffect(() => {
-    fetchData();
-    const channel = supabase
-      .channel('admin-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => fetchData())
-      .subscribe();
-    return () => supabase.removeChannel(channel);
-  }, []);
+  fetchData();
+  fetchUnattendedBookings();
+
+  const channel = supabase
+    .channel('admin-updates')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
+      fetchData();
+      fetchUnattendedBookings();
+    })
+    .subscribe();
+  return () => supabase.removeChannel(channel);
+}, []);
 
   useEffect(() => {
     if (activeTab === 'catalog') fetchServices();
@@ -629,7 +637,107 @@ const AdminView = () => {
     if (error) { alert(error.message); return; }
     setOperatorHistory({ operatorId, data });
   };
+// ── Fetch bookings sin operador (ronda 4 — requieren admin) ──────────────────
+const fetchUnattendedBookings = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*, customer:client_id(full_name, phone)')
+      .eq('status', 'pendiente')
+      .is('operator_id', null)
+      .eq('current_ronda', 4)
+      .order('created_at', { ascending: true });
+    if (!error) setUnattendedBookings(data || []);
+  } catch (err) {
+    console.error('fetchUnattendedBookings:', err);
+  }
+};
 
+// ── Cancelar booking sin operador y notificar al cliente ─────────────────────
+const cancelUnattendedBooking = async (booking) => {
+  if (!confirm(`¿Cancelar la reservación ${booking.booking_ref}? Se notificará al cliente por WhatsApp.`)) return;
+  setCancellingBooking(booking.id);
+  try {
+    const { error } = await supabase
+      .from('bookings')
+      .update({ status: 'cancelado', updated_at: new Date().toISOString() })
+      .eq('id', booking.id);
+    if (error) throw error;
+
+    // Notificar al cliente
+    if (booking.customer?.phone) {
+      try {
+        await sendWhatsApp('booking_cancelled', booking.customer.phone, {
+          booking_ref:  booking.booking_ref,
+          service_name: booking.service_name,
+        });
+      } catch (e) { console.warn('WhatsApp omitido:', e.message); }
+    }
+
+    setUnattendedBookings(prev => prev.filter(b => b.id !== booking.id));
+    fetchData();
+  } catch (err) {
+    alert('Error al cancelar: ' + err.message);
+  } finally {
+    setCancellingBooking(null);
+  }
+};
+
+// ── Asignar operador manualmente a booking sin operador ───────────────────────
+const assignManuallyToBooking = async (bookingId, operatorId) => {
+  if (!operatorId) return;
+  setAssigningManual(bookingId);
+  try {
+    const { error } = await supabase
+      .from('bookings')
+      .update({
+        operator_id:   operatorId,
+        status:        'confirmado',
+        current_ronda: 4,
+        updated_at:    new Date().toISOString(),
+      })
+      .eq('id', bookingId);
+    if (error) throw error;
+
+    const booking  = unattendedBookings.find(b => b.id === bookingId);
+    const operator = operators.find(o => o.id === operatorId);
+
+    if (booking?.customer?.phone) {
+      try {
+        await sendWhatsApp('operator_assigned', booking.customer.phone, {
+          booking_ref:   booking.booking_ref,
+          service_name:  booking.service_name,
+          scheduled_date: booking.scheduled_date,
+          scheduled_time: booking.scheduled_time_from?.slice(0,5) || booking.scheduled_time,
+          total_price:   booking.total_price,
+          operator_name: operator?.full_name || 'nuestro operador',
+        });
+      } catch (e) { console.warn('WhatsApp omitido:', e.message); }
+    }
+
+    setUnattendedBookings(prev => prev.filter(b => b.id !== bookingId));
+    fetchData();
+  } catch (err) {
+    alert('Error al asignar: ' + err.message);
+  } finally {
+    setAssigningManual(null);
+  }
+};
+
+// ── Toggle assignment_mode del operador ──────────────────────────────────────
+const toggleAssignmentMode = async (op) => {
+  const newMode = op.assignment_mode === 'admin_asignado' ? 'autonomo' : 'admin_asignado';
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ assignment_mode: newMode, updated_at: new Date().toISOString() })
+      .eq('id', op.id);
+    if (error) throw error;
+    setOperators(prev => prev.map(o => o.id === op.id ? { ...o, assignment_mode: newMode } : o));
+  } catch (err) {
+    alert('Error: ' + err.message);
+  }
+};
   const getStatusStyle = (status) => {
     switch (status) {
       case 'pendiente':  return { bg: '#fef9c3', text: '#854d0e', border: '#fde68a' };
@@ -731,7 +839,59 @@ const AdminView = () => {
                 ))}
               </div>
             </div>
-
+{/* ── Bookings sin operador — requieren atención admin ── */}
+{unattendedBookings.length > 0 && (
+  <div style={{ background: '#fef2f2', borderRadius: 14, border: '2px solid #fecaca', padding: isMobile ? '16px' : '20px 24px', marginBottom: 16 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+      <span style={{ fontSize: 20 }}>🚨</span>
+      <h2 style={{ fontSize: 15, fontWeight: 700, color: '#991b1b', margin: 0 }}>
+        Requieren tu atención — Sin operador ({unattendedBookings.length})
+      </h2>
+    </div>
+    <p style={{ fontSize: 13, color: '#7f1d1d', margin: '0 0 14px', lineHeight: 1.5 }}>
+      Estos servicios no fueron aceptados por ningún operador en las 3 rondas automáticas. Asigna manualmente o cancela.
+    </p>
+    <div style={{ display: 'grid', gap: 10 }}>
+      {unattendedBookings.map(booking => (
+        <div key={booking.id} style={{ background: '#fff', borderRadius: 12, padding: '14px 16px', border: '1px solid #fecaca' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', background: '#eff6ff', padding: '2px 8px', borderRadius: 20 }}>{booking.booking_ref}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', background: '#fef2f2', padding: '2px 8px', borderRadius: 20 }}>3 rondas sin respuesta</span>
+              </div>
+              <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14, marginBottom: 2 }}>{booking.service_name}</div>
+              <div style={{ fontSize: 13, color: '#6b7280' }}>👤 {booking.customer?.full_name || '—'} · 📞 {booking.customer?.phone || '—'}</div>
+              <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>
+                📅 {booking.scheduled_date} · 🕐 {booking.scheduled_time_from?.slice(0,5) || '—'} — {booking.scheduled_time_to?.slice(0,5) || '—'} hrs
+              </div>
+              <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>📍 {booking.address_line}</div>
+            </div>
+            <div style={{ fontWeight: 700, color: '#059669', fontSize: 15, flexShrink: 0 }}>${booking.total_price}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <select
+              defaultValue=""
+              onChange={e => { if (e.target.value) assignManuallyToBooking(booking.id, e.target.value) }}
+              disabled={assigningManual === booking.id}
+              style={{ flex: 1, padding: '10px 12px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44, fontFamily: 'inherit' }}>
+              <option value="">{assigningManual === booking.id ? '⏳ Asignando...' : '👷 Asignar operador...'}</option>
+              {operators.filter(op => op?.operator_status === 'aprobado' && op?.status === 'activo').map(op => (
+                <option key={op.id} value={op.id}>{op.full_name} — {op.assignment_mode === 'admin_asignado' ? '⭐ Admin' : 'Autónomo'}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => cancelUnattendedBooking(booking)}
+              disabled={cancellingBooking === booking.id}
+              style={{ padding: '10px 16px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 44, flexShrink: 0 }}>
+              {cancellingBooking === booking.id ? '⏳...' : '❌ Cancelar'}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
             {loading ? (
               <div style={{ textAlign: 'center', padding: 48, color: '#9ca3af', background: '#fff', borderRadius: 14 }}>Cargando...</div>
             ) : filteredBookings.length === 0 ? (
@@ -1048,6 +1208,25 @@ const AdminView = () => {
                 </div>
               )}
             </div>
+
+{/* Toggle assignment_mode */}
+<div style={{ background: '#f9fafb', borderRadius: 10, padding: '10px 14px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+  <div>
+    <div style={{ fontSize: 11, fontWeight: 700, color: '#374151' }}>
+      {op.assignment_mode === 'admin_asignado' ? '⭐ Admin asignado' : '🤖 Autónomo'}
+    </div>
+    <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
+      {op.assignment_mode === 'admin_asignado'
+        ? 'Tiene prioridad en la asignación automática'
+        : 'Acepta servicios por su cuenta'}
+    </div>
+  </div>
+  <button
+    onClick={() => toggleAssignmentMode(op)}
+    style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: op.assignment_mode === 'admin_asignado' ? '#1e40af' : '#e5e7eb', color: op.assignment_mode === 'admin_asignado' ? '#fff' : '#6b7280', fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0, minHeight: 36 }}>
+    {op.assignment_mode === 'admin_asignado' ? '⭐ Admin' : '🤖 Autónomo'}
+  </button>
+</div>
 
             {operatorHistory && (
               <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? '16px' : '20px 24px' }}>
