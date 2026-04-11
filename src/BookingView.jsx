@@ -8,11 +8,11 @@ const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY   = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 const SERVICES = [
-  { id: '00131559-0491-479f-a295-664a68c3a222', name: 'Lavado Exterior',  description: 'Lavado completo de carrocería, llantas y cristales',            icon: '🚿', duration: '45 min', prices: { sedan: 199, suv: 249, pickup: 299, van: 299 } },
-  { id: 'e85c4c06-9d09-4828-98f2-86401a4481ee', name: 'Lavado Interior',  description: 'Aspirado, limpieza de tablero, tapetes y vidrios interiores',    icon: '🪣', duration: '60 min', prices: { sedan: 249, suv: 299, pickup: 349, van: 349 } },
-  { id: 'a539c1f0-73ee-4b22-b477-f1f826601d19', name: 'Lavado Completo',  description: 'Exterior + Interior en un solo servicio',                        icon: '✨', duration: '90 min', prices: { sedan: 399, suv: 499, pickup: 599, van: 599 } },
-  { id: '69d83cc5-c32d-4e63-bf4f-bacad6a259a4', name: 'Encerado Premium', description: 'Aplicación de cera protectora de alta duración',                 icon: '💎', duration: '2 hrs',  prices: { sedan: 599, suv: 749, pickup: 899, van: 899 } },
-  { id: 'd4d732ae-11a1-4bb8-b84f-8e8dbdacfb51', name: 'Detallado Total',  description: 'Servicio completo con pulido, descontaminación y sellador',      icon: '🏆', duration: '3 hrs',  prices: { sedan: 999, suv: 1299, pickup: 1499, van: 1499 } },
+  { id: '00131559-0491-479f-a295-664a68c3a222', name: 'Lavado Exterior',  description: 'Lavado completo de carrocería, llantas y cristales',            icon: '🚿', duration: '45 min', durationMin: 45,  prices: { sedan: 199, suv: 249, pickup: 299, van: 299 } },
+  { id: 'e85c4c06-9d09-4828-98f2-86401a4481ee', name: 'Lavado Interior',  description: 'Aspirado, limpieza de tablero, tapetes y vidrios interiores',    icon: '🪣', duration: '60 min', durationMin: 60,  prices: { sedan: 249, suv: 299, pickup: 349, van: 349 } },
+  { id: 'a539c1f0-73ee-4b22-b477-f1f826601d19', name: 'Lavado Completo',  description: 'Exterior + Interior en un solo servicio',                        icon: '✨', duration: '90 min', durationMin: 90,  prices: { sedan: 399, suv: 499, pickup: 599, van: 599 } },
+  { id: '69d83cc5-c32d-4e63-bf4f-bacad6a259a4', name: 'Encerado Premium', description: 'Aplicación de cera protectora de alta duración',                 icon: '💎', duration: '2 hrs',  durationMin: 120, prices: { sedan: 599, suv: 749, pickup: 899, van: 899 } },
+  { id: 'd4d732ae-11a1-4bb8-b84f-8e8dbdacfb51', name: 'Detallado Total',  description: 'Servicio completo con pulido, descontaminación y sellador',      icon: '🏆', duration: '3 hrs',  durationMin: 180, prices: { sedan: 999, suv: 1299, pickup: 1499, van: 1499 } },
 ]
 
 const VEHICLE_TYPES = [
@@ -21,6 +21,17 @@ const VEHICLE_TYPES = [
   { id: 'pickup', name: 'Pickup',           icon: '🛻', priceKey: 'pickup' },
   { id: 'van',    name: 'Van / Minivan',    icon: '🚐', priceKey: 'van'    },
 ]
+
+// Bloques de horario disponibles — de 7am a 7pm en pasos de 30 min
+const TIME_BLOCKS = []
+for (let h = 7; h <= 19; h++) {
+  for (let m = 0; m < 60; m += 30) {
+    if (h === 19 && m > 0) break
+    const hh  = String(h).padStart(2, '0')
+    const mm  = String(m).padStart(2, '0')
+    TIME_BLOCKS.push(`${hh}:${mm}`)
+  }
+}
 
 function loadGoogleMapsScript(apiKey) {
   return new Promise((resolve, reject) => {
@@ -40,7 +51,6 @@ function generateRef() {
   return 'MCL-' + Math.random().toString(36).substring(2, 8).toUpperCase()
 }
 
-// Distancia en km entre dos coordenadas (Haversine)
 function haversineKm(lat1, lng1, lat2, lng2) {
   const R = 6371
   const dLat = (lat2 - lat1) * Math.PI / 180
@@ -50,6 +60,19 @@ function haversineKm(lat1, lng1, lat2, lng2) {
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLng / 2) * Math.sin(dLng / 2)
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+// Convierte "08:30" a minutos desde medianoche
+function timeToMin(t) {
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
+
+// Valida que el rango sea suficiente para la duración del servicio
+function isValidRange(from, to, durationMin) {
+  if (!from || !to) return false
+  const diff = timeToMin(to) - timeToMin(from)
+  return diff >= durationMin
 }
 
 function useIsMobile() {
@@ -71,28 +94,30 @@ export default function BookingView() {
   const [error, setError]     = useState('')
   const [mapsLoaded, setMapsLoaded] = useState(false)
 
+  // Step 1
   const [selectedService, setSelectedService] = useState(null)
   const [vehicleType, setVehicleType]         = useState('')
   const [vehicleBrand, setVehicleBrand]       = useState('')
   const [vehicleColor, setVehicleColor]       = useState('')
 
+  // Step 2 — ubicación
   const [address, setAddress]               = useState('')
   const [addressDetails, setAddressDetails] = useState(null)
   const [mapError, setMapError]             = useState('')
-  const mapRef = useRef(null); const mapInstanceRef = useRef(null)
-  const markerRef = useRef(null); const autocompleteRef = useRef(null); const inputRef = useRef(null)
-
-  const [date, setDate]   = useState('')
-  const [time, setTime]   = useState('')
-  const [notes, setNotes] = useState('')
-
-  const [slots, setSlots]               = useState([])
-  const [loadingSlots, setLoadingSlots] = useState(false)
-  const [slotsError, setSlotsError]     = useState('')
-
-  // ── NUEVO: estado de validación de cobertura ──────────────────
   const [checkingCoverage, setCheckingCoverage] = useState(false)
   const [noCoverage, setNoCoverage]             = useState(false)
+  const mapRef          = useRef(null)
+  const mapInstanceRef  = useRef(null)
+  const markerRef       = useRef(null)
+  const autocompleteRef = useRef(null)
+  const inputRef        = useRef(null)
+
+  // Step 3 — fecha y RANGO de horario (obligatorio)
+  const [date, setDate]         = useState('')
+  const [timeFrom, setTimeFrom] = useState('') // scheduled_time_from
+  const [timeTo, setTimeTo]     = useState('') // scheduled_time_to
+  const [notes, setNotes]       = useState('')
+  const [rangeError, setRangeError] = useState('')
 
   const getPrice = useCallback(() => {
     if (!selectedService || !vehicleType) return null
@@ -101,8 +126,12 @@ export default function BookingView() {
     return service?.prices?.[vehicle?.priceKey] ?? null
   }, [selectedService, vehicleType])
 
+  const getService = () => SERVICES.find(s => s.id === selectedService)
+
   useEffect(() => {
-    loadGoogleMapsScript(GOOGLE_MAPS_API_KEY).then(() => setMapsLoaded(true)).catch(() => setMapError('No se pudo cargar Google Maps.'))
+    loadGoogleMapsScript(GOOGLE_MAPS_API_KEY)
+      .then(() => setMapsLoaded(true))
+      .catch(() => setMapError('No se pudo cargar Google Maps.'))
   }, [])
 
   useEffect(() => {
@@ -111,46 +140,43 @@ export default function BookingView() {
     return () => clearTimeout(t)
   }, [step, mapsLoaded])
 
+  useEffect(() => { setNoCoverage(false) }, [addressDetails])
+
+  // Validar rango cuando cambian timeFrom o timeTo
   useEffect(() => {
-    if (step === 3 && date && selectedService && vehicleType && addressDetails) {
-      fetchSlots()
+    if (!timeFrom || !timeTo) { setRangeError(''); return }
+    const svc = getService()
+    if (timeToMin(timeTo) <= timeToMin(timeFrom)) {
+      setRangeError('La hora de cierre debe ser posterior a la de inicio.')
+      return
     }
-  }, [step, date, selectedService, vehicleType, addressDetails])
+    if (svc && !isValidRange(timeFrom, timeTo, svc.durationMin)) {
+      const diff = timeToMin(timeTo) - timeToMin(timeFrom)
+      setRangeError(`El rango es de ${diff} min pero el servicio requiere al menos ${svc.durationMin} min.`)
+      return
+    }
+    setRangeError('')
+  }, [timeFrom, timeTo, selectedService])
 
-  // ── NUEVO: reset de cobertura al cambiar dirección ────────────
+  // Auto-calcular timeTo mínimo cuando el usuario elige timeFrom
   useEffect(() => {
-    setNoCoverage(false)
-  }, [addressDetails])
-
-  const fetchSlots = async () => {
-    if (!date || !selectedService || !vehicleType || !addressDetails) return
-    setLoadingSlots(true); setSlotsError(''); setTime('')
-    try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/get-available-slots`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-        body: JSON.stringify({ lat: addressDetails.lat, lng: addressDetails.lng, fecha: date, service_id: selectedService, vehicle_type: vehicleType })
-      })
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
-      setSlots(data.slots || [])
-    } catch (err) {
-      setSlotsError('No se pudo cargar la disponibilidad. Intenta de nuevo.')
-    } finally {
-      setLoadingSlots(false)
+    if (!timeFrom) return
+    const svc = getService()
+    if (!svc) return
+    const minToMin = timeToMin(timeFrom) + svc.durationMin
+    const h   = String(Math.floor(minToMin / 60)).padStart(2, '0')
+    const m   = String(minToMin % 60).padStart(2, '0')
+    const minTo = `${h}:${m}`
+    // Solo auto-llenar si timeTo está vacío o es inválido
+    if (!timeTo || timeToMin(timeTo) < minToMin) {
+      setTimeTo(minTo)
     }
-  }
+  }, [timeFrom])
 
-  // ── NUEVO: validar cobertura antes de avanzar al step 3 ───────
-  // Busca operadores aprobados con base_lat/base_lng cuyo radio cubre
-  // las coordenadas del cliente. Usa Haversine para calcular distancia.
-  // Si no hay ninguno, registra el intento en coverage_requests y muestra mensaje.
   const checkCoverageAndAdvance = async () => {
     if (!addressDetails) return
-    setCheckingCoverage(true)
-    setNoCoverage(false)
+    setCheckingCoverage(true); setNoCoverage(false)
     try {
-      // Traer operadores aprobados con geolocalización configurada
       const { data: operators, error: opError } = await supabase
         .from('profiles')
         .select('id, base_lat, base_lng, coverage_radius, operator_status, status')
@@ -162,40 +188,25 @@ export default function BookingView() {
 
       if (opError) throw opError
 
-      const clientLat = addressDetails.lat
-      const clientLng = addressDetails.lng
-
-      // Verificar si algún operador cubre la zona del cliente
-      const hasCoverage = (operators || []).some(op => {
-        const distKm = haversineKm(
-          Number(op.base_lat), Number(op.base_lng),
-          clientLat, clientLng
-        )
-        return distKm <= (Number(op.coverage_radius) || 5)
-      })
+      const hasCoverage = (operators || []).some(op =>
+        haversineKm(Number(op.base_lat), Number(op.base_lng), addressDetails.lat, addressDetails.lng)
+        <= (Number(op.coverage_radius) || 5)
+      )
 
       if (hasCoverage) {
-        // Hay cobertura — avanzar normalmente
         setStep(s => s + 1)
       } else {
-        // Sin cobertura — registrar intento y mostrar mensaje
         setNoCoverage(true)
-        // Guardar en coverage_requests para que el admin pueda ver dónde expandir
         try {
           await supabase.from('coverage_requests').insert({
-            client_id:  user?.id || null,
-            address:    addressDetails.formatted,
-            lat:        clientLat,
-            lng:        clientLng,
-            created_at: new Date().toISOString(),
+            client_id: user?.id || null,
+            address:   addressDetails.formatted,
+            lat:       addressDetails.lat,
+            lng:       addressDetails.lng,
           })
-        } catch (e) {
-          // No interrumpir la UX si falla el registro
-          console.warn('No se pudo registrar coverage_request:', e.message)
-        }
+        } catch (e) { console.warn('coverage_request:', e.message) }
       }
     } catch (err) {
-      // Si falla la validación por error de red, dejamos pasar para no bloquear al cliente
       console.error('Error validando cobertura:', err)
       setStep(s => s + 1)
     } finally {
@@ -220,16 +231,23 @@ export default function BookingView() {
     autocompleteRef.current = ac
     ac.addListener('place_changed', () => {
       const place = ac.getPlace(); if (!place.geometry) return
-      const lat = place.geometry.location.lat(); const lng = place.geometry.location.lng(); const formatted = place.formatted_address
+      const lat = place.geometry.location.lat(); const lng = place.geometry.location.lng()
+      const formatted = place.formatted_address
       setAddress(formatted); setAddressDetails({ lat, lng, formatted }); setMapError('')
-      if (mapInstanceRef.current && markerRef.current) { mapInstanceRef.current.setCenter({ lat, lng }); mapInstanceRef.current.setZoom(16); markerRef.current.setPosition({ lat, lng }) }
+      if (mapInstanceRef.current && markerRef.current) {
+        mapInstanceRef.current.setCenter({ lat, lng }); mapInstanceRef.current.setZoom(16); markerRef.current.setPosition({ lat, lng })
+      }
     })
   }, [])
 
   const reverseGeocode = async (lat, lng) => {
     try {
       const result = await new window.google.maps.Geocoder().geocode({ location: { lat, lng } })
-      if (result.results[0]) { const f = result.results[0].formatted_address; setAddress(f); setAddressDetails({ lat, lng, formatted: f }); if (inputRef.current) inputRef.current.value = f }
+      if (result.results[0]) {
+        const f = result.results[0].formatted_address
+        setAddress(f); setAddressDetails({ lat, lng, formatted: f })
+        if (inputRef.current) inputRef.current.value = f
+      }
     } catch (e) { console.error(e) }
   }
 
@@ -238,7 +256,9 @@ export default function BookingView() {
     setMapError('')
     navigator.geolocation.getCurrentPosition(async (pos) => {
       const lat = pos.coords.latitude; const lng = pos.coords.longitude
-      if (mapInstanceRef.current && markerRef.current) { mapInstanceRef.current.setCenter({ lat, lng }); mapInstanceRef.current.setZoom(16); markerRef.current.setPosition({ lat, lng }) }
+      if (mapInstanceRef.current && markerRef.current) {
+        mapInstanceRef.current.setCenter({ lat, lng }); mapInstanceRef.current.setZoom(16); markerRef.current.setPosition({ lat, lng })
+      }
       await reverseGeocode(lat, lng)
     }, () => setMapError('No se pudo obtener tu ubicación. Verifica los permisos.'))
   }
@@ -246,11 +266,13 @@ export default function BookingView() {
   const canGoNext = () => {
     if (step === 1) return selectedService && vehicleType && vehicleBrand && vehicleColor
     if (step === 2) return addressDetails !== null
-    if (step === 3) return date && time
+    if (step === 3) {
+      const svc = getService()
+      return date && timeFrom && timeTo && !rangeError && svc && isValidRange(timeFrom, timeTo, svc.durationMin)
+    }
     return true
   }
 
-  // ── NUEVO: interceptar avance del step 2 al 3 ────────────────
   const handleNext = () => {
     if (step === 2 && addressDetails) {
       checkCoverageAndAdvance()
@@ -262,35 +284,92 @@ export default function BookingView() {
   const handleSubmit = async () => {
     if (!user) return
     setLoading(true); setError('')
+
     const timeoutId = setTimeout(() => {
       setLoading(false)
       setError('La conexión tardó demasiado. Verifica tu internet e intenta de nuevo.')
-    }, 15000)
+    }, 20000)
+
     try {
-      const service    = SERVICES.find(s => s.id === selectedService)
+      const service    = getService()
       const price      = getPrice()
       const bookingRef = generateRef()
-      const { error: insertError } = await supabase.from('bookings').insert({
-        booking_ref: bookingRef, client_id: user.id, service_id: service.id,
-        address_line: addressDetails.formatted, address_lat: addressDetails.lat, address_lng: addressDetails.lng,
-        address_notes: notes || null, scheduled_date: date, scheduled_time: time + ':00',
-        base_price: price, discount_amount: 0, total_price: price,
-        payment_method: 'efectivo', payment_status: 'pendiente', status: 'pendiente', has_incident: false,
-        service_name: service.name, service_price: price, vehicle_type: vehicleType,
-        vehicle_brand: vehicleBrand, vehicle_color: vehicleColor,
-        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      })
-      clearTimeout(timeoutId)
+
+      // 1. Insertar booking con rango de horario
+      const { data: newBooking, error: insertError } = await supabase
+        .from('bookings')
+        .insert({
+          booking_ref:         bookingRef,
+          client_id:           user.id,
+          service_id:          service.id,
+          address_line:        addressDetails.formatted,
+          address_lat:         addressDetails.lat,
+          address_lng:         addressDetails.lng,
+          address_notes:       notes || null,
+          scheduled_date:      date,
+          scheduled_time:      timeFrom + ':00',    // hora de inicio como referencia
+          scheduled_time_from: timeFrom,
+          scheduled_time_to:   timeTo,
+          base_price:          price,
+          discount_amount:     0,
+          total_price:         price,
+          payment_method:      'efectivo',
+          payment_status:      'pendiente',
+          status:              'pendiente',
+          has_incident:        false,
+          service_name:        service.name,
+          service_price:       price,
+          vehicle_type:        vehicleType,
+          vehicle_brand:       vehicleBrand,
+          vehicle_color:       vehicleColor,
+          current_ronda:       0,
+          assignment_mode:     'autonomo',
+          created_at:          new Date().toISOString(),
+          updated_at:          new Date().toISOString(),
+        })
+        .select()
+        .single()
+
       if (insertError) throw insertError
-      setLoading(false); setSuccess(true)
+
+      clearTimeout(timeoutId)
+
+      // 2. Lanzar proceso de asignación automática (ronda 1)
+      try {
+        await fetch(`${SUPABASE_URL}/functions/v1/process-booking-request`, {
+          method:  'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'apikey':        SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ booking_id: newBooking.id, ronda: 1 }),
+        })
+      } catch (e) {
+        // No bloquear al cliente si falla el proceso de asignación
+        console.warn('Error lanzando proceso de asignación:', e.message)
+      }
+
+      // 3. WhatsApp de confirmación al cliente
       setTimeout(() => {
         supabase.from('profiles').select('phone').eq('id', user.id).single()
           .then(({ data: profileData }) => {
             if (profileData?.phone) {
-              sendWhatsApp('booking_created', profileData.phone, { booking_ref: bookingRef, service_name: service.name, scheduled_date: date, scheduled_time: time, total_price: price })
+              sendWhatsApp('booking_created', profileData.phone, {
+                booking_ref:         bookingRef,
+                service_name:        service.name,
+                scheduled_date:      date,
+                scheduled_time_from: timeFrom,
+                scheduled_time_to:   timeTo,
+                total_price:         price,
+              })
             }
           }).catch(() => {})
       }, 0)
+
+      setLoading(false)
+      setSuccess(true)
+
     } catch (err) {
       clearTimeout(timeoutId)
       setError('Error al guardar. Verifica tu conexión e intenta de nuevo.')
@@ -301,36 +380,50 @@ export default function BookingView() {
   const resetForm = () => {
     setStep(1); setSuccess(false); setError('')
     setSelectedService(null); setVehicleType(''); setVehicleBrand(''); setVehicleColor('')
-    setAddress(''); setAddressDetails(null); setDate(''); setTime(''); setNotes('')
-    setSlots([]); setSlotsError(''); setNoCoverage(false)
+    setAddress(''); setAddressDetails(null)
+    setDate(''); setTimeFrom(''); setTimeTo(''); setNotes(''); setRangeError('')
+    setNoCoverage(false)
     mapInstanceRef.current = null; markerRef.current = null; autocompleteRef.current = null
     if (inputRef.current) inputRef.current.value = ''
   }
 
   const price   = getPrice()
-  const service = SERVICES.find(s => s.id === selectedService)
+  const service = getService()
   const vehicle = VEHICLE_TYPES.find(v => v.id === vehicleType)
 
+  // ── Pantalla de éxito ────────────────────────────────────────────────────────
   if (success) {
     return (
       <div style={{ minHeight: '100vh', background: '#f3f4f6', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: isMobile ? '16px 12px' : '24px 16px' }}>
         <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? 28 : 40, maxWidth: 480, width: '100%', textAlign: 'center', boxShadow: '0 4px 24px rgba(0,0,0,0.10)' }}>
           <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
           <h2 style={{ fontSize: isMobile ? 20 : 24, fontWeight: 700, color: '#065f46', margin: '0 0 12px' }}>¡Reservación confirmada!</h2>
-          <p style={{ fontSize: 16, color: '#374151', margin: '0 0 8px' }}>Tu lavado está agendado para el <strong>{date}</strong> a las <strong>{time}</strong> hrs.</p>
+          <p style={{ fontSize: 16, color: '#374151', margin: '0 0 8px' }}>
+            Tu lavado está agendado para el <strong>{date}</strong>.
+          </p>
+          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 16px', margin: '0 0 12px' }}>
+            <p style={{ fontSize: 14, color: '#166534', margin: 0 }}>
+              🕐 Horario solicitado: <strong>{timeFrom} — {timeTo} hrs</strong>
+            </p>
+          </div>
           <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 8px' }}>📍 {addressDetails?.formatted}</p>
-          <p style={{ fontSize: 14, color: '#9ca3af', margin: '0 0 24px' }}>Te notificaremos cuando un operador sea asignado.</p>
-          <button onClick={resetForm} style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 16, fontWeight: 600, width: '100%', minHeight: 48 }}>Nueva reservación</button>
+          <p style={{ fontSize: 14, color: '#9ca3af', margin: '0 0 24px', lineHeight: 1.6 }}>
+            Estamos buscando el mejor operador para ti. Te notificaremos cuando sea asignado.
+          </p>
+          <button onClick={resetForm} style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 16, fontWeight: 600, width: '100%', minHeight: 48 }}>
+            Nueva reservación
+          </button>
         </div>
       </div>
     )
   }
 
+  // ── Formulario principal ─────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: isMobile ? '12px 8px 80px' : '24px 16px' }}>
       <div style={{ background: '#fff', borderRadius: isMobile ? 12 : 16, boxShadow: '0 4px 24px rgba(0,0,0,0.10)', width: '100%', maxWidth: 680, overflow: 'hidden' }}>
 
-        {/* Header */}
+        {/* Header con stepper */}
         <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: isMobile ? '20px 16px' : '24px', textAlign: 'center' }}>
           <h1 style={{ color: '#fff', fontSize: isMobile ? 18 : 22, fontWeight: 700, margin: '0 0 16px' }}>🚗 Reservar Lavado</h1>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -344,11 +437,11 @@ export default function BookingView() {
             ))}
           </div>
           <div style={{ color: '#bfdbfe', fontSize: isMobile ? 12 : 13, marginTop: 8 }}>
-            {step===1?'Servicio y vehículo':step===2?'Ubicación':step===3?'Fecha y hora':'Confirmar'}
+            {step===1?'Servicio y vehículo':step===2?'Ubicación':step===3?'Fecha y horario':'Confirmar'}
           </div>
         </div>
 
-        {/* Step 1 */}
+        {/* ── STEP 1: Servicio y vehículo ── */}
         {step === 1 && (
           <div style={{ padding: isMobile ? '16px 12px' : 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Qué servicio necesitas?</h3>
@@ -359,8 +452,8 @@ export default function BookingView() {
                   <div key={s.id} onClick={() => setSelectedService(s.id)}
                     style={{ padding: isMobile ? 10 : 12, borderRadius: 10, cursor: 'pointer', transition: 'all 0.2s', border: selectedService===s.id ? '2px solid #3b82f6' : '2px solid #e5e7eb', background: selectedService===s.id ? '#eff6ff' : '#fff', minHeight: 44 }}>
                     <div style={{ fontSize: isMobile ? 20 : 22, marginBottom: 4 }}>{s.icon}</div>
-                    <div style={{ fontWeight: 600, fontSize: isMobile ? 13 : 13, color: '#1f2937' }}>{s.name}</div>
-                    <div style={{ fontSize: isMobile ? 11 : 11, color: '#6b7280', marginTop: 2 }}>{s.description}</div>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: '#1f2937' }}>{s.name}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{s.description}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, alignItems: 'center' }}>
                       <span style={{ fontWeight: 700, color: '#3b82f6', fontSize: 14 }}>${p}</span>
                       <span style={{ fontSize: 10, color: '#9ca3af' }}>⏱ {s.duration}</span>
@@ -400,7 +493,7 @@ export default function BookingView() {
           </div>
         )}
 
-        {/* Step 2 */}
+        {/* ── STEP 2: Ubicación ── */}
         {step === 2 && (
           <div style={{ padding: isMobile ? '16px 12px' : 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Dónde está tu vehículo?</h3>
@@ -416,112 +509,127 @@ export default function BookingView() {
             }
             {addressDetails && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#166534', marginBottom: 8 }}>✅ <strong>Dirección:</strong> {addressDetails.formatted}</div>}
             <p style={{ fontSize: 12, color: '#9ca3af', margin: '4px 0 0' }}>💡 Arrastra el pin o haz clic en el mapa para ajustar la ubicación exacta.</p>
-
-            {/* NUEVO: mensaje de sin cobertura — aparece debajo del mapa */}
             {noCoverage && (
               <div style={{ marginTop: 16, background: '#faf5ff', border: '1.5px solid #d8b4fe', borderRadius: 12, padding: '20px 18px', textAlign: 'center' }}>
                 <div style={{ fontSize: 36, marginBottom: 10 }}>🗺️</div>
-                <p style={{ fontSize: 15, fontWeight: 700, color: '#6d28d9', margin: '0 0 8px' }}>
-                  Aún no llegamos a tu zona
-                </p>
-                <p style={{ fontSize: 14, color: '#7c3aed', margin: '0 0 12px', lineHeight: 1.6 }}>
-                  Por el momento no contamos con operadores disponibles en tu área, pero estamos creciendo rápidamente. Te avisaremos en cuanto podamos atenderte.
-                </p>
-                <p style={{ fontSize: 12, color: '#a78bfa', margin: 0 }}>
-                  ✅ Registramos tu ubicación para priorizar la expansión hacia tu zona.
-                </p>
+                <p style={{ fontSize: 15, fontWeight: 700, color: '#6d28d9', margin: '0 0 8px' }}>Aún no llegamos a tu zona</p>
+                <p style={{ fontSize: 14, color: '#7c3aed', margin: '0 0 12px', lineHeight: 1.6 }}>Por el momento no contamos con operadores disponibles en tu área, pero estamos creciendo rápidamente. Te avisaremos en cuanto podamos atenderte.</p>
+                <p style={{ fontSize: 12, color: '#a78bfa', margin: 0 }}>✅ Registramos tu ubicación para priorizar la expansión hacia tu zona.</p>
               </div>
             )}
           </div>
         )}
 
-        {/* Step 3 */}
+        {/* ── STEP 3: Fecha y RANGO de horario ── */}
         {step === 3 && (
           <div style={{ padding: isMobile ? '16px 12px' : 24 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Cuándo lo necesitas?</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
-              <label style={{ fontSize: 14, fontWeight: 500, color: '#374151' }}>Fecha</label>
-              <input type="date" style={{ padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 }} value={date} min={new Date().toISOString().split('T')[0]} onChange={e => { setDate(e.target.value); setTime(''); setSlots([]) }} />
+            <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 4, marginTop: 0 }}>¿Cuándo lo necesitas?</h3>
+            <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>
+              Indícanos en qué horario puedes recibir el servicio. El operador te confirmará la hora exacta.
+            </p>
+
+            {/* Fecha */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 14, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>📅 Fecha *</label>
+              <input type="date"
+                style={{ padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 }}
+                value={date}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={e => setDate(e.target.value)} />
             </div>
 
+            {/* Rango de horario */}
             {date && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
-                <label style={{ fontSize: 14, fontWeight: 500, color: '#374151' }}>
-                  Hora disponible
-                  {loadingSlots && <span style={{ marginLeft: 8, fontSize: 11, color: '#9ca3af' }}>⏳ Calculando...</span>}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 14, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
+                  🕐 Horario disponible *
+                  {service && <span style={{ fontSize: 12, fontWeight: 400, color: '#6b7280', marginLeft: 6 }}>(el servicio dura {service.duration})</span>}
                 </label>
 
-                {slotsError && (
-                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 12px', fontSize: 14, color: '#dc2626', marginBottom: 8 }}>
-                    ⚠️ {slotsError}
-                    <button onClick={fetchSlots} style={{ marginLeft: 8, background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>Reintentar</button>
+                <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '14px 16px', marginBottom: 12 }}>
+                  <p style={{ fontSize: 13, color: '#0369a1', margin: 0, lineHeight: 1.5 }}>
+                    💡 Dinos <strong>desde qué hora</strong> y <strong>hasta qué hora</strong> puedes recibir el servicio. Te asignaremos el operador que mejor se ajuste a tu ventana de tiempo.
+                  </p>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Desde *</label>
+                    <select
+                      value={timeFrom}
+                      onChange={e => setTimeFrom(e.target.value)}
+                      style={{ padding: '12px', borderRadius: 8, border: `1.5px solid ${rangeError && timeFrom ? '#fca5a5' : '#e5e7eb'}`, fontSize: 15, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: timeFrom ? '#1f2937' : '#9ca3af', minHeight: 48, background: '#fff', cursor: 'pointer' }}>
+                      <option value="">Selecciona</option>
+                      {TIME_BLOCKS.filter(t => t < '19:00').map(t => (
+                        <option key={t} value={t}>{t} hrs</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Hasta *</label>
+                    <select
+                      value={timeTo}
+                      onChange={e => setTimeTo(e.target.value)}
+                      style={{ padding: '12px', borderRadius: 8, border: `1.5px solid ${rangeError && timeTo ? '#fca5a5' : '#e5e7eb'}`, fontSize: 15, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: timeTo ? '#1f2937' : '#9ca3af', minHeight: 48, background: '#fff', cursor: 'pointer' }}>
+                      <option value="">Selecciona</option>
+                      {TIME_BLOCKS.filter(t => !timeFrom || t > timeFrom).map(t => (
+                        <option key={t} value={t}>{t} hrs</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Error de rango */}
+                {rangeError && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 12px', marginTop: 10, fontSize: 13, color: '#dc2626' }}>
+                    ⚠️ {rangeError}
                   </div>
                 )}
 
-                {loadingSlots ? (
-                  <div style={{ background: '#f9fafb', borderRadius: 10, padding: 20, textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>🔍 Buscando los mejores horarios para ti...</div>
-                ) : slots.length > 0 ? (
-                  <div>
-                    {slots.some(s => s.available && s.suggested) && (
-                      <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>⚡ Horarios recomendados</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
-                          {slots.filter(s => s.available && s.suggested).map(slot => (
-                            <button key={slot.time} onClick={() => setTime(slot.time)}
-                              style={{ padding: '12px 6px', borderRadius: 10, border: time === slot.time ? '2px solid #059669' : '2px solid #bbf7d0', background: time === slot.time ? '#059669' : '#f0fdf4', color: time === slot.time ? '#fff' : '#166534', cursor: 'pointer', fontSize: 14, fontWeight: 700, minHeight: 48, textAlign: 'center' }}>
-                              <div>{slot.time}</div>
-                              <div style={{ fontSize: 10, fontWeight: 500, marginTop: 2, opacity: 0.8 }}>🌱 Puntual</div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Todos los horarios</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(4,1fr)' : 'repeat(5,1fr)', gap: 6 }}>
-                      {slots.map(slot => {
-                        if (slot.available && slot.suggested) return null
-                        return (
-                          <button key={slot.time} onClick={() => slot.available ? setTime(slot.time) : null} disabled={!slot.available}
-                            style={{ padding: '10px 4px', borderRadius: 8, border: time === slot.time ? '2px solid #3b82f6' : '1.5px solid #e5e7eb', background: !slot.available ? '#f9fafb' : time === slot.time ? '#3b82f6' : '#fff', color: !slot.available ? '#d1d5db' : time === slot.time ? '#fff' : '#374151', cursor: slot.available ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600, minHeight: 44, textDecoration: !slot.available ? 'line-through' : 'none', opacity: !slot.available ? 0.5 : 1 }}>
-                            {slot.time}
-                          </button>
-                        )
-                      })}
-                    </div>
-                    {slots.every(s => !s.available) && (
-                      <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 8, padding: '12px 14px', fontSize: 14, color: '#854d0e', marginTop: 8 }}>
-                        😔 No hay horarios disponibles para esta fecha. Por favor selecciona otro día.
-                      </div>
-                    )}
+                {/* Confirmación si el rango es válido */}
+                {timeFrom && timeTo && !rangeError && (
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px', marginTop: 10, fontSize: 13, color: '#166534', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span>✅</span>
+                    <span>Ventana de <strong>{timeToMin(timeTo) - timeToMin(timeFrom)} minutos</strong> — suficiente para el servicio.</span>
                   </div>
-                ) : date && !loadingSlots && !slotsError ? (
-                  <div style={{ background: '#f9fafb', borderRadius: 10, padding: 16, textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>Selecciona una fecha para ver los horarios disponibles.</div>
-                ) : null}
+                )}
               </div>
             )}
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 16 }}>
+            {/* Notas */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
               <label style={{ fontSize: 14, fontWeight: 500, color: '#374151' }}>Notas adicionales (opcional)</label>
-              <textarea style={{ padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', height: 80, resize: 'vertical' }} placeholder="Ej: El coche está en la cochera, tocar el timbre..." value={notes} onChange={e => setNotes(e.target.value)} />
+              <textarea
+                style={{ padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', height: 80, resize: 'vertical' }}
+                placeholder="Ej: El coche está en la cochera, tocar el timbre..."
+                value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
           </div>
         )}
 
-        {/* Step 4 */}
+        {/* ── STEP 4: Resumen ── */}
         {step === 4 && (
           <div style={{ padding: isMobile ? '16px 12px' : 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>Resumen de tu reservación</h3>
             <div style={{ background: '#f9fafb', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-              <SummaryRow icon={service?.icon||'🧽'} label="Servicio"     value={service?.name}  sub={`⏱ ${service?.duration}`} />
-              <SummaryRow icon={vehicle?.icon||'🚗'} label="Vehículo"     value={`${vehicleBrand} · ${vehicleColor}`} sub={vehicle?.name} />
-              <SummaryRow icon="📍"                  label="Dirección"    value={addressDetails?.formatted} />
-              <SummaryRow icon="📅"                  label="Fecha y hora" value={`${date} a las ${time} hrs`} />
-              {notes && <SummaryRow icon="📝"        label="Notas"        value={notes} />}
+              <SummaryRow icon={service?.icon||'🧽'} label="Servicio"  value={service?.name} sub={`⏱ ${service?.duration}`} />
+              <SummaryRow icon={vehicle?.icon||'🚗'} label="Vehículo"  value={`${vehicleBrand} · ${vehicleColor}`} sub={vehicle?.name} />
+              <SummaryRow icon="📍"                  label="Dirección" value={addressDetails?.formatted} />
+              <SummaryRow icon="📅"                  label="Fecha"     value={date} />
+              <SummaryRow icon="🕐"                  label="Horario solicitado" value={`${timeFrom} — ${timeTo} hrs`} sub="El operador confirmará la hora exacta" />
+              {notes && <SummaryRow icon="📝"        label="Notas"     value={notes} />}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#eff6ff', fontWeight: 600, fontSize: 15, color: '#1e40af' }}>
                 <span>Total a pagar</span>
                 <span style={{ fontSize: 20, fontWeight: 700, color: '#1d4ed8' }}>${price} MXN</span>
               </div>
             </div>
+
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginTop: 12 }}>
+              <p style={{ fontSize: 13, color: '#92400e', margin: 0, lineHeight: 1.5 }}>
+                ⚡ Al confirmar, notificaremos automáticamente a los operadores disponibles en tu zona. Recibirás un WhatsApp cuando uno acepte el servicio.
+              </p>
+            </div>
+
             {error && (
               <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 14px', marginTop: 12 }}>
                 <div style={{ color: '#dc2626', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>⚠️ {error}</div>
@@ -531,7 +639,7 @@ export default function BookingView() {
           </div>
         )}
 
-        {/* Footer */}
+        {/* Footer con navegación */}
         <div style={{ padding: isMobile ? '12px' : '16px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
           {step > 1 && (
             <button
@@ -541,7 +649,6 @@ export default function BookingView() {
             </button>
           )}
           {step < 4 ? (
-            // Step 2: botón que valida cobertura antes de avanzar
             step === 2 ? (
               <button
                 onClick={handleNext}
@@ -553,7 +660,7 @@ export default function BookingView() {
               <button
                 onClick={() => setStep(s => s+1)}
                 disabled={!canGoNext()}
-                style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 15, fontWeight: 600, flex: 1, opacity: canGoNext() ? 1 : 0.5, minHeight: 52 }}>
+                style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: canGoNext() ? 'pointer' : 'not-allowed', fontSize: 15, fontWeight: 600, flex: 1, opacity: canGoNext() ? 1 : 0.5, minHeight: 52 }}>
                 Siguiente →
               </button>
             )
@@ -562,7 +669,7 @@ export default function BookingView() {
               onClick={handleSubmit}
               disabled={loading}
               style={{ background: loading ? '#9ca3af' : '#10b981', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 15, fontWeight: 600, flex: 1, minHeight: 52 }}>
-              {loading ? '⏳ Guardando...' : '✅ Confirmar reservación'}
+              {loading ? '⏳ Buscando operador...' : '✅ Confirmar reservación'}
             </button>
           )}
         </div>
