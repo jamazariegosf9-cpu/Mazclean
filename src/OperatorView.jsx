@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   MapPin, Clock, Phone, Navigation, LogOut,
-  Play, Check, Camera, CheckSquare, Square, AlertTriangle, Upload
+  Play, Check, Camera, CheckSquare, Square, AlertTriangle, Upload, Bell
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useAuth } from './context/AuthContext';
@@ -79,17 +79,145 @@ async function compressForMobile(file) {
   } catch { return file; }
 }
 
+// ── Countdown hook: devuelve segundos restantes hasta expires_at ──────────────
+function useCountdown(expiresAt) {
+  const [seconds, setSeconds] = useState(() => {
+    if (!expiresAt) return 0;
+    return Math.max(0, Math.floor((new Date(expiresAt) - Date.now()) / 1000));
+  });
+  useEffect(() => {
+    if (!expiresAt) return;
+    const tick = () => {
+      const remaining = Math.max(0, Math.floor((new Date(expiresAt) - Date.now()) / 1000));
+      setSeconds(remaining);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [expiresAt]);
+  return seconds;
+}
+
+// ── Card individual de solicitud con su propio countdown ──────────────────────
+function RequestCard({ request, onAccept, accepting, isMobile }) {
+  const secondsLeft = useCountdown(request.expires_at);
+  const minutes     = Math.floor(secondsLeft / 60);
+  const secs        = secondsLeft % 60;
+  const isUrgent    = secondsLeft <= 60;
+  const isExpired   = secondsLeft === 0;
+  const b           = request.booking;
+
+  const timeFrom = b?.scheduled_time_from?.slice(0, 5) ?? '';
+  const timeTo   = b?.scheduled_time_to?.slice(0, 5)   ?? '';
+
+  return (
+    <div style={{
+      background: '#fff',
+      borderRadius: 16,
+      boxShadow: isUrgent ? '0 0 0 2px #ef4444, 0 4px 24px rgba(239,68,68,0.15)' : '0 4px 24px rgba(0,0,0,0.08)',
+      padding: isMobile ? 16 : '18px 20px',
+      opacity: isExpired ? 0.5 : 1,
+      transition: 'box-shadow 0.3s',
+    }}>
+
+      {/* Header: ref + countdown */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', background: '#eff6ff', padding: '3px 10px', borderRadius: 20 }}>
+          {b?.booking_ref ?? '—'}
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: isUrgent ? '#fef2f2' : '#f0fdf4', borderRadius: 20, padding: '4px 12px' }}>
+          <Clock size={12} color={isUrgent ? '#dc2626' : '#059669'} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: isUrgent ? '#dc2626' : '#059669', fontFamily: 'monospace' }}>
+            {isExpired ? 'Expirado' : `${String(minutes).padStart(2,'0')}:${String(secs).padStart(2,'0')}`}
+          </span>
+        </div>
+      </div>
+
+      {/* Servicio */}
+      <div style={{ fontWeight: 700, color: '#1f2937', fontSize: isMobile ? 16 : 18, marginBottom: 12 }}>
+        {b?.service_name ?? '—'}
+      </div>
+
+      {/* Info */}
+      <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#374151' }}>
+          <Clock size={14} color="#3b82f6" style={{ flexShrink: 0 }} />
+          <span>{b?.scheduled_date ?? '—'}</span>
+          <span style={{ color: '#9ca3af' }}>·</span>
+          <span style={{ fontWeight: 600 }}>{timeFrom} — {timeTo} hrs</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#6b7280' }}>
+          <MapPin size={14} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
+          <span style={{ lineHeight: 1.4 }}>{b?.address_line ?? '—'}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#059669', fontWeight: 700 }}>
+          <span>💰</span>
+          <span>${b?.total_price ?? '—'} MXN</span>
+        </div>
+      </div>
+
+      {/* Aviso urgente */}
+      {isUrgent && !isExpired && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#dc2626', fontWeight: 600, textAlign: 'center' }}>
+          ⚡ ¡Menos de 1 minuto! Acepta ahora o pasará al siguiente operador.
+        </div>
+      )}
+
+      {isExpired ? (
+        <div style={{ background: '#f9fafb', borderRadius: 10, padding: '12px 0', textAlign: 'center', fontSize: 13, color: '#9ca3af', fontWeight: 600 }}>
+          Solicitud expirada
+        </div>
+      ) : (
+        <button
+          onClick={() => onAccept(request)}
+          disabled={accepting === request.id}
+          style={{
+            width: '100%',
+            padding: '14px 0',
+            background: accepting === request.id ? '#9ca3af' : 'linear-gradient(135deg,#10b981,#059669)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 12,
+            fontSize: 15,
+            fontWeight: 800,
+            cursor: accepting === request.id ? 'not-allowed' : 'pointer',
+            minHeight: 52,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            boxShadow: '0 4px 12px rgba(16,185,129,0.3)',
+            flexShrink: 0,
+          }}>
+          {accepting === request.id ? '⏳ Aceptando...' : <><Check size={18} /> Aceptar servicio</>}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Componente principal ──────────────────────────────────────────────────────
 const OperatorView = () => {
   const { user, profile, signOut } = useAuth();
   const isMobile = useIsMobile();
+
+  // ── Estado general ────────────────────────────────────────────────────────
   const [bookings, setBookings]               = useState([]);
   const [loading, setLoading]                 = useState(false);
   const [fetchError, setFetchError]           = useState('');
-  const [activeTab, setActiveTab]             = useState('pendientes');
+  const [activeTab, setActiveTab]             = useState('solicitudes');
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [updatingId, setUpdatingId]           = useState(null);
   const fetchingRef                           = useRef(false);
   const bookingsCache                         = useRef([]);
+
+  // ── Estado solicitudes ────────────────────────────────────────────────────
+  const [requests, setRequests]       = useState([]);
+  const [loadingReqs, setLoadingReqs] = useState(false);
+  const [accepting, setAccepting]     = useState(null); // id del request que se está aceptando
+  const [acceptError, setAcceptError] = useState('');
+
+  // ── Estado fotos ──────────────────────────────────────────────────────────
   const [checklist, setChecklist]             = useState([]);
   const [checklistModal, setChecklistModal]   = useState(false);
   const [pendingFinalize, setPendingFinalize] = useState(null);
@@ -101,27 +229,52 @@ const OperatorView = () => {
   const [uploadError, setUploadError]         = useState('');
   const [uploadProgress, setUploadProgress]   = useState('');
   const [photoPhase, setPhotoPhase]           = useState('before');
+
+  // ── Estado incidencias ────────────────────────────────────────────────────
   const [incidentModal, setIncidentModal]     = useState(false);
   const [incidentBooking, setIncidentBooking] = useState(null);
   const [incidentNote, setIncidentNote]       = useState('');
   const [sendingIncident, setSendingIncident] = useState(false);
-  const gpsWatcherRef                         = useRef(null);
-  const [trackingBookingId, setTrackingBookingId] = useState(null);
-  const [gpsError, setGpsError]               = useState('');
-  const [sessionToken, setSessionToken]       = useState(null);
 
+  // ── GPS ───────────────────────────────────────────────────────────────────
+  const gpsWatcherRef                             = useRef(null);
+  const [trackingBookingId, setTrackingBookingId] = useState(null);
+  const [gpsError, setGpsError]                   = useState('');
+  const [sessionToken, setSessionToken]           = useState(null);
+
+  // ── Carga inicial y realtime ──────────────────────────────────────────────
   useEffect(() => {
-    if (user) {
-      fetchOperatorBookings();
-      const channel = supabase
-        .channel('operator-changes')
-        .on('postgres_changes', {
-          event: '*', schema: 'public', table: 'bookings',
-          filter: `operator_id=eq.${user.id}`
-        }, () => fetchOperatorBookings(true))
-        .subscribe();
-      return () => supabase.removeChannel(channel);
-    }
+    if (!user) return;
+
+    fetchOperatorBookings();
+    fetchBookingRequests();
+
+    // Realtime: cambios en bookings del operador
+    const bookingsChannel = supabase
+      .channel('operator-bookings')
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'bookings',
+        filter: `operator_id=eq.${user.id}`,
+      }, () => fetchOperatorBookings(true))
+      .subscribe();
+
+    // Realtime: nuevas solicitudes para este operador
+    const requestsChannel = supabase
+      .channel('operator-requests')
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'booking_requests',
+        filter: `operator_id=eq.${user.id}`,
+      }, () => {
+        fetchBookingRequests();
+        // Cambiar al tab de solicitudes automáticamente si llega una nueva
+        setActiveTab(prev => prev === 'solicitudes' ? prev : 'solicitudes');
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(bookingsChannel);
+      supabase.removeChannel(requestsChannel);
+    };
   }, [user]);
 
   useEffect(() => {
@@ -162,7 +315,7 @@ const OperatorView = () => {
     return () => { if (gpsWatcherRef.current !== null) navigator.geolocation.clearWatch(gpsWatcherRef.current); };
   }, [bookings, user]);
 
-  // GUARD: debe ir despues de todos los hooks
+  // ── GUARDS (después de todos los hooks) ───────────────────────────────────
   if (profile?.role !== 'admin' && (!profile || !profile.onboarding_done)) {
     const step = profile?.onboarding_step || 1;
     return (
@@ -170,22 +323,12 @@ const OperatorView = () => {
         <div style={{ background: 'rgba(59,130,246,0.08)', border: '1.5px solid rgba(59,130,246,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
           <div style={{ fontSize: 56, marginBottom: 16 }}>📋</div>
           <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F0F6FF', marginBottom: 12 }}>Completa tu registro</h2>
-          <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 8, lineHeight: 1.6 }}>
-            Para acceder al panel necesitas completar tu proceso de alta como operador.
-          </p>
-          {step > 1 && (
-            <p style={{ color: '#60a5fa', fontSize: 13, marginBottom: 24 }}>
-              Continuaras desde el paso {step} de 5
-            </p>
-          )}
-          <button onClick={() => window.location.reload()}
-            style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', border: 'none', borderRadius: 12, color: '#fff', fontWeight: 700, fontSize: 16, cursor: 'pointer', marginBottom: 12 }}>
+          <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 8, lineHeight: 1.6 }}>Para acceder al panel necesitas completar tu proceso de alta como operador.</p>
+          {step > 1 && <p style={{ color: '#60a5fa', fontSize: 13, marginBottom: 24 }}>Continuaras desde el paso {step} de 5</p>}
+          <button onClick={() => window.location.reload()} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', border: 'none', borderRadius: 12, color: '#fff', fontWeight: 700, fontSize: 16, cursor: 'pointer', marginBottom: 12 }}>
             {step > 1 ? 'Continuar registro (Paso ' + step + '/5)' : 'Iniciar registro'}
           </button>
-          <button onClick={() => signOut()}
-            style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: '#8CA0BF', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
-            Cerrar sesion
-          </button>
+          <button onClick={() => signOut()} style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: '#8CA0BF', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>Cerrar sesion</button>
         </div>
       </div>
     );
@@ -198,18 +341,14 @@ const OperatorView = () => {
         <div style={{ background: 'rgba(59,130,246,0.08)', border: '1.5px solid rgba(59,130,246,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
           <div style={{ fontSize: 56, marginBottom: 16 }}>⏳</div>
           <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F0F6FF', marginBottom: 12 }}>Perfil en revision</h2>
-          <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 24, lineHeight: 1.6 }}>
-            Tu registro esta siendo revisado por el administrador. Te notificaremos cuando sea aprobado.
-          </p>
-          <button onClick={() => signOut()}
-            style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: '#8CA0BF', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
-            Cerrar sesion
-          </button>
+          <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 24, lineHeight: 1.6 }}>Tu registro esta siendo revisado por el administrador. Te notificaremos cuando sea aprobado.</p>
+          <button onClick={() => signOut()} style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: '#8CA0BF', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>Cerrar sesion</button>
         </div>
       </div>
     );
   }
 
+  // ── Fetch bookings ────────────────────────────────────────────────────────
   const fetchOperatorBookings = async (silent = false) => {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
@@ -217,42 +356,110 @@ const OperatorView = () => {
     setFetchError('');
     let timedOut = false;
     const timeoutId = setTimeout(() => {
-      timedOut = true;
-      fetchingRef.current = false;
-      setLoading(false);
-      if (bookingsCache.current.length > 0) {
-        setBookings(bookingsCache.current);
-        setFetchError('Sin conexion — mostrando datos anteriores.');
-      } else {
-        setFetchError('Sin conexion. Verifica tu red e intenta de nuevo.');
-      }
+      timedOut = true; fetchingRef.current = false; setLoading(false);
+      if (bookingsCache.current.length > 0) { setBookings(bookingsCache.current); setFetchError('Sin conexion — mostrando datos anteriores.'); }
+      else { setFetchError('Sin conexion. Verifica tu red e intenta de nuevo.'); }
     }, 8000);
     try {
       let query = supabase.from('bookings').select('*, customer:client_id(full_name, phone)').order('scheduled_date', { ascending: true });
       if (profile?.role !== 'admin') query = query.eq('operator_id', user.id);
       else query = query.in('status', ['confirmado', 'en_camino', 'en_proceso', 'finalizado']);
       const { data, error } = await query;
-      clearTimeout(timeoutId);
-      if (timedOut) return;
+      clearTimeout(timeoutId); if (timedOut) return;
       if (error) throw error;
       const result = data || [];
-      bookingsCache.current = result;
-      setBookings(result);
-      setFetchError('');
+      bookingsCache.current = result; setBookings(result); setFetchError('');
     } catch (err) {
-      clearTimeout(timeoutId);
-      if (timedOut) return;
-      if (bookingsCache.current.length > 0) {
-        setBookings(bookingsCache.current);
-        setFetchError('Error de red — mostrando datos anteriores.');
-      } else {
-        setFetchError('No se pudieron cargar los servicios. Verifica tu conexion.');
-      }
+      clearTimeout(timeoutId); if (timedOut) return;
+      if (bookingsCache.current.length > 0) { setBookings(bookingsCache.current); setFetchError('Error de red — mostrando datos anteriores.'); }
+      else { setFetchError('No se pudieron cargar los servicios. Verifica tu conexion.'); }
+    } finally { if (!timedOut) { fetchingRef.current = false; setLoading(false); } }
+  };
+
+  // ── Fetch solicitudes pendientes del operador ─────────────────────────────
+  const fetchBookingRequests = async () => {
+    if (!user) return;
+    setLoadingReqs(true);
+    try {
+      const { data, error } = await supabase
+        .from('booking_requests')
+        .select(`
+          id, booking_id, ronda, status, notified_at, expires_at,
+          booking:booking_id (
+            id, booking_ref, service_name, scheduled_date,
+            scheduled_time_from, scheduled_time_to,
+            address_line, total_price
+          )
+        `)
+        .eq('operator_id', user.id)
+        .eq('status', 'pendiente')
+        .gt('expires_at', new Date().toISOString()) // solo no expiradas
+        .order('expires_at', { ascending: true });
+
+      if (error) throw error;
+      setRequests(data || []);
+    } catch (err) {
+      console.error('Error cargando solicitudes:', err);
     } finally {
-      if (!timedOut) { fetchingRef.current = false; setLoading(false); }
+      setLoadingReqs(false);
     }
   };
 
+  // ── Aceptar solicitud ─────────────────────────────────────────────────────
+  const handleAcceptRequest = async (request) => {
+    setAccepting(request.id);
+    setAcceptError('');
+    try {
+      // Actualizar booking_request a 'aceptado'
+      // El trigger en DB se encarga de:
+      //   1. Asignar operator_id al booking
+      //   2. Cambiar status del booking a 'confirmado'
+      //   3. Cancelar las demás solicitudes del mismo booking
+      const { error } = await supabase
+        .from('booking_requests')
+        .update({ status: 'aceptado', responded_at: new Date().toISOString() })
+        .eq('id', request.id)
+        .eq('status', 'pendiente'); // evitar doble aceptación
+
+      if (error) throw error;
+
+      // Notificar al cliente por WhatsApp
+      const b = request.booking;
+      if (b) {
+        try {
+          const { data: clientProfile } = await supabase
+            .from('profiles')
+            .select('phone')
+            .eq('id', (await supabase.from('bookings').select('client_id').eq('id', b.id).single()).data?.client_id)
+            .single();
+
+          if (clientProfile?.phone) {
+            sendWhatsApp('operator_assigned', clientProfile.phone, {
+              booking_ref:   b.booking_ref,
+              service_name:  b.service_name,
+              scheduled_date: b.scheduled_date,
+              scheduled_time: b.scheduled_time_from?.slice(0,5),
+              operator_name:  profile?.full_name || 'tu operador',
+            });
+          }
+        } catch (e) { console.warn('No se pudo notificar al cliente:', e.message); }
+      }
+
+      // Refrescar listas
+      await Promise.all([fetchBookingRequests(), fetchOperatorBookings(true)]);
+
+      // Cambiar al tab de servicios activos
+      setActiveTab('pendientes');
+
+    } catch (err) {
+      console.error('Error aceptando solicitud:', err);
+      setAcceptError('Error al aceptar. Intenta de nuevo.');
+    } finally {
+      setAccepting(null);
+    }
+  };
+
+  // ── updateStatus ──────────────────────────────────────────────────────────
   const updateStatus = async (bookingId, newStatus, eventName, bookingData = null) => {
     if (newStatus === 'en_camino' && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -283,6 +490,7 @@ const OperatorView = () => {
     } finally { setUpdatingId(null); }
   };
 
+  // ── Fotos ─────────────────────────────────────────────────────────────────
   const PHOTO_STEPS = [
     { step: 1, key: 'front_before',   phase: 'before', label: 'Foto 1 de 4 — Frontal ANTES',    desc: 'Captura el frente del auto con la placa visible', color: '#f97316' },
     { step: 2, key: 'side_before',    phase: 'before', label: 'Foto 2 de 4 — Lateral ANTES',    desc: 'Captura el lado mas expuesto del auto',           color: '#f97316' },
@@ -363,7 +571,6 @@ const OperatorView = () => {
       setUploadProgress('Subiendo...');
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      // FIX: token fresco en cada upload — evita token expirado en movil
       const { data: { session: freshSession } } = await supabase.auth.getSession();
       const token = freshSession?.access_token || sessionToken || supabaseKey;
       const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
@@ -411,10 +618,16 @@ const OperatorView = () => {
   const openInMaps = (address) => { if (!address) return; window.open('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(address), '_blank'); };
   const getPhotoUrl = (path) => { if (!path) return null; return path.startsWith('http') ? path : SUPABASE_URL + '/storage/v1/object/public/service-photos/' + path; };
 
+  // ── Listas filtradas ──────────────────────────────────────────────────────
   const pendingServices   = bookings.filter(b => b.status === 'confirmado');
   const activeServices    = bookings.filter(b => ['en_camino', 'en_proceso'].includes(b.status));
   const completedServices = bookings.filter(b => b.status === 'finalizado');
-  const currentList = activeTab === 'pendientes' ? pendingServices : activeTab === 'activos' ? activeServices : completedServices;
+  const pendingRequests   = requests.filter(r => r.status === 'pendiente' && new Date(r.expires_at) > new Date());
+
+  const currentList = activeTab === 'pendientes'  ? pendingServices
+                    : activeTab === 'activos'     ? activeServices
+                    : activeTab === 'completados' ? completedServices
+                    : [];
 
   const getStatusStyle = (status) => {
     switch (status) {
@@ -432,14 +645,19 @@ const OperatorView = () => {
   const photoBtnLabel      = uploadingPhoto ? (uploadProgress || 'Subiendo...') : currentPhotoSaved ? 'Cambiar foto' : 'Tomar foto';
   const canAdvancePhoto    = currentPhotoSaved && !uploadingPhoto;
 
+  // ── Tabs con el nuevo "Solicitudes" primero ───────────────────────────────
   const tabs = [
-    { id: 'pendientes',  label: 'Pendientes', icon: '📋', count: pendingServices.length },
-    { id: 'activos',     label: 'Activos',    icon: '⚡', count: activeServices.length },
-    { id: 'completados', label: 'Historial',  icon: '📖', count: completedServices.length },
+    { id: 'solicitudes',  label: 'Solicitudes', icon: '🔔', count: pendingRequests.length },
+    { id: 'pendientes',   label: 'Pendientes',  icon: '📋', count: pendingServices.length },
+    { id: 'activos',      label: 'Activos',     icon: '⚡', count: activeServices.length },
+    { id: 'completados',  label: 'Historial',   icon: '📖', count: completedServices.length },
   ];
 
+  // ── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6', paddingBottom: isMobile ? 72 : 80 }}>
+
+      {/* Header */}
       <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: isMobile ? '20px 16px 16px' : '32px 24px 28px', borderRadius: '0 0 24px 24px', boxShadow: '0 4px 24px rgba(30,64,175,0.3)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: isMobile ? 0 : 20 }}>
           <div>
@@ -454,15 +672,20 @@ const OperatorView = () => {
           <div style={{ display: 'flex', background: 'rgba(255,255,255,0.15)', padding: 4, borderRadius: 14, gap: 4, marginTop: 16 }}>
             {tabs.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                style={{ flex: 1, padding: '10px 4px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: activeTab === tab.id ? '#fff' : 'transparent', color: activeTab === tab.id ? '#1e40af' : '#bfdbfe', boxShadow: activeTab === tab.id ? '0 2px 8px rgba(0,0,0,0.12)' : 'none' }}>
-                {tab.label} ({tab.count})
+                style={{ flex: 1, padding: '10px 4px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700, background: activeTab === tab.id ? '#fff' : 'transparent', color: activeTab === tab.id ? '#1e40af' : '#bfdbfe', boxShadow: activeTab === tab.id ? '0 2px 8px rgba(0,0,0,0.12)' : 'none', position: 'relative' }}>
+                {tab.label} {tab.count > 0 ? `(${tab.count})` : ''}
+                {tab.id === 'solicitudes' && tab.count > 0 && (
+                  <span style={{ position: 'absolute', top: 4, right: 4, width: 8, height: 8, borderRadius: '50%', background: '#ef4444' }} />
+                )}
               </button>
             ))}
           </div>
         )}
       </div>
 
+      {/* Contenido */}
       <div style={{ padding: isMobile ? '16px 12px' : '20px 16px', maxWidth: 600, margin: '0 auto' }}>
+
         {gpsError && (
           <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '12px 16px', marginBottom: 16 }}>
             <div style={{ fontWeight: 700, color: '#991b1b', fontSize: 13 }}>Permiso de ubicacion requerido</div>
@@ -470,94 +693,145 @@ const OperatorView = () => {
             <button onClick={() => window.location.reload()} style={{ marginTop: 8, padding: '8px 14px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Reintentar</button>
           </div>
         )}
+
         {fetchError && (
           <div style={{ background: '#fef9c3', border: '1.5px solid #fde68a', borderRadius: 12, padding: '14px 16px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
             <span style={{ fontSize: 13, color: '#854d0e', fontWeight: 600 }}>{fetchError}</span>
             <button onClick={() => fetchOperatorBookings()} style={{ padding: '8px 16px', background: '#f97316', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Reintentar</button>
           </div>
         )}
-        {loading ? (
-          <div style={{ background: '#fff', borderRadius: 16, padding: 48, textAlign: 'center' }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
-            <p style={{ color: '#9ca3af' }}>Cargando tus servicios...</p>
-          </div>
-        ) : currentList.length === 0 ? (
-          <div style={{ background: '#fff', borderRadius: 16, padding: 48, textAlign: 'center' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
-            <p style={{ color: '#9ca3af' }}>No tienes servicios en esta seccion</p>
-          </div>
-        ) : (
+
+        {/* ── TAB SOLICITUDES ── */}
+        {activeTab === 'solicitudes' && (
           <div style={{ display: 'grid', gap: 12 }}>
-            {currentList.map(booking => {
-              const sc = getStatusStyle(booking.status);
-              return (
-                <div key={booking.id} onClick={() => setSelectedBooking(booking)}
-                  style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? 14 : '16px 18px', cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', background: '#eff6ff', padding: '3px 10px', borderRadius: 20 }}>{booking.booking_ref}</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: sc.bg, color: sc.text }}>{sc.label}</span>
-                  </div>
-                  <div style={{ fontWeight: 700, color: '#1f2937', fontSize: isMobile ? 15 : 16, marginBottom: 10 }}>{booking.service_name}</div>
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#374151' }}>
-                      <Clock size={14} color="#3b82f6" />
-                      <span style={{ fontWeight: 600 }}>{booking.scheduled_time}</span>
-                      <span style={{ color: '#9ca3af' }}>·</span>
-                      <span style={{ color: '#6b7280' }}>{booking.scheduled_date}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#6b7280' }}>
-                      <MapPin size={14} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
-                      <span style={{ lineHeight: 1.4 }}>{booking.address_line || 'Ver detalles...'}</span>
-                    </div>
-                  </div>
-                  <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #f3f4f6', display: 'flex', gap: 8 }}>
-                    {booking.status === 'confirmado' && (
-                      <button onClick={async e => { e.stopPropagation(); await updateStatus(booking.id, 'en_camino', 'on_the_way', booking); }} disabled={updatingId === booking.id}
-                        style={{ flex: 1, background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
-                        <Navigation size={14} /> Iniciar Viaje
-                      </button>
-                    )}
-                    {booking.status === 'en_camino' && (
-                      <button onClick={async e => { e.stopPropagation(); await handleStartWashing(booking); }} disabled={updatingId === booking.id}
-                        style={{ flex: 1, background: '#f97316', color: '#fff', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
-                        <Play size={14} /> Empezar Lavado
-                      </button>
-                    )}
-                    {booking.status === 'en_proceso' && (
-                      <button onClick={e => { e.stopPropagation(); handleFinalizeClick(booking); }} disabled={updatingId === booking.id}
-                        style={{ flex: 1, background: '#10b981', color: '#fff', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
-                        <Check size={14} /> Finalizar
-                      </button>
-                    )}
-                    {['confirmado','en_camino','en_proceso'].includes(booking.status) && (
-                      <button onClick={e => { e.stopPropagation(); setIncidentBooking(booking); setIncidentModal(true); }}
-                        style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 10, padding: '13px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, minHeight: 48 }}>
-                        <AlertTriangle size={14} />
-                      </button>
-                    )}
-                  </div>
+            {loadingReqs ? (
+              <div style={{ background: '#fff', borderRadius: 16, padding: 48, textAlign: 'center' }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+                <p style={{ color: '#9ca3af' }}>Cargando solicitudes...</p>
+              </div>
+            ) : pendingRequests.length === 0 ? (
+              <div style={{ background: '#fff', borderRadius: 16, padding: 48, textAlign: 'center' }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>🔔</div>
+                <p style={{ color: '#1f2937', fontWeight: 700, fontSize: 16, margin: '0 0 8px' }}>Sin solicitudes pendientes</p>
+                <p style={{ color: '#9ca3af', fontSize: 14, margin: 0 }}>Cuando un cliente solicite un servicio en tu zona y horario, aparecerá aquí.</p>
+              </div>
+            ) : (
+              <>
+                <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Bell size={16} color="#f59e0b" style={{ flexShrink: 0 }} />
+                  <p style={{ fontSize: 13, color: '#92400e', margin: 0, lineHeight: 1.4 }}>
+                    Tienes <strong>{pendingRequests.length}</strong> solicitud{pendingRequests.length > 1 ? 'es' : ''} pendiente{pendingRequests.length > 1 ? 's' : ''}. El primero en aceptar se queda con el servicio.
+                  </p>
+                  <button onClick={fetchBookingRequests} style={{ background: 'none', border: 'none', color: '#f59e0b', cursor: 'pointer', fontSize: 18, flexShrink: 0 }}>↻</button>
                 </div>
-              );
-            })}
+                {acceptError && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#dc2626' }}>⚠️ {acceptError}</div>
+                )}
+                {pendingRequests.map(req => (
+                  <RequestCard
+                    key={req.id}
+                    request={req}
+                    onAccept={handleAcceptRequest}
+                    accepting={accepting}
+                    isMobile={isMobile}
+                  />
+                ))}
+              </>
+            )}
           </div>
+        )}
+
+        {/* ── TABS DE SERVICIOS ── */}
+        {activeTab !== 'solicitudes' && (
+          loading ? (
+            <div style={{ background: '#fff', borderRadius: 16, padding: 48, textAlign: 'center' }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+              <p style={{ color: '#9ca3af' }}>Cargando tus servicios...</p>
+            </div>
+          ) : currentList.length === 0 ? (
+            <div style={{ background: '#fff', borderRadius: 16, padding: 48, textAlign: 'center' }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
+              <p style={{ color: '#9ca3af' }}>No tienes servicios en esta seccion</p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: 12 }}>
+              {currentList.map(booking => {
+                const sc = getStatusStyle(booking.status);
+                const timeFrom = booking.scheduled_time_from?.slice(0,5);
+                const timeTo   = booking.scheduled_time_to?.slice(0,5);
+                return (
+                  <div key={booking.id} onClick={() => setSelectedBooking(booking)}
+                    style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? 14 : '16px 18px', cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', background: '#eff6ff', padding: '3px 10px', borderRadius: 20 }}>{booking.booking_ref}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: sc.bg, color: sc.text }}>{sc.label}</span>
+                    </div>
+                    <div style={{ fontWeight: 700, color: '#1f2937', fontSize: isMobile ? 15 : 16, marginBottom: 10 }}>{booking.service_name}</div>
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#374151' }}>
+                        <Clock size={14} color="#3b82f6" />
+                        <span style={{ fontWeight: 600 }}>
+                          {timeFrom && timeTo ? `${timeFrom} — ${timeTo}` : booking.scheduled_time?.slice(0,5) ?? '—'}
+                        </span>
+                        <span style={{ color: '#9ca3af' }}>·</span>
+                        <span style={{ color: '#6b7280' }}>{booking.scheduled_date}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#6b7280' }}>
+                        <MapPin size={14} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
+                        <span style={{ lineHeight: 1.4 }}>{booking.address_line || 'Ver detalles...'}</span>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #f3f4f6', display: 'flex', gap: 8 }}>
+                      {booking.status === 'confirmado' && (
+                        <button onClick={async e => { e.stopPropagation(); await updateStatus(booking.id, 'en_camino', 'on_the_way', booking); }} disabled={updatingId === booking.id}
+                          style={{ flex: 1, background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
+                          <Navigation size={14} /> Iniciar Viaje
+                        </button>
+                      )}
+                      {booking.status === 'en_camino' && (
+                        <button onClick={async e => { e.stopPropagation(); await handleStartWashing(booking); }} disabled={updatingId === booking.id}
+                          style={{ flex: 1, background: '#f97316', color: '#fff', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
+                          <Play size={14} /> Empezar Lavado
+                        </button>
+                      )}
+                      {booking.status === 'en_proceso' && (
+                        <button onClick={e => { e.stopPropagation(); handleFinalizeClick(booking); }} disabled={updatingId === booking.id}
+                          style={{ flex: 1, background: '#10b981', color: '#fff', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
+                          <Check size={14} /> Finalizar
+                        </button>
+                      )}
+                      {['confirmado','en_camino','en_proceso'].includes(booking.status) && (
+                        <button onClick={e => { e.stopPropagation(); setIncidentBooking(booking); setIncidentModal(true); }}
+                          style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 10, padding: '13px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, minHeight: 48 }}>
+                          <AlertTriangle size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
         )}
       </div>
 
+      {/* Nav bar móvil */}
       {isMobile && (
         <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100, background: '#fff', borderTop: '1px solid #e5e7eb', display: 'flex', boxShadow: '0 -4px 16px rgba(0,0,0,0.08)' }}>
           {tabs.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              style={{ flex: 1, padding: '10px 4px 12px', border: 'none', cursor: 'pointer', background: 'transparent', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, borderTop: activeTab === tab.id ? '3px solid #3b82f6' : '3px solid transparent', minHeight: 60, position: 'relative' }}>
-              <span style={{ fontSize: 20 }}>{tab.icon}</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: activeTab === tab.id ? '#1e40af' : '#9ca3af' }}>{tab.label}</span>
+              style={{ flex: 1, padding: '10px 2px 12px', border: 'none', cursor: 'pointer', background: 'transparent', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, borderTop: activeTab === tab.id ? '3px solid #3b82f6' : '3px solid transparent', minHeight: 60, position: 'relative' }}>
+              <span style={{ fontSize: tab.id === 'solicitudes' ? 18 : 20 }}>{tab.icon}</span>
+              <span style={{ fontSize: 9, fontWeight: 700, color: activeTab === tab.id ? '#1e40af' : '#9ca3af' }}>{tab.label}</span>
               {tab.count > 0 && (
-                <span style={{ position: 'absolute', top: 6, right: '50%', transform: 'translateX(12px)', fontSize: 9, fontWeight: 700, background: '#ef4444', color: '#fff', borderRadius: 10, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>{tab.count}</span>
+                <span style={{ position: 'absolute', top: 6, right: '50%', transform: 'translateX(12px)', fontSize: 9, fontWeight: 700, background: tab.id === 'solicitudes' ? '#ef4444' : '#ef4444', color: '#fff', borderRadius: 10, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>{tab.count}</span>
               )}
             </button>
           ))}
         </div>
       )}
 
+      {/* Detalle booking */}
       {selectedBooking && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: '#f3f4f6', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <div style={{ maxWidth: 600, margin: '0 auto', padding: isMobile ? 12 : 20, paddingBottom: isMobile ? 160 : 120 }}>
@@ -572,8 +846,11 @@ const OperatorView = () => {
             <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', borderRadius: 20, padding: isMobile ? 16 : '20px 22px', color: '#fff', marginBottom: 16 }}>
               <h2 style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, margin: '0 0 4px' }}>{selectedBooking.service_name}</h2>
               <p style={{ color: '#bfdbfe', fontSize: 13, margin: '0 0 16px' }}>{selectedBooking.vehicle_brand} {selectedBooking.vehicle_model} · {selectedBooking.vehicle_color}</p>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>🕐 {selectedBooking.scheduled_time}</span>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>
+                  🕐 {selectedBooking.scheduled_time_from?.slice(0,5) ?? selectedBooking.scheduled_time?.slice(0,5)}
+                  {selectedBooking.scheduled_time_to ? ` — ${selectedBooking.scheduled_time_to.slice(0,5)}` : ''} hrs
+                </span>
                 <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>💰 ${selectedBooking.total_price || selectedBooking.service_price}</span>
               </div>
             </div>
@@ -596,7 +873,6 @@ const OperatorView = () => {
                 <Navigation size={14} /> Abrir en Google Maps
               </button>
             </div>
-            {/* Botones de accion inline (no fixed) para que sean accesibles con scroll */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {selectedBooking.status === 'confirmado' && (
                 <button onClick={() => updateStatus(selectedBooking.id, 'en_camino', 'on_the_way', selectedBooking)} disabled={updatingId === selectedBooking.id}
@@ -627,20 +903,10 @@ const OperatorView = () => {
         </div>
       )}
 
-      {/* MODAL FOTOS — FIX SCROLL: flex column + maxHeight + body scrollable */}
+      {/* MODAL FOTOS */}
       {photoModal && photoBooking && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 110, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
-          <div style={{
-            background: '#fff',
-            borderRadius: isMobile ? '20px 20px 0 0' : 24,
-            width: '100%',
-            maxWidth: isMobile ? '100%' : 420,
-            display: 'flex',
-            flexDirection: 'column',
-            // FIX: restar el nav bar (60px) para que el footer no quede tapado
-            maxHeight: isMobile ? 'calc(92vh - 60px)' : '90vh',
-          }}>
-            {/* Header fijo — no hace scroll */}
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 24, width: '100%', maxWidth: isMobile ? '100%' : 420, display: 'flex', flexDirection: 'column', maxHeight: isMobile ? 'calc(92vh - 60px)' : '90vh' }}>
             <div style={{ background: currentPhotoConfig.phase === 'before' ? 'linear-gradient(135deg,#f97316,#fb923c)' : 'linear-gradient(135deg,#10b981,#34d399)', padding: '16px 20px', borderRadius: isMobile ? '20px 20px 0 0' : '24px 24px 0 0', flexShrink: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
@@ -656,7 +922,6 @@ const OperatorView = () => {
                 ))}
               </div>
             </div>
-            {/* Cuerpo scrollable */}
             <div style={{ padding: isMobile ? '18px 16px' : '20px 24px', overflowY: 'auto', flex: 1, WebkitOverflowScrolling: 'touch' }}>
               {getPhotoUrl(photosData[currentPhotoKey] || photoBooking['photo_' + currentPhotoKey]) ? (
                 <div style={{ position: 'relative', marginBottom: 14 }}>
@@ -694,25 +959,14 @@ const OperatorView = () => {
         </div>
       )}
 
-      {/* MODAL CHECKLIST — FIX SCROLL */}
+      {/* MODAL CHECKLIST */}
       {checklistModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 110, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
-          <div style={{
-            background: '#fff',
-            borderRadius: isMobile ? '20px 20px 0 0' : 20,
-            width: '100%',
-            maxWidth: isMobile ? '100%' : 460,
-            display: 'flex',
-            flexDirection: 'column',
-            // FIX: restar nav bar para que el botón Confirmar no quede tapado
-            maxHeight: isMobile ? 'calc(92vh - 60px)' : '85vh',
-          }}>
-            {/* Header fijo */}
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, width: '100%', maxWidth: isMobile ? '100%' : 460, display: 'flex', flexDirection: 'column', maxHeight: isMobile ? 'calc(92vh - 60px)' : '85vh' }}>
             <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: isMobile ? '20px 20px 0 0' : '20px 20px 0 0', flexShrink: 0 }}>
               <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>Checklist de Calidad</h3>
               <button onClick={() => setChecklistModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 20, borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>x</button>
             </div>
-            {/* Cuerpo scrollable */}
             <div style={{ padding: isMobile ? '16px 14px' : 20, overflowY: 'auto', flex: 1, WebkitOverflowScrolling: 'touch' }}>
               <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 16px' }}>Confirma que cada punto fue completado antes de finalizar.</p>
               <div style={{ display: 'grid', gap: 10 }}>
@@ -725,7 +979,6 @@ const OperatorView = () => {
                 ))}
               </div>
             </div>
-            {/* Footer fijo */}
             <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, flexShrink: 0 }}>
               <button onClick={() => setChecklistModal(false)} style={{ flex: 1, padding: '12px 0', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cancelar</button>
               <button onClick={confirmFinalize} style={{ flex: 2, padding: '12px 0', background: checklist.every(i => i.checked) ? '#10b981' : '#9ca3af', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>
@@ -736,24 +989,14 @@ const OperatorView = () => {
         </div>
       )}
 
-      {/* MODAL INCIDENCIA — FIX SCROLL */}
+      {/* MODAL INCIDENCIA */}
       {incidentModal && incidentBooking && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 110, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
-          <div style={{
-            background: '#fff',
-            borderRadius: isMobile ? '20px 20px 0 0' : 20,
-            width: '100%',
-            maxWidth: isMobile ? '100%' : 420,
-            display: 'flex',
-            flexDirection: 'column',
-            maxHeight: isMobile ? 'calc(92vh - 60px)' : '85vh',
-          }}>
-            {/* Header fijo */}
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, width: '100%', maxWidth: isMobile ? '100%' : 420, display: 'flex', flexDirection: 'column', maxHeight: isMobile ? 'calc(92vh - 60px)' : '85vh' }}>
             <div style={{ background: 'linear-gradient(135deg,#dc2626,#ef4444)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: isMobile ? '20px 20px 0 0' : '20px 20px 0 0', flexShrink: 0 }}>
               <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>Reportar Incidencia</h3>
               <button onClick={() => { setIncidentModal(false); setIncidentNote(''); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 20, borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>x</button>
             </div>
-            {/* Cuerpo scrollable */}
             <div style={{ padding: isMobile ? '16px 14px' : 20, overflowY: 'auto', flex: 1, WebkitOverflowScrolling: 'touch' }}>
               <div style={{ background: '#fef2f2', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 14, color: '#991b1b' }}>
                 Servicio: <strong>{incidentBooking.booking_ref}</strong> — {incidentBooking.service_name}
@@ -763,7 +1006,6 @@ const OperatorView = () => {
                 placeholder="Ej: El cliente no se encuentra en casa..."
                 style={{ width: '100%', padding: '12px', borderRadius: 8, border: '1.5px solid #fecaca', fontSize: 16, outline: 'none', height: 100, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937' }} />
             </div>
-            {/* Footer fijo */}
             <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, flexShrink: 0 }}>
               <button onClick={() => { setIncidentModal(false); setIncidentNote(''); }} style={{ flex: 1, padding: '12px 0', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cancelar</button>
               <button onClick={sendIncidentReport} disabled={sendingIncident}
