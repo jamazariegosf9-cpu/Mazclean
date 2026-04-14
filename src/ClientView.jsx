@@ -34,12 +34,12 @@ export default function ClientView() {
   const [bookings, setBookings]           = useState([])
   const [activeBooking, setActiveBooking] = useState(null)
   const [tab, setTab]                     = useState('active')
-  const [loading, setLoading]             = useState(false)   // ← inicia false
-  const [fetchError, setFetchError]       = useState('')      // ← nuevo
+  const [loading, setLoading]             = useState(false)
+  const [fetchError, setFetchError]       = useState('')
   const [mapsLoaded, setMapsLoaded]       = useState(false)
   const [eta, setEta]                     = useState(null)
-  const fetchingRef                       = useRef(false)     // ← control duplicados
-  const bookingsCache                     = useRef([])        // ← caché
+  const fetchingRef                       = useRef(false)
+  const bookingsCache                     = useRef([])
 
   // ── Calificación ───────────────────────────────────────────────
   const [ratingModal, setRatingModal]     = useState(false)
@@ -55,14 +55,12 @@ export default function ClientView() {
     }
   }, [user])
 
-  // ── Fetch con caché, timeout y control de duplicados ──────────
   const fetchBookings = async (silent = false) => {
     if (fetchingRef.current) return
     fetchingRef.current = true
     if (!silent) setLoading(true)
     setFetchError('')
 
-    // Timeout 8s — si tarda más usa caché
     let timedOut = false
     const timeoutId = setTimeout(() => {
       timedOut = true
@@ -90,7 +88,7 @@ export default function ClientView() {
       if (timedOut) return
       if (error) throw error
       const result = data || []
-      bookingsCache.current = result   // guardar en caché
+      bookingsCache.current = result
       setBookings(result)
       const active = result.find(b =>
         ['pendiente','confirmado','en_camino','en_proceso'].includes(b.status)
@@ -118,28 +116,55 @@ export default function ClientView() {
     }
   }
 
+  // ── Realtime: detectar cambio a 'finalizado' y abrir modal ────
   useEffect(() => {
     if (!activeBooking) return
+
     const channel = supabase
       .channel(`booking-${activeBooking.id}`)
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'bookings',
         filter: `id=eq.${activeBooking.id}`,
       }, (payload) => {
-        setActiveBooking(payload.new)
-        setBookings(prev => prev.map(b => b.id === payload.new.id ? payload.new : b))
-        // Actualizar caché también
+        const updated = payload.new
+
+        // Actualizar estado local
+        setActiveBooking(updated)
+        setBookings(prev => prev.map(b => b.id === updated.id ? updated : b))
         bookingsCache.current = bookingsCache.current.map(b =>
-          b.id === payload.new.id ? payload.new : b
+          b.id === updated.id ? updated : b
         )
+
+        // ── NUEVO: si acaba de pasar a 'finalizado' y no tiene calificación,
+        //    abrir el modal de calificación automáticamente
+        if (
+          updated.status === 'finalizado' &&
+          !updated.client_rating &&
+          activeBooking.status !== 'finalizado' // evitar re-abrir si ya estaba finalizado
+        ) {
+          // Pequeño delay para que el cliente vea el cambio de estado antes del modal
+          setTimeout(() => {
+            setRatingBooking(updated)
+            setRatingValue(0)
+            setRatingReview('')
+            setRatingModal(true)
+            setTab('history') // cambiar al tab de historial donde verá la card
+          }, 1200)
+        }
+
+        // Si el servicio ya no está activo, limpiar activeBooking
+        if (['finalizado', 'cancelado'].includes(updated.status)) {
+          setActiveBooking(null)
+        }
       })
       .subscribe()
+
     return () => supabase.removeChannel(channel)
-  }, [activeBooking?.id])
+  }, [activeBooking?.id, activeBooking?.status])
 
   // ── Guardar calificación ───────────────────────────────────────
   const saveRating = async () => {
-    if (!ratingValue) { alert('Por favor selecciona una calificación.'); return; }
+    if (!ratingValue) { alert('Por favor selecciona una calificación.'); return }
     setSavingRating(true)
     try {
       const { error } = await supabase
@@ -151,12 +176,19 @@ export default function ClientView() {
         })
         .eq('id', ratingBooking.id)
       if (error) throw error
+
+      // Actualizar lista local
       setBookings(prev => prev.map(b =>
-        b.id === ratingBooking.id ? { ...b, client_rating: ratingValue, client_review: ratingReview } : b
+        b.id === ratingBooking.id
+          ? { ...b, client_rating: ratingValue, client_review: ratingReview }
+          : b
       ))
       bookingsCache.current = bookingsCache.current.map(b =>
-        b.id === ratingBooking.id ? { ...b, client_rating: ratingValue, client_review: ratingReview } : b
+        b.id === ratingBooking.id
+          ? { ...b, client_rating: ratingValue, client_review: ratingReview }
+          : b
       )
+
       setRatingModal(false)
       setRatingValue(0)
       setRatingReview('')
@@ -166,6 +198,14 @@ export default function ClientView() {
     } finally {
       setSavingRating(false)
     }
+  }
+
+  // Cerrar modal sin calificar — el cliente podrá calificar desde la card
+  const dismissRatingModal = () => {
+    setRatingModal(false)
+    setRatingValue(0)
+    setRatingReview('')
+    // NO limpiamos ratingBooking para que el botón en la card siga disponible
   }
 
   const activeList  = bookings.filter(b => ['pendiente','confirmado','en_camino','en_proceso'].includes(b.status))
@@ -182,17 +222,15 @@ export default function ClientView() {
       <div style={styles.card}>
         <h2 style={styles.title}>🚗 Mis Reservaciones</h2>
 
-        {/* Banner error de red con reintentar */}
-        {fetchError ? (
+        {fetchError && (
           <div style={{ background: '#fef9c3', border: '1.5px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
             <span style={{ fontSize: 13, color: '#854d0e', fontWeight: 600 }}>⚠️ {fetchError}</span>
             <button onClick={() => fetchBookings()} style={{ padding: '7px 14px', background: '#f97316', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
               🔄 Reintentar
             </button>
           </div>
-        ) : null}
+        )}
 
-        {/* Spinner solo cuando carga por primera vez */}
         {loading ? (
           <div style={styles.loading}>Cargando tus reservaciones...</div>
         ) : (
@@ -216,7 +254,12 @@ export default function ClientView() {
             ) : (
               (tab === 'active' ? activeList : historyList).map(b => (
                 <BookingCard key={b.id} booking={b}
-                  onRate={() => { setRatingBooking(b); setRatingValue(b.client_rating || 0); setRatingReview(b.client_review || ''); setRatingModal(true); }} />
+                  onRate={() => {
+                    setRatingBooking(b)
+                    setRatingValue(b.client_rating || 0)
+                    setRatingReview(b.client_review || '')
+                    setRatingModal(true)
+                  }} />
               ))
             )}
           </>
@@ -225,53 +268,106 @@ export default function ClientView() {
 
       {/* ════ MODAL CALIFICACIÓN ════ */}
       {ratingModal && ratingBooking && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: '#fff', borderRadius: 20, boxShadow: '0 8px 40px rgba(0,0,0,0.2)', maxWidth: 420, width: '100%', overflow: 'hidden' }}>
-            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>⭐ Calificar Servicio</h3>
-              <button onClick={() => setRatingModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#bfdbfe', fontSize: 22 }}>×</button>
-            </div>
-            <div style={{ padding: 24 }}>
-              <div style={{ background: '#f9fafb', borderRadius: 12, padding: '12px 16px', marginBottom: 20 }}>
-                <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 15 }}>{ratingBooking.service_name}</div>
-                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>📅 {ratingBooking.scheduled_date} · {ratingBooking.scheduled_time}</div>
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 110,
+          background: 'rgba(0,0,0,0.6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 16,
+          // Animación de entrada suave
+          animation: 'fadeIn 0.25s ease',
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 20,
+            boxShadow: '0 8px 40px rgba(0,0,0,0.25)',
+            maxWidth: 420, width: '100%',
+            overflow: 'hidden',
+            animation: 'slideUp 0.3s ease',
+          }}>
+            {/* Header */}
+            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '20px 24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 18, margin: '0 0 4px' }}>
+                    ✅ ¡Servicio completado!
+                  </h3>
+                  <p style={{ color: '#bfdbfe', fontSize: 13, margin: 0 }}>
+                    ¿Cómo estuvo tu experiencia?
+                  </p>
+                </div>
+                <button onClick={dismissRatingModal}
+                  style={{ background: 'rgba(255,255,255,0.15)', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 18, borderRadius: 8, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  ×
+                </button>
               </div>
-              <div style={{ marginBottom: 20 }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 12, textAlign: 'center' }}>¿Cómo calificarías el servicio?</p>
-                <RatingSlider
-                  initialValue={ratingValue}
-                  onRatingChange={(val) => setRatingValue(val)}
+            </div>
+
+            {/* Cuerpo */}
+            <div style={{ padding: '20px 24px' }}>
+              {/* Info del servicio */}
+              <div style={{ background: '#f0fdf4', borderRadius: 12, padding: '12px 16px', marginBottom: 20, border: '1px solid #bbf7d0' }}>
+                <div style={{ fontWeight: 700, color: '#065f46', fontSize: 15 }}>
+                  {ratingBooking.service_name}
+                </div>
+                <div style={{ fontSize: 12, color: '#059669', marginTop: 3 }}>
+                  {ratingBooking.vehicle_brand} · {ratingBooking.vehicle_color} · {ratingBooking.scheduled_date}
+                </div>
+              </div>
+
+              {/* Slider de calificación */}
+              <RatingSlider
+                initialValue={ratingValue}
+                onRatingChange={(val) => setRatingValue(val)}
+              />
+
+              {/* Comentario */}
+              <div style={{ marginTop: 16 }}>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
+                  Comentario <span style={{ fontWeight: 400, color: '#9ca3af' }}>(opcional)</span>
+                </label>
+                <textarea
+                  value={ratingReview}
+                  onChange={e => setRatingReview(e.target.value)}
+                  placeholder="¿Algo que quieras comentar sobre el servicio?"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 13, outline: 'none', height: 76, resize: 'none', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937' }}
                 />
               </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Comentario (opcional)</label>
-                <textarea value={ratingReview} onChange={e => setRatingReview(e.target.value)}
-                  placeholder="¿Algo que quieras comentar sobre el servicio?"
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 13, outline: 'none', height: 80, resize: 'none', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937' }} />
-              </div>
             </div>
-            <div style={{ padding: '12px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10 }}>
-              <button onClick={() => setRatingModal(false)}
-                style={{ flex: 1, padding: '10px 0', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
-                Cancelar
+
+            {/* Footer */}
+            <div style={{ padding: '12px 24px 20px', display: 'flex', gap: 10 }}>
+              <button onClick={dismissRatingModal}
+                style={{ flex: 1, padding: '12px 0', background: '#f3f4f6', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>
+                Después
               </button>
               <button onClick={saveRating} disabled={savingRating || !ratingValue}
-                style={{ flex: 2, padding: '10px 0', background: savingRating || !ratingValue ? '#9ca3af' : '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                {savingRating ? '⏳ Guardando...' : '⭐ Enviar Calificación'}
+                style={{ flex: 2, padding: '12px 0', background: savingRating || !ratingValue ? '#9ca3af' : 'linear-gradient(135deg,#1e40af,#3b82f6)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: savingRating || !ratingValue ? 'not-allowed' : 'pointer', minHeight: 48 }}>
+                {savingRating ? '⏳ Guardando...' : '⭐ Enviar calificación'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        @keyframes slideUp {
+          from { transform: translateY(24px); opacity: 0; }
+          to   { transform: translateY(0);    opacity: 1; }
+        }
+      `}</style>
     </div>
   )
 }
 
+// ── TrackingCard ───────────────────────────────────────────────────
 function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
-  const mapRef = useRef(null)
-  const mapInstanceRef = useRef(null)
+  const mapRef            = useRef(null)
+  const mapInstanceRef    = useRef(null)
   const operatorMarkerRef = useRef(null)
-  const clientMarkerRef = useRef(null)
+  const clientMarkerRef   = useRef(null)
   const status = STATUS_INFO[booking.status] || STATUS_INFO.pendiente
 
   useEffect(() => {
@@ -297,12 +393,14 @@ function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
     if (!booking.id) return
     const channel = supabase
       .channel(`operator-location-${booking.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'operator_locations', filter: `booking_id=eq.${booking.id}` },
-        (payload) => {
-          const { lat, lng } = payload.new
-          updateOperatorMarker(lat, lng)
-          if (booking.address_lat && booking.address_lng) calculateETA(lat, lng, booking.address_lat, booking.address_lng)
-        })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'operator_locations',
+        filter: `booking_id=eq.${booking.id}`,
+      }, (payload) => {
+        const { lat, lng } = payload.new
+        updateOperatorMarker(lat, lng)
+        if (booking.address_lat && booking.address_lng) calculateETA(lat, lng, booking.address_lat, booking.address_lng)
+      })
       .subscribe()
     loadLastLocation()
     return () => supabase.removeChannel(channel)
@@ -343,9 +441,9 @@ function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
   const calculateETA = (fromLat, fromLng, toLat, toLng) => {
     if (!window.google) return
     new window.google.maps.DistanceMatrixService().getDistanceMatrix({
-      origins: [{ lat: fromLat, lng: fromLng }],
+      origins:      [{ lat: fromLat, lng: fromLng }],
       destinations: [{ lat: toLat, lng: toLng }],
-      travelMode: window.google.maps.TravelMode.DRIVING,
+      travelMode:   window.google.maps.TravelMode.DRIVING,
     }, (response, status) => {
       if (status === 'OK' && response.rows[0]?.elements[0]?.status === 'OK') {
         setEta(response.rows[0].elements[0].duration.text)
@@ -372,7 +470,10 @@ function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
           </div>
         )}
       </div>
-      {!mapsLoaded ? <div style={styles.mapPlaceholder}>Cargando mapa...</div> : <div ref={mapRef} style={styles.trackingMap} />}
+      {!mapsLoaded
+        ? <div style={styles.mapPlaceholder}>Cargando mapa...</div>
+        : <div ref={mapRef} style={styles.trackingMap} />
+      }
       <div style={styles.trackingFooter}>
         <span style={{ fontSize: 12, color: '#93c5fd' }}>🔵 Tu ubicación &nbsp;&nbsp; 🚕 Operador</span>
         <span style={{ fontSize: 11, color: '#60a5fa' }}>Actualización automática</span>
@@ -381,8 +482,9 @@ function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
   )
 }
 
+// ── BookingCard ────────────────────────────────────────────────────
 function BookingCard({ booking, onRate }) {
-  const status = STATUS_INFO[booking.status] || STATUS_INFO.pendiente
+  const status  = STATUS_INFO[booking.status] || STATUS_INFO.pendiente
   const canRate = booking.status === 'finalizado' && !booking.client_rating
   const hasRated = booking.status === 'finalizado' && booking.client_rating
 
@@ -399,7 +501,7 @@ function BookingCard({ booking, onRate }) {
       </div>
       <div style={styles.bookingInfo}>
         <span>📍 {booking.address_line}</span>
-        <span>📅 {booking.scheduled_date} · {booking.scheduled_time} hrs</span>
+        <span>📅 {booking.scheduled_date} · {booking.scheduled_time_from?.slice(0,5) ?? booking.scheduled_time} hrs</span>
         <span>💰 ${booking.total_price || booking.service_price} MXN</span>
       </div>
       {hasRated && (
@@ -410,7 +512,7 @@ function BookingCard({ booking, onRate }) {
       )}
       {canRate && (
         <button onClick={onRate}
-          style={{ marginTop: 10, width: '100%', padding: '9px 0', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 8, color: '#1e40af', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          style={{ marginTop: 10, width: '100%', padding: '11px 0', background: 'linear-gradient(135deg,#eff6ff,#dbeafe)', border: '1.5px solid #bfdbfe', borderRadius: 8, color: '#1e40af', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
           ⭐ Calificar este servicio
         </button>
       )}
