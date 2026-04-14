@@ -1442,6 +1442,8 @@ const toggleAssignmentMode = async (op) => {
                     { label: 'Radio de cobertura', value: reviewingOp.coverage_radius ? `${reviewingOp.coverage_radius} km` : '—' },
                     { label: 'Días de trabajo', value: Array.isArray(reviewingOp.work_days) && reviewingOp.work_days.length > 0 ? reviewingOp.work_days.map(d => WORK_DAYS_LABELS[d] || d).join(', ') : '—' },
                     { label: 'Horario', value: reviewingOp.work_start && reviewingOp.work_end ? `${reviewingOp.work_start} – ${reviewingOp.work_end}` : '—' },
+                    { label: 'Dirección base', value: reviewingOp.base_address || '—' },
+                    { label: 'Requiere verificación de transporte', value: reviewingOp.requires_transport_verification ? '✅ Sí' : '❌ No' },
                   ].map(({ label, value }) => (
                     <div key={label}>
                       <div style={{ fontSize: 10, color: '#0284c7', fontWeight: 600 }}>{label}</div>
