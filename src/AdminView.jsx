@@ -1183,25 +1183,51 @@ const toggleAssignmentMode = async (op) => {
                             ))}
                           </div>
                         </div>
-                      
-{/* Toggle assignment_mode */}
-<div style={{ background: '#f9fafb', borderRadius: 10, padding: '10px 14px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-  <div>
-    <div style={{ fontSize: 11, fontWeight: 700, color: '#374151' }}>
-      {op.assignment_mode === 'admin_asignado' ? '⭐ Admin asignado' : '🤖 Autónomo'}
-    </div>
-    <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
-      {op.assignment_mode === 'admin_asignado'
-        ? 'Tiene prioridad en la asignación automática'
-        : 'Acepta servicios por su cuenta'}
-    </div>
-  </div>
-  <button
-    onClick={() => toggleAssignmentMode(op)}
-    style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: op.assignment_mode === 'admin_asignado' ? '#1e40af' : '#e5e7eb', color: op.assignment_mode === 'admin_asignado' ? '#fff' : '#6b7280', fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0, minHeight: 36 }}>
-    {op.assignment_mode === 'admin_asignado' ? '⭐ Admin' : '🤖 Autónomo'}
-  </button>
-</div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 5 }}>
+                          <button onClick={() => fetchOperatorHistory(op.id)}
+                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 40 }}>
+                            📊<br/>Historial
+                          </button>
+                          <button onClick={() => openCommissionModal(op)}
+                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 40 }}>
+                            💰<br/>Comisión
+                          </button>
+                          <button onClick={() => fetchOperatorKpis(op)}
+                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 40 }}>
+                            ⏱<br/>Tiempos
+                          </button>
+                          <button onClick={() => setResetOnboardingModal(op)}
+                            style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #fde68a', background: '#fffbeb', color: '#92400e', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 40 }}>
+                            🔄<br/>Onboard
+                          </button>
+                        </div>
+
+                        {/* Toggle assignment_mode */}
+                        <div style={{ background: '#f9fafb', borderRadius: 10, padding: '10px 14px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#374151' }}>
+                              {op.assignment_mode === 'admin_asignado' ? '⭐ Admin asignado' : '🤖 Autónomo'}
+                            </div>
+                            <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
+                              {op.assignment_mode === 'admin_asignado'
+                                ? 'Tiene prioridad en la asignación automática'
+                                : 'Acepta servicios por su cuenta'}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => toggleAssignmentMode(op)}
+                            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: op.assignment_mode === 'admin_asignado' ? '#1e40af' : '#e5e7eb', color: op.assignment_mode === 'admin_asignado' ? '#fff' : '#6b7280', fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0, minHeight: 36 }}>
+                            {op.assignment_mode === 'admin_asignado' ? '⭐ Admin' : '🤖 Autónomo'}
+                          </button>
+                        </div>
+
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             {operatorHistory && (
               <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? '16px' : '20px 24px' }}>
@@ -1884,7 +1910,6 @@ const toggleAssignmentMode = async (op) => {
             </div>
           </div>
         </div>
-        
       )}
 
       {/* ════ MODAL: FOTO (reservación) ════ */}
