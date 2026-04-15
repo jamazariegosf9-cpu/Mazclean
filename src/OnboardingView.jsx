@@ -243,7 +243,11 @@ export default function OnboardingView({ onComplete }) {
   const { user, profile, updateProfile } = useAuth()
   const isMobile = useIsMobile()
 
-  const [step, setStep] = useState(profile?.onboarding_step > 0 ? profile.onboarding_step : 0)
+  const [step, setStep] = useState(() => {
+  const savedStep = profile?.onboarding_step || 0
+  // Mostrar bienvenida si es operador nuevo (step 0 o 1)
+  return savedStep <= 1 ? 0 : savedStep
+})
   const [subStep, setSubStep] = useState(1)
   const [saving, setSaving]   = useState(false)
   const [error, setError]     = useState('')
@@ -289,7 +293,9 @@ export default function OnboardingView({ onComplete }) {
   const [signature, setSignature]             = useState(null)
 
   useEffect(() => {
-  if (profile?.onboarding_step > 1) setStep(profile.onboarding_step)
+  if (profile?.onboarding_step > 1 && step < 2) {
+    setStep(profile.onboarding_step)
+  }
 }, [profile])
 
   // Actualizar mapa cuando cambia lat/lng/radius
