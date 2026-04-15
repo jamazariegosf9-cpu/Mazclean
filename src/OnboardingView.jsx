@@ -288,7 +288,9 @@ export default function OnboardingView({ onComplete }) {
   const [termsAccepted, setTermsAccepted]     = useState(!!profile?.terms_accepted_at)
   const [signature, setSignature]             = useState(null)
 
-  useEffect(() => { if (profile?.onboarding_step) setStep(profile.onboarding_step) }, [profile])
+  useEffect(() => {
+  if (profile?.onboarding_step > 1) setStep(profile.onboarding_step)
+}, [profile])
 
   // Actualizar mapa cuando cambia lat/lng/radius
   useEffect(() => {
