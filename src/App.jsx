@@ -1,6 +1,6 @@
 import ClientView from './ClientView'
 import OperatorView from './OperatorView'
-import AdminView from './AdminView'
+import AdminViewC from './AdminViewC'
 import TrackingPublic from './TrackingPublic'
 import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
@@ -308,7 +308,7 @@ function AppInner() {
         {view === 'booking'  && <BookingViewProtected onNavigate={setView} onShowAuth={(tab) => setAuthModal(tab)} />}
         {view === 'client'   && <ClientView onNavigate={setView} />}
         {view === 'operator' && <OperatorView onNavigate={setView} />}
-        {view === 'admin'    && <AdminView onNavigate={setView} />}
+        {view === 'admin'    && <AdminViewC onNavigate={setView} />}
         {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
       </div>
     )
