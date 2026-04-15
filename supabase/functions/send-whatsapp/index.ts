@@ -1,4 +1,4 @@
-// v5 - WhatsApp + SMS paralelo
+// send-whatsapp v6 — agrega operator_service_request y admin_assignment_needed
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID') ?? ''
@@ -13,30 +13,164 @@ const corsHeaders = {
 }
 
 function getMessage(event: string, data: any): string {
-  const ref      = data.booking_ref    || ''
-  const svc      = data.service_name   || 'tu lavado'
-  const date     = data.scheduled_date || ''
-  const time     = data.scheduled_time || ''
-  const price    = data.total_price    || ''
-  const op       = data.operator_name  || 'tu operador'
-  const bookingId = data.booking_id    || ''
+  const ref       = data.booking_ref    || ''
+  const svc       = data.service_name   || 'tu lavado'
+  const date      = data.scheduled_date || ''
+  const time      = data.scheduled_time || ''
+  const timeFrom  = data.scheduled_time_from?.slice(0,5) || ''
+  const timeTo    = data.scheduled_time_to?.slice(0,5)   || ''
+  const price     = data.total_price    || ''
+  const op        = data.operator_name  || 'tu operador'
+  const address   = data.address_line   || ''
+  const bookingId = data.booking_id     || ''
   const trackingUrl = bookingId ? `${APP_URL}/tracking/${bookingId}` : APP_URL
 
   switch (event) {
+
+    // ── Mensajes al cliente ─────────────────────────────────────────────────
     case 'booking_created':
-      return `Maz Clean - Reservacion recibida!\n\nRef: ${ref}\nServicio: ${svc}\nFecha: ${date} a las ${time}\nTotal: $${price} MXN\n\nEn breve te asignaremos un operador. Gracias!`
+      return [
+        `Maz Clean - Reservacion recibida!`,
+        ``,
+        `Ref: ${ref}`,
+        `Servicio: ${svc}`,
+        `Fecha: ${date}`,
+        `Horario solicitado: ${timeFrom} a ${timeTo} hrs`,
+        `Total: $${price} MXN`,
+        ``,
+        `Estamos buscando el mejor operador para ti. Te avisamos en breve!`,
+      ].join('\n')
+
     case 'operator_assigned':
-      return `Maz Clean - Operador asignado!\n\nRef: ${ref}\nOperador: ${op}\nFecha: ${date} a las ${time}\n\nTe avisaremos cuando este en camino.`
+      return [
+        `Maz Clean - Operador asignado!`,
+        ``,
+        `Ref: ${ref}`,
+        `Operador: ${op}`,
+        `Fecha: ${date} a las ${time}`,
+        ``,
+        `Te avisaremos cuando este en camino.`,
+      ].join('\n')
+
     case 'on_the_way':
-      return `Maz Clean - Tu experto ya va en camino! 🚗💨\n\nRef: ${ref}\n${op} se dirige a tu ubicacion.\n\nSigue su llegada en tiempo real aqui:\n${trackingUrl}\n\nPreparate para dejar tu auto IMPECABLE! ✨`
+      return [
+        `Maz Clean - Tu experto ya va en camino! 🚗💨`,
+        ``,
+        `Ref: ${ref}`,
+        `${op} se dirige a tu ubicacion.`,
+        ``,
+        `Sigue su llegada en tiempo real aqui:`,
+        `${trackingUrl}`,
+        ``,
+        `Preparate para dejar tu auto IMPECABLE! ✨`,
+      ].join('\n')
+
     case 'llegando':
-      return `Maz Clean - Estamos a ${data.minutes_away || 5} minutos! 🕒\n\nRef: ${ref}\nPor favor ten las llaves a la mano o el acceso listo para recibirnos.\n\nVamos a dejar tu auto IMPECABLE! ✨`
+      return [
+        `Maz Clean - Estamos a ${data.minutes_away || 5} minutos! 🕒`,
+        ``,
+        `Ref: ${ref}`,
+        `Por favor ten las llaves a la mano o el acceso listo.`,
+        ``,
+        `Vamos a dejar tu auto IMPECABLE! ✨`,
+      ].join('\n')
+
     case 'arrived':
-      return `Maz Clean - Tu operador ha llegado!\n\nRef: ${ref}\n${op} esta en tu ubicacion. El lavado comenzara en unos momentos!`
+      return [
+        `Maz Clean - Tu operador ha llegado!`,
+        ``,
+        `Ref: ${ref}`,
+        `${op} esta en tu ubicacion. El lavado comenzara en unos momentos!`,
+      ].join('\n')
+
     case 'washing':
-      return `Maz Clean - Tu vehiculo esta siendo lavado!\n\nRef: ${ref}\n\nTe avisaremos cuando este listo.`
+      return [
+        `Maz Clean - Tu vehiculo esta siendo lavado!`,
+        ``,
+        `Ref: ${ref}`,
+        ``,
+        `Te avisaremos cuando este listo.`,
+      ].join('\n')
+
     case 'done':
-      return `Maz Clean - Tu vehiculo esta listo! 🎉\n\nRef: ${ref}\nServicio completado: ${svc}\nTotal: $${price} MXN\n\nGracias por usar Maz Clean! Tu opinion nos importa, califícanos en la app.`
+      return [
+        `Maz Clean - Tu vehiculo esta listo! 🎉`,
+        ``,
+        `Ref: ${ref}`,
+        `Servicio completado: ${svc}`,
+        `Total: $${price} MXN`,
+        ``,
+        `Gracias por usar Maz Clean! Tu opinion nos importa, calificanos en la app.`,
+      ].join('\n')
+
+    case 'booking_cancelled':
+      return [
+        `Maz Clean - Reservacion cancelada`,
+        ``,
+        `Ref: ${ref}`,
+        `Lamentablemente no encontramos un operador disponible para tu zona en este momento.`,
+        ``,
+        `Te invitamos a intentar de nuevo mas tarde o en un horario diferente.`,
+        `Disculpa los inconvenientes.`,
+      ].join('\n')
+
+    // ── Mensajes al operador ────────────────────────────────────────────────
+    case 'operator_service_request':
+      // Si viene custom_message lo usamos directamente (generado en process-booking-request)
+      if (data.custom_message) return data.custom_message
+      return [
+        `🚗 Maz Clean — Nueva solicitud de servicio!`,
+        ``,
+        `Ref: ${ref}`,
+        `Servicio: ${svc}`,
+        `Fecha: ${date}`,
+        `Horario: ${timeFrom} a ${timeTo} hrs`,
+        `Pago: $${price} MXN`,
+        ``,
+        `⏱ Tienes 5 minutos para aceptar.`,
+        ``,
+        `Entra a la app para aceptar:`,
+        `${APP_URL}`,
+      ].join('\n')
+
+    case 'operator_request_taken':
+      return [
+        `Maz Clean - Solicitud asignada a otro operador`,
+        ``,
+        `Ref: ${ref}`,
+        `El servicio del ${date} ya fue tomado por otro operador.`,
+        ``,
+        `Sigue pendiente de nuevas solicitudes en la app!`,
+      ].join('\n')
+
+    case 'operator_request_expired':
+      return [
+        `Maz Clean - Solicitud expirada`,
+        ``,
+        `Ref: ${ref}`,
+        `El tiempo para aceptar el servicio del ${date} ha expirado.`,
+        ``,
+        `Mantente activo en la app para no perder proximas oportunidades.`,
+      ].join('\n')
+
+    // ── Mensajes al admin ───────────────────────────────────────────────────
+    case 'admin_assignment_needed':
+      return [
+        `⚠️ Maz Clean Admin — Servicio sin operador`,
+        ``,
+        `Ref: ${ref}`,
+        `Servicio: ${svc}`,
+        `Fecha: ${date}`,
+        `Horario: ${timeFrom} a ${timeTo} hrs`,
+        `Direccion: ${address}`,
+        `Total: $${price} MXN`,
+        ``,
+        `Ningún operador aceptó en las 3 rondas automaticas.`,
+        `Ingresa al panel de admin para asignar manualmente o cancelar.`,
+        ``,
+        `${APP_URL}`,
+      ].join('\n')
+
     default:
       return `Maz Clean - Actualizacion reservacion ${ref}`
   }
@@ -82,21 +216,19 @@ serve(async (req) => {
     if (!normalizedPhone.startsWith('+')) normalizedPhone = '+' + normalizedPhone
 
     const message = getMessage(event, booking || {})
-
     const results: any = {}
 
-    // ── Envío WhatsApp ──────────────────────────────────────────
-    const waTo = 'whatsapp:' + normalizedPhone
+    // ── WhatsApp ────────────────────────────────────────────────────────────
+    const waTo     = 'whatsapp:' + normalizedPhone
     const waResult = await sendTwilioMessage(TWILIO_FROM, waTo, message)
     results.whatsapp = { ok: waResult.ok, sid: waResult.data.sid, error: waResult.data.message }
 
-    // ── Envío SMS paralelo ──────────────────────────────────────
+    // ── SMS paralelo ────────────────────────────────────────────────────────
     if (TWILIO_FROM_SMS) {
       const smsResult = await sendTwilioMessage(TWILIO_FROM_SMS, normalizedPhone, message)
       results.sms = { ok: smsResult.ok, sid: smsResult.data.sid, error: smsResult.data.message }
     }
 
-    // Considerar éxito si al menos uno de los dos canales funcionó
     const anySuccess = results.whatsapp?.ok || results.sms?.ok
 
     if (!anySuccess) {
