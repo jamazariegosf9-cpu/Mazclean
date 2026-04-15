@@ -932,13 +932,40 @@ export default function OnboardingView({ onComplete }) {
                 <p style={{ fontSize: 15, fontWeight: 700, color: '#166534', margin: 0 }}>🎉 ¡Tu cuenta está activa! Ya puedes recibir servicios.</p>
               </div>
             )}
-            {profile?.operator_status === 'rechazado' && profile?.rejection_reason && (
-              <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
-                <p style={{ fontSize: 14, fontWeight: 700, color: '#dc2626', margin: '0 0 6px' }}>❌ Solicitud rechazada</p>
-                <p style={{ fontSize: 13, color: '#991b1b', margin: 0, lineHeight: 1.5 }}>{profile.rejection_reason}</p>
-                <button onClick={() => goStep(1)} style={{ marginTop: 12, padding: '10px 20px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 44 }}>Corregir y reenviar</button>
-              </div>
-            )}
+            {profile?.operator_status === 'docs_requeridos' && Array.isArray(profile?.rejected_documents) && profile.rejected_documents.length > 0 && (
+  <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
+    <p style={{ fontSize: 15, fontWeight: 700, color: '#dc2626', margin: '0 0 12px' }}>⚠️ Documentos a corregir</p>
+    <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 12px', lineHeight: 1.5 }}>El administrador revisó tu solicitud y necesita que corrijas los siguientes documentos:</p>
+    <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
+      {profile.rejected_documents.map((doc, i) => (
+        <div key={i} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #fecaca', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <span style={{ fontSize: 18, flexShrink: 0 }}>{doc.icon}</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>{doc.label}</div>
+            {doc.reason && <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{doc.reason}</div>}
+          </div>
+        </div>
+      ))}
+    </div>
+    <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#1e40af' }}>
+      💡 Solo necesitas corregir los documentos marcados arriba. Tu demás información está guardada.
+    </div>
+    <button onClick={() => {
+      const minStep = Math.min(...profile.rejected_documents.map(d => d.step || 1))
+      goStep(minStep)
+    }} style={{ width: '100%', padding: '13px 0', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', minHeight: 50 }}>
+      ✏️ Corregir documentos →
+    </button>
+  </div>
+)}
+
+{profile?.operator_status === 'rechazado' && profile?.rejection_reason && (
+  <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
+    <p style={{ fontSize: 14, fontWeight: 700, color: '#dc2626', margin: '0 0 6px' }}>❌ Solicitud rechazada</p>
+    <p style={{ fontSize: 13, color: '#991b1b', margin: 0, lineHeight: 1.5 }}>{profile.rejection_reason}</p>
+    <button onClick={() => goStep(1)} style={{ marginTop: 12, padding: '10px 20px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 44 }}>Corregir y reenviar</button>
+  </div>
+)}
             {profile?.operator_status === 'aprobado' && (
               <button onClick={onComplete} style={{ width: '100%', padding: '15px 0', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
                 Ir al Panel de Operador →

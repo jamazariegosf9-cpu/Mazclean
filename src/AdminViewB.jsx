@@ -1,6 +1,7 @@
 // AdminViewB.jsx — Tab Operadores
-// Contiene: Pendientes de aprobación (con nuevos docs), estado en tiempo real,
-// historial, comisiones, KPIs, toggle assignment_mode, dar de alta operador
+// v2: Sistema de rechazo por documentos específicos
+// El admin selecciona qué documentos están incorrectos, el operador
+// recibe notificación y solo corrige los documentos rechazados.
 
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Star } from 'lucide-react';
@@ -21,6 +22,19 @@ const OPERATOR_STATUS_CONFIG = {
   suspendido:  { label: 'Suspendido',     color: '#ef4444', bg: '#fef2f2', border: '#fecaca', icon: '🔴' },
   desactivado: { label: 'Desactivado',    color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb', icon: '⚫' },
 };
+
+// ── Catálogo de documentos que el admin puede rechazar ────────────────────────
+const REJECTABLE_DOCS = [
+  { key: 'ine_front_url',          label: 'INE — Frente',              icon: '🪪', step: 2 },
+  { key: 'ine_back_url',           label: 'INE — Reverso',             icon: '🪪', step: 2 },
+  { key: 'selfie_with_id_url',     label: 'Selfie con INE',            icon: '🤳', step: 2 },
+  { key: 'clabe',                  label: 'Datos bancarios (CLABE)',    icon: '🏦', step: 2 },
+  { key: 'proof_of_address_url',   label: 'Comprobante de domicilio',  icon: '📄', step: 3 },
+  { key: 'proof_of_life_video_url',label: 'Video de prueba de vida',   icon: '🎥', step: 3 },
+  { key: 'vehicle_photo_url',      label: 'Foto del vehículo',         icon: '🚗', step: 3 },
+  { key: 'kit_photo_url',          label: 'Foto del kit de materiales',icon: '🧴', step: 4 },
+  { key: 'terms_accepted_at',      label: 'Contrato / Firma digital',  icon: '📋', step: 5 },
+];
 
 const getOpStatusCfg = (status) => OPERATOR_STATUS_CONFIG[status] || OPERATOR_STATUS_CONFIG['activo'];
 
@@ -50,6 +64,8 @@ const AdminViewB = ({
   const [reviewingOp, setReviewingOp]           = useState(null);
   const [reviewAction, setReviewAction]         = useState(null);
   const [rejectionReason, setRejectionReason]   = useState('');
+  // Documentos rechazados: { key, label, icon, step, reason }[]
+  const [rejectedDocs, setRejectedDocs]         = useState([]);
   const [savingReview, setSavingReview]         = useState(false);
   const [reviewError, setReviewError]           = useState('');
   const [reviewPhotoModal, setReviewPhotoModal] = useState(null);
@@ -76,15 +92,12 @@ const AdminViewB = ({
   const [operatorError, setOperatorError]       = useState('');
   const [operatorSuccess, setOperatorSuccess]   = useState('');
 
-  useEffect(() => {
-    fetchIncidents();
-    fetchPendingOperators();
-  }, []);
+  useEffect(() => { fetchIncidents(); fetchPendingOperators(); }, []);
 
   const fetchPendingOperators = async () => {
     try {
       const { data, error } = await supabase.from('profiles').select('*').eq('role', 'operador')
-        .in('operator_status', ['pendiente', 'pending_review']).order('created_at', { ascending: false });
+        .in('operator_status', ['pendiente', 'pending_review', 'docs_requeridos']).order('created_at', { ascending: false });
       if (!error) setPendingOperators(data || []);
     } catch (err) { console.error('fetchPendingOperators:', err); }
   };
@@ -104,36 +117,123 @@ const AdminViewB = ({
   };
 
   const openReviewModal = (op) => {
-    setReviewingOp(op); setReviewAction(null); setRejectionReason('');
-    setReviewError(''); setReviewDocTab('personal'); setReviewModal(true);
+    setReviewingOp(op);
+    setReviewAction(null);
+    setRejectionReason('');
+    setRejectedDocs([]);
+    setReviewError('');
+    setReviewDocTab('personal');
+    setReviewModal(true);
   };
 
+  // ── Toggle de documento rechazado ─────────────────────────────────────────
+  const toggleRejectedDoc = (doc) => {
+    setRejectedDocs(prev => {
+      const exists = prev.find(d => d.key === doc.key);
+      if (exists) return prev.filter(d => d.key !== doc.key);
+      return [...prev, { ...doc, reason: '' }];
+    });
+  };
+
+  const updateDocReason = (key, reason) => {
+    setRejectedDocs(prev => prev.map(d => d.key === key ? { ...d, reason } : d));
+  };
+
+  const isDocRejected = (key) => rejectedDocs.some(d => d.key === key);
+
+  // ── Submit de revisión ────────────────────────────────────────────────────
   const submitReview = async () => {
     if (!reviewAction) { setReviewError('Selecciona una acción.'); return; }
-    if (reviewAction === 'reject' && !rejectionReason.trim()) { setReviewError('El motivo de rechazo es obligatorio.'); return; }
+
+    if (reviewAction === 'reject_docs') {
+      if (rejectedDocs.length === 0) { setReviewError('Selecciona al menos un documento a corregir.'); return; }
+    }
+
+    if (reviewAction === 'reject' && !rejectionReason.trim()) {
+      setReviewError('El motivo de rechazo es obligatorio.'); return;
+    }
+
     setSavingReview(true); setReviewError('');
     try {
-      const updatePayload = {
-        operator_status: reviewAction === 'approve' ? 'aprobado' : 'rechazado',
-        ...(reviewAction === 'reject' ? { onboarding_done: false, onboarding_step: 1, rejection_reason: rejectionReason.trim() } : {}),
-        status: reviewAction === 'approve' ? 'activo' : undefined,
+      const { data: { user: adminUser } } = await supabase.auth.getUser();
+
+      let updatePayload = {
         reviewed_at: new Date().toISOString(),
-        reviewed_by: (await supabase.auth.getUser()).data.user?.id || null,
+        reviewed_by: adminUser?.id || null,
       };
+
+      if (reviewAction === 'approve') {
+        updatePayload = {
+          ...updatePayload,
+          operator_status: 'aprobado',
+          status: 'activo',
+          rejected_documents: [],
+        };
+      } else if (reviewAction === 'reject_docs') {
+        // Rechazo parcial — solo documentos específicos
+        // Calcular el paso más temprano que debe corregir
+        const minStep = Math.min(...rejectedDocs.map(d => d.step));
+        updatePayload = {
+          ...updatePayload,
+          operator_status: 'docs_requeridos',
+          onboarding_done: false,
+          onboarding_step: minStep,
+          rejected_documents: rejectedDocs,
+          rejection_reason: `Documentos a corregir: ${rejectedDocs.map(d => d.label).join(', ')}`,
+        };
+      } else if (reviewAction === 'reject') {
+        // Rechazo total
+        updatePayload = {
+          ...updatePayload,
+          operator_status: 'rechazado',
+          onboarding_done: false,
+          onboarding_step: 1,
+          rejected_documents: [],
+          rejection_reason: rejectionReason.trim(),
+        };
+      }
+
       const { error } = await supabase.from('profiles').update(updatePayload).eq('id', reviewingOp.id);
       if (error) throw error;
+
+      // ── Notificaciones WhatsApp ─────────────────────────────────────────
       const phone = reviewingOp?.phone;
       if (phone) {
         try {
-          await sendWhatsApp(reviewAction === 'approve' ? 'operator_approved' : 'operator_rejected', phone, {
-            operator_name: reviewingOp.full_name, rejection_reason: rejectionReason || ''
-          });
+          if (reviewAction === 'approve') {
+            await sendWhatsApp('operator_approved', phone, { operator_name: reviewingOp.full_name });
+          } else if (reviewAction === 'reject_docs') {
+            const docsList = rejectedDocs.map(d => `${d.icon} ${d.label}${d.reason ? `: ${d.reason}` : ''}`).join('\n');
+            await sendWhatsApp('operator_docs_required', phone, {
+              operator_name: reviewingOp.full_name,
+              docs_list: docsList,
+            });
+          } else {
+            await sendWhatsApp('operator_rejected', phone, {
+              operator_name: reviewingOp.full_name,
+              rejection_reason: rejectionReason,
+            });
+          }
         } catch (wsErr) { console.warn('WhatsApp omitido:', wsErr.message); }
       }
-      setPendingOperators(prev => prev.filter(o => o.id !== reviewingOp.id));
+
+      // ── Actualizar estado local ─────────────────────────────────────────
+      setPendingOperators(prev => {
+        if (reviewAction === 'approve' || reviewAction === 'reject') {
+          return prev.filter(o => o.id !== reviewingOp.id);
+        }
+        // docs_requeridos — mantener en la lista con nuevo estado
+        return prev.map(o => o.id === reviewingOp.id
+          ? { ...o, operator_status: 'docs_requeridos', rejected_documents: rejectedDocs }
+          : o
+        );
+      });
+
       setOperators(prev => prev.map(o => o.id === reviewingOp.id
-        ? { ...o, operator_status: reviewAction === 'approve' ? 'aprobado' : 'rechazado', onboarding_done: reviewAction === 'approve' } : o
+        ? { ...o, operator_status: updatePayload.operator_status }
+        : o
       ));
+
       setReviewModal(false);
     } catch (err) { setReviewError(err.message); }
     finally { setSavingReview(false); }
@@ -168,7 +268,8 @@ const AdminViewB = ({
         ine_front_url: null, ine_back_url: null, selfie_with_id_url: null,
         vehicle_photo_url: null, vehicle_plate: null, vehicle_type_own: null,
         proof_of_address_url: null, proof_of_life_video_url: null,
-        terms_accepted_at: null, updated_at: new Date().toISOString(),
+        terms_accepted_at: null, rejected_documents: [],
+        updated_at: new Date().toISOString(),
       }).eq('id', op.id);
       if (error) throw error;
       setOperators(prev => prev.map(o => o.id === op.id ? { ...o, onboarding_done: false, onboarding_step: 1, operator_status: 'pendiente' } : o));
@@ -259,11 +360,6 @@ const AdminViewB = ({
     return m > 0 ? `${m} min ${s > 0 ? s + 's' : ''}`.trim() : `${s}s`;
   };
 
-  const formatTime = (isoStr) => {
-    if (!isoStr) return '—';
-    return new Date(isoStr).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
-  };
-
   const StarRating = ({ rating, size = 14 }) => {
     if (!rating) return <span style={{ fontSize: 11, color: '#9ca3af' }}>Sin calificaciones</span>;
     const stars = [];
@@ -276,39 +372,53 @@ const AdminViewB = ({
   const inputStyle = { padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 };
   const labelStyle = { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 5, display: 'block' };
 
-  // ── Sección de documentos para la revisión ───────────────────────────────
-  const DocImage = ({ url, label }) => {
+  const DocImage = ({ url, label, rejected = false }) => {
+    const borderColor = rejected ? '#fecaca' : '#e5e7eb';
     if (!url) return (
-      <div style={{ background: '#f9fafb', borderRadius: 10, border: '2px dashed #e5e7eb', padding: '20px', textAlign: 'center' }}>
+      <div style={{ background: rejected ? '#fef2f2' : '#f9fafb', borderRadius: 10, border: `2px dashed ${borderColor}`, padding: '20px', textAlign: 'center' }}>
         <div style={{ fontSize: 24, marginBottom: 4 }}>📷</div>
-        <div style={{ fontSize: 12, color: '#9ca3af' }}>Sin {label}</div>
+        <div style={{ fontSize: 12, color: rejected ? '#dc2626' : '#9ca3af' }}>{rejected ? '⚠️ Documento requerido' : `Sin ${label}`}</div>
       </div>
     );
     const fullUrl = getPhotoStorageUrl(url);
     if (url.includes('.pdf')) return (
-      <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 10, padding: '14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ background: rejected ? '#fef2f2' : '#f0fdf4', border: `1.5px solid ${rejected ? '#fecaca' : '#bbf7d0'}`, borderRadius: 10, padding: '14px', display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{ fontSize: 24 }}>📄</span>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#166534' }}>{label}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: rejected ? '#dc2626' : '#166534' }}>{label} {rejected && '⚠️ Rechazado'}</div>
           <a href={fullUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#059669' }}>Ver documento →</a>
         </div>
       </div>
     );
     if (url.includes('.mp4') || url.includes('.mov') || url.includes('video')) return (
-      <div style={{ background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 10, padding: '14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ background: rejected ? '#fef2f2' : '#eff6ff', border: `1.5px solid ${rejected ? '#fecaca' : '#bfdbfe'}`, borderRadius: 10, padding: '14px', display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{ fontSize: 24 }}>🎥</span>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#1e40af' }}>{label}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: rejected ? '#dc2626' : '#1e40af' }}>{label} {rejected && '⚠️ Rechazado'}</div>
           <a href={fullUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#3b82f6' }}>Ver video →</a>
         </div>
       </div>
     );
     return (
       <button onClick={() => setReviewPhotoModal(fullUrl)} style={{ background: 'none', border: 'none', cursor: 'zoom-in', padding: 0, display: 'block', width: '100%' }}>
-        <img src={fullUrl} alt={label} style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 10, border: '1.5px solid #e5e7eb', display: 'block' }} />
-        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4, textAlign: 'center' }}>Toca para ampliar — {label}</div>
+        <img src={fullUrl} alt={label} style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 10, border: `2px solid ${rejected ? '#fecaca' : '#e5e7eb'}`, display: 'block' }} />
+        <div style={{ fontSize: 11, color: rejected ? '#dc2626' : '#9ca3af', marginTop: 4, textAlign: 'center' }}>
+          {rejected ? '⚠️ Rechazado — toca para ver' : 'Toca para ampliar'}
+        </div>
       </button>
     );
+  };
+
+  // ── Badge de estado del operador ─────────────────────────────────────────
+  const getStatusBadge = (op) => {
+    if (op.operator_status === 'docs_requeridos') {
+      const count = Array.isArray(op.rejected_documents) ? op.rejected_documents.length : 0;
+      return { bg: '#fef2f2', color: '#dc2626', border: '#fecaca', text: `⚠️ ${count} doc${count !== 1 ? 's' : ''} a corregir` };
+    }
+    if (op.operator_status === 'pending_review' || op.operator_status === 'pendiente') {
+      return { bg: '#fffbeb', color: '#92400e', border: '#fde68a', text: '⏳ En revisión' };
+    }
+    return null;
   };
 
   return (
@@ -328,26 +438,48 @@ const AdminViewB = ({
             {pendingOperators.filter(op => op && op.id).map(op => {
               const step = op.onboarding_step || 0;
               const progressPct = Math.round((step / 6) * 100);
-              const workDays = Array.isArray(op.work_days) ? op.work_days : [];
+              const statusBadge = getStatusBadge(op);
+              const rejDocs = Array.isArray(op.rejected_documents) ? op.rejected_documents : [];
               return (
-                <div key={op.id} style={{ background: '#fff', borderRadius: 12, border: '1.5px solid #fde68a', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div key={op.id} style={{ background: '#fff', borderRadius: 12, border: op.operator_status === 'docs_requeridos' ? '1.5px solid #fecaca' : '1.5px solid #fde68a', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ position: 'relative', flexShrink: 0 }}>
                       {op.selfie_with_id_url ? (
                         <img src={getPhotoStorageUrl(op.selfie_with_id_url)} alt="selfie" style={{ height: 52, width: 52, borderRadius: '50%', objectFit: 'cover', border: '2px solid #fde68a' }} />
-                      ) : op.kit_photo_url ? (
-                        <img src={getPhotoStorageUrl(op.kit_photo_url)} alt="kit" style={{ height: 52, width: 52, borderRadius: '50%', objectFit: 'cover', border: '2px solid #fde68a' }} />
                       ) : (
                         <div style={{ height: 52, width: 52, borderRadius: '50%', background: 'linear-gradient(135deg,#f59e0b,#fbbf24)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 20 }}>{op.full_name?.charAt(0) || '?'}</div>
                       )}
-                      <span style={{ position: 'absolute', bottom: -2, right: -2, background: '#f59e0b', borderRadius: '50%', width: 18, height: 18, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff' }}>⏳</span>
+                      <span style={{ position: 'absolute', bottom: -2, right: -2, background: op.operator_status === 'docs_requeridos' ? '#ef4444' : '#f59e0b', borderRadius: '50%', width: 18, height: 18, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff' }}>
+                        {op.operator_status === 'docs_requeridos' ? '!' : '⏳'}
+                      </span>
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }}>{op.full_name || 'Sin nombre'}</div>
                       <div style={{ fontSize: 12, color: '#6b7280', marginTop: 1 }}>{op.phone || 'Sin teléfono'}</div>
-                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>{op.created_at ? new Date(op.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</div>
+                      {statusBadge && (
+                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: statusBadge.bg, color: statusBadge.color, border: `1px solid ${statusBadge.border}`, fontWeight: 700, display: 'inline-block', marginTop: 4 }}>
+                          {statusBadge.text}
+                        </span>
+                      )}
                     </div>
                   </div>
+
+                  {/* Documentos rechazados pendientes */}
+                  {rejDocs.length > 0 && (
+                    <div style={{ background: '#fef2f2', borderRadius: 10, padding: '10px 12px', border: '1px solid #fecaca' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', marginBottom: 6 }}>📋 Documentos a corregir:</div>
+                      {rejDocs.map(doc => (
+                        <div key={doc.key} style={{ fontSize: 12, color: '#991b1b', marginBottom: 4, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                          <span>{doc.icon}</span>
+                          <div>
+                            <span style={{ fontWeight: 600 }}>{doc.label}</span>
+                            {doc.reason && <span style={{ color: '#6b7280' }}> — {doc.reason}</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                       <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase' }}>Onboarding completado</span>
@@ -356,25 +488,26 @@ const AdminViewB = ({
                     <div style={{ background: '#f3f4f6', borderRadius: 20, height: 6, overflow: 'hidden' }}>
                       <div style={{ height: '100%', width: `${progressPct}%`, background: 'linear-gradient(90deg,#f59e0b,#fbbf24)', borderRadius: 20 }} />
                     </div>
-                    {/* Indicadores de documentos */}
                     <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                       {[
-                        { label: 'INE', done: !!op.ine_front_url },
-                        { label: 'Selfie', done: !!op.selfie_with_id_url },
-                        { label: 'CLABE', done: !!op.clabe },
-                        { label: 'Kit', done: !!op.kit_photo_url },
-                        { label: 'Domicilio', done: !!op.proof_of_address_url },
-                        { label: 'Video', done: !!op.proof_of_life_video_url },
-                        { label: 'Contrato', done: !!op.terms_accepted_at },
+                        { label: 'INE', done: !!op.ine_front_url, rejected: rejDocs.some(d => d.key === 'ine_front_url' || d.key === 'ine_back_url') },
+                        { label: 'Selfie', done: !!op.selfie_with_id_url, rejected: rejDocs.some(d => d.key === 'selfie_with_id_url') },
+                        { label: 'CLABE', done: !!op.clabe, rejected: rejDocs.some(d => d.key === 'clabe') },
+                        { label: 'Kit', done: !!op.kit_photo_url, rejected: rejDocs.some(d => d.key === 'kit_photo_url') },
+                        { label: 'Domicilio', done: !!op.proof_of_address_url, rejected: rejDocs.some(d => d.key === 'proof_of_address_url') },
+                        { label: 'Video', done: !!op.proof_of_life_video_url, rejected: rejDocs.some(d => d.key === 'proof_of_life_video_url') },
+                        { label: 'Contrato', done: !!op.terms_accepted_at, rejected: rejDocs.some(d => d.key === 'terms_accepted_at') },
                       ].map(doc => (
-                        <span key={doc.label} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: doc.done ? '#f0fdf4' : '#fef2f2', color: doc.done ? '#166534' : '#dc2626', fontWeight: 600, border: `1px solid ${doc.done ? '#bbf7d0' : '#fecaca'}` }}>
-                          {doc.done ? '✅' : '❌'} {doc.label}
+                        <span key={doc.label} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: doc.rejected ? '#fef2f2' : doc.done ? '#f0fdf4' : '#fef2f2', color: doc.rejected ? '#dc2626' : doc.done ? '#166534' : '#dc2626', fontWeight: 600, border: `1px solid ${doc.rejected ? '#fecaca' : doc.done ? '#bbf7d0' : '#fecaca'}` }}>
+                          {doc.rejected ? '⚠️' : doc.done ? '✅' : '❌'} {doc.label}
                         </span>
                       ))}
                     </div>
                   </div>
-                  <button onClick={() => openReviewModal(op)} style={{ width: '100%', padding: '12px', background: 'linear-gradient(135deg,#f59e0b,#d97706)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
-                    🔍 Revisar y Decidir
+
+                  <button onClick={() => openReviewModal(op)}
+                    style={{ width: '100%', padding: '12px', background: op.operator_status === 'docs_requeridos' ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'linear-gradient(135deg,#f59e0b,#d97706)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
+                    {op.operator_status === 'docs_requeridos' ? '🔄 Revisar correcciones' : '🔍 Revisar y Decidir'}
                   </button>
                 </div>
               );
@@ -479,7 +612,6 @@ const AdminViewB = ({
                     <button onClick={() => fetchOperatorKpis(op)} style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 40 }}>⏱<br/>Tiempos</button>
                     <button onClick={() => setResetOnboardingModal(op)} style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #fde68a', background: '#fffbeb', color: '#92400e', fontSize: 10, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 40 }}>🔄<br/>Onboard</button>
                   </div>
-                  {/* Toggle assignment_mode */}
                   <div style={{ background: '#f9fafb', borderRadius: 10, padding: '10px 14px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, color: '#374151' }}>{op.assignment_mode === 'admin_asignado' ? '⭐ Admin asignado' : '🤖 Autónomo'}</div>
@@ -584,17 +716,17 @@ const AdminViewB = ({
               <button onClick={() => setReviewModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 22, borderRadius: 8, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
 
-            {/* Tabs de documentos */}
+            {/* Tabs */}
             <div style={{ display: 'flex', background: '#fffbeb', borderBottom: '1px solid #fde68a', overflowX: 'auto', scrollbarWidth: 'none' }}>
               {[
-                { id: 'personal', label: '👤 Personal' },
+                { id: 'personal',  label: '👤 Personal' },
                 { id: 'identidad', label: '🪪 Identidad' },
-                { id: 'banco', label: '🏦 Banco' },
+                { id: 'banco',     label: '🏦 Banco' },
                 { id: 'domicilio', label: '🏠 Domicilio' },
-                { id: 'vehiculo', label: '🚗 Vehículo' },
-                { id: 'zona', label: '📍 Zona' },
-                { id: 'contrato', label: '📋 Contrato' },
-                { id: 'decision', label: '⚖️ Decisión' },
+                { id: 'vehiculo',  label: '🚗 Vehículo' },
+                { id: 'zona',      label: '📍 Zona' },
+                { id: 'contrato',  label: '📋 Contrato' },
+                { id: 'decision',  label: '⚖️ Decisión' },
               ].map(tab => (
                 <button key={tab.id} onClick={() => setReviewDocTab(tab.id)}
                   style={{ padding: '10px 14px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', background: reviewDocTab === tab.id ? '#fff' : 'transparent', color: reviewDocTab === tab.id ? '#92400e' : '#b45309', borderBottom: reviewDocTab === tab.id ? '2px solid #f59e0b' : '2px solid transparent', minHeight: 44 }}>
@@ -617,7 +749,7 @@ const AdminViewB = ({
                         { label: 'CURP', value: reviewingOp.curp || '—' },
                         { label: 'Solicitud', value: reviewingOp.created_at ? new Date(reviewingOp.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }) : '—' },
                         { label: 'Experiencia', value: reviewingOp.experience_years ? `${reviewingOp.experience_years} años` : '—' },
-                        { label: 'Notas de experiencia', value: reviewingOp.experience_notes || '—' },
+                        { label: 'Notas', value: reviewingOp.experience_notes || '—' },
                       ].map(({ label, value }) => (
                         <div key={label}>
                           <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600 }}>{label}</div>
@@ -632,18 +764,16 @@ const AdminViewB = ({
               {/* Tab: Identidad */}
               {reviewDocTab === 'identidad' && (
                 <div style={{ display: 'grid', gap: 16 }}>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>🪪 INE — Frente</div>
-                    <DocImage url={reviewingOp.ine_front_url} label="INE Frente" />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>🪪 INE — Reverso</div>
-                    <DocImage url={reviewingOp.ine_back_url} label="INE Reverso" />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>🤳 Selfie con INE</div>
-                    <DocImage url={reviewingOp.selfie_with_id_url} label="Selfie con INE" />
-                  </div>
+                  {[
+                    { field: 'ine_front_url', label: '🪪 INE — Frente' },
+                    { field: 'ine_back_url',  label: '🪪 INE — Reverso' },
+                    { field: 'selfie_with_id_url', label: '🤳 Selfie con INE' },
+                  ].map(({ field, label }) => (
+                    <div key={field}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>{label}</div>
+                      <DocImage url={reviewingOp[field]} label={label} rejected={isDocRejected(field)} />
+                    </div>
+                  ))}
                 </div>
               )}
 
@@ -663,6 +793,9 @@ const AdminViewB = ({
                       </div>
                     ))}
                   </div>
+                  {isDocRejected('clabe') && (
+                    <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginTop: 12, fontSize: 12, color: '#dc2626', fontWeight: 600 }}>⚠️ Datos bancarios marcados para corrección</div>
+                  )}
                 </div>
               )}
 
@@ -677,18 +810,17 @@ const AdminViewB = ({
                       return mapUrl ? (
                         <div style={{ marginTop: 12 }}>
                           <img src={mapUrl} alt="zona" style={{ width: '100%', borderRadius: 10, border: '1.5px solid #bae6fd', maxHeight: 180, objectFit: 'cover' }} onError={e => { e.target.style.display = 'none'; }} />
-                          <div style={{ fontSize: 10, color: '#7dd3fc', marginTop: 4 }}>Coordenadas: {Number(reviewingOp.base_lat).toFixed(5)}, {Number(reviewingOp.base_lng).toFixed(5)}</div>
                         </div>
                       ) : null;
                     })()}
                   </div>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>📄 Comprobante de Domicilio</div>
-                    <DocImage url={reviewingOp.proof_of_address_url} label="Comprobante de domicilio" />
+                    <DocImage url={reviewingOp.proof_of_address_url} label="Comprobante de domicilio" rejected={isDocRejected('proof_of_address_url')} />
                   </div>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>🎥 Video de Prueba de Vida</div>
-                    <DocImage url={reviewingOp.proof_of_life_video_url} label="Video de prueba de vida" />
+                    <DocImage url={reviewingOp.proof_of_life_video_url} label="Video de prueba de vida" rejected={isDocRejected('proof_of_life_video_url')} />
                   </div>
                 </div>
               )}
@@ -698,10 +830,10 @@ const AdminViewB = ({
                 <div style={{ display: 'grid', gap: 16 }}>
                   <div style={{ background: '#f9fafb', borderRadius: 12, padding: '14px 16px', border: '1px solid #e5e7eb' }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', marginBottom: 10 }}>🚗 Datos del Vehículo</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       {[
                         { label: 'Placa', value: reviewingOp.vehicle_plate || '—' },
-                        { label: 'Tipo de transporte', value: reviewingOp.vehicle_type_own || '—' },
+                        { label: 'Tipo', value: reviewingOp.vehicle_type_own || '—' },
                       ].map(({ label, value }) => (
                         <div key={label}>
                           <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600 }}>{label}</div>
@@ -709,40 +841,33 @@ const AdminViewB = ({
                         </div>
                       ))}
                     </div>
-                    {reviewingOp.requires_transport_verification && (
-                      <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#92400e' }}>
-                        ⚠️ Radio &gt; 2km — requiere verificación de transporte
-                      </div>
-                    )}
                   </div>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>📸 Foto del Vehículo</div>
-                    <DocImage url={reviewingOp.vehicle_photo_url} label="Foto del vehículo" />
+                    <DocImage url={reviewingOp.vehicle_photo_url} label="Foto del vehículo" rejected={isDocRejected('vehicle_photo_url')} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>📸 Foto del Kit de Materiales</div>
-                    <DocImage url={reviewingOp.kit_photo_url} label="Kit de materiales" />
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>📸 Kit de Materiales</div>
+                    <DocImage url={reviewingOp.kit_photo_url} label="Kit de materiales" rejected={isDocRejected('kit_photo_url')} />
                   </div>
                 </div>
               )}
 
               {/* Tab: Zona */}
               {reviewDocTab === 'zona' && (
-                <div style={{ display: 'grid', gap: 16 }}>
-                  <div style={{ background: '#f0f9ff', borderRadius: 12, padding: '14px 16px', border: '1.5px solid #bae6fd' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase', marginBottom: 10 }}>📍 Zona de Operación</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
-                      {[
-                        { label: 'Radio de cobertura', value: reviewingOp.coverage_radius ? `${reviewingOp.coverage_radius} km` : '—' },
-                        { label: 'Días de trabajo', value: Array.isArray(reviewingOp.work_days) && reviewingOp.work_days.length > 0 ? reviewingOp.work_days.map(d => WORK_DAYS_LABELS[d] || d).join(', ') : '—' },
-                        { label: 'Horario', value: reviewingOp.work_start && reviewingOp.work_end ? `${reviewingOp.work_start} – ${reviewingOp.work_end}` : '—' },
-                      ].map(({ label, value }) => (
-                        <div key={label}>
-                          <div style={{ fontSize: 10, color: '#0284c7', fontWeight: 600 }}>{label}</div>
-                          <div style={{ fontSize: 13, color: '#0369a1', fontWeight: 600, marginTop: 2 }}>{value}</div>
-                        </div>
-                      ))}
-                    </div>
+                <div style={{ background: '#f0f9ff', borderRadius: 12, padding: '14px 16px', border: '1.5px solid #bae6fd' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase', marginBottom: 10 }}>📍 Zona de Operación</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+                    {[
+                      { label: 'Radio', value: reviewingOp.coverage_radius ? `${reviewingOp.coverage_radius} km` : '—' },
+                      { label: 'Días', value: Array.isArray(reviewingOp.work_days) ? reviewingOp.work_days.map(d => WORK_DAYS_LABELS[d] || d).join(', ') : '—' },
+                      { label: 'Horario', value: reviewingOp.work_start && reviewingOp.work_end ? `${reviewingOp.work_start} – ${reviewingOp.work_end}` : '—' },
+                    ].map(({ label, value }) => (
+                      <div key={label}>
+                        <div style={{ fontSize: 10, color: '#0284c7', fontWeight: 600 }}>{label}</div>
+                        <div style={{ fontSize: 13, color: '#0369a1', fontWeight: 600, marginTop: 2 }}>{value}</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -752,17 +877,14 @@ const AdminViewB = ({
                 <div style={{ display: 'grid', gap: 16 }}>
                   <div style={{ background: reviewingOp.terms_accepted_at ? '#f0fdf4' : '#fef2f2', borderRadius: 12, padding: '14px 16px', border: `1.5px solid ${reviewingOp.terms_accepted_at ? '#bbf7d0' : '#fecaca'}` }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: reviewingOp.terms_accepted_at ? '#166534' : '#dc2626', marginBottom: 8 }}>
-                      {reviewingOp.terms_accepted_at ? '✅ Contrato aceptado digitalmente' : '❌ Contrato no aceptado'}
+                      {reviewingOp.terms_accepted_at ? '✅ Contrato aceptado' : '❌ Contrato no aceptado'}
                     </div>
                     {reviewingOp.terms_accepted_at && (
-                      <div style={{ fontSize: 12, color: '#059669' }}>Fecha de aceptación: {new Date(reviewingOp.terms_accepted_at).toLocaleString('es-MX')}</div>
+                      <div style={{ fontSize: 12, color: '#059669' }}>Fecha: {new Date(reviewingOp.terms_accepted_at).toLocaleString('es-MX')}</div>
                     )}
-                  </div>
-                  <div style={{ background: '#f9fafb', borderRadius: 12, padding: '14px 16px', border: '1px solid #e5e7eb' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', marginBottom: 8 }}>Consentimiento antecedentes</div>
-                    <div style={{ fontSize: 13, color: '#374151', fontWeight: 600 }}>
-                      {reviewingOp.background_check_consent ? '✅ Autorizado' : '⏭️ No autorizado (opcional)'}
-                    </div>
+                    {isDocRejected('terms_accepted_at') && (
+                      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginTop: 12, fontSize: 12, color: '#dc2626', fontWeight: 600 }}>⚠️ Contrato marcado para corrección</div>
+                    )}
                   </div>
                 </div>
               )}
@@ -770,28 +892,88 @@ const AdminViewB = ({
               {/* Tab: Decisión */}
               {reviewDocTab === 'decision' && (
                 <div style={{ display: 'grid', gap: 16 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <button onClick={() => setReviewAction('approve')}
-                      style={{ padding: '14px', borderRadius: 12, border: reviewAction === 'approve' ? '2.5px solid #10b981' : '1.5px solid #e5e7eb', background: reviewAction === 'approve' ? '#f0fdf4' : '#fff', color: reviewAction === 'approve' ? '#065f46' : '#374151', fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 56 }}>
-                      ✅ Aprobar
+
+                  {/* 3 opciones de decisión */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                    <button onClick={() => { setReviewAction('approve'); setRejectedDocs([]); }}
+                      style={{ padding: '14px 8px', borderRadius: 12, border: reviewAction === 'approve' ? '2.5px solid #10b981' : '1.5px solid #e5e7eb', background: reviewAction === 'approve' ? '#f0fdf4' : '#fff', color: reviewAction === 'approve' ? '#065f46' : '#374151', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 56, textAlign: 'center' }}>
+                      ✅ Aprobar todo
                     </button>
-                    <button onClick={() => setReviewAction('reject')}
-                      style={{ padding: '14px', borderRadius: 12, border: reviewAction === 'reject' ? '2.5px solid #ef4444' : '1.5px solid #e5e7eb', background: reviewAction === 'reject' ? '#fef2f2' : '#fff', color: reviewAction === 'reject' ? '#991b1b' : '#374151', fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 56 }}>
-                      ❌ Rechazar
+                    <button onClick={() => setReviewAction('reject_docs')}
+                      style={{ padding: '14px 8px', borderRadius: 12, border: reviewAction === 'reject_docs' ? '2.5px solid #f59e0b' : '1.5px solid #e5e7eb', background: reviewAction === 'reject_docs' ? '#fffbeb' : '#fff', color: reviewAction === 'reject_docs' ? '#92400e' : '#374151', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 56, textAlign: 'center' }}>
+                      ⚠️ Pedir correcciones
+                    </button>
+                    <button onClick={() => { setReviewAction('reject'); setRejectedDocs([]); }}
+                      style={{ padding: '14px 8px', borderRadius: 12, border: reviewAction === 'reject' ? '2.5px solid #ef4444' : '1.5px solid #e5e7eb', background: reviewAction === 'reject' ? '#fef2f2' : '#fff', color: reviewAction === 'reject' ? '#991b1b' : '#374151', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 56, textAlign: 'center' }}>
+                      ❌ Rechazar todo
                     </button>
                   </div>
+
+                  {/* Selector de documentos a corregir */}
+                  {reviewAction === 'reject_docs' && (
+                    <div style={{ background: '#fffbeb', borderRadius: 12, padding: '16px', border: '1.5px solid #fde68a' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#92400e', marginBottom: 12 }}>
+                        Selecciona los documentos que requieren corrección:
+                      </div>
+                      <div style={{ display: 'grid', gap: 10 }}>
+                        {REJECTABLE_DOCS.map(doc => {
+                          const isSelected = isDocRejected(doc.key);
+                          const selectedDoc = rejectedDocs.find(d => d.key === doc.key);
+                          const hasDoc = !!reviewingOp[doc.key];
+                          return (
+                            <div key={doc.key} style={{ background: isSelected ? '#fef2f2' : '#fff', borderRadius: 10, border: `1.5px solid ${isSelected ? '#fecaca' : '#e5e7eb'}`, overflow: 'hidden' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
+                                <button onClick={() => toggleRejectedDoc(doc)}
+                                  style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${isSelected ? '#ef4444' : '#d1d5db'}`, background: isSelected ? '#ef4444' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                  {isSelected && <span style={{ color: '#fff', fontSize: 12 }}>✓</span>}
+                                </button>
+                                <span style={{ fontSize: 16 }}>{doc.icon}</span>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>{doc.label}</div>
+                                  <div style={{ fontSize: 11, color: hasDoc ? '#10b981' : '#9ca3af' }}>{hasDoc ? '✅ Documento subido' : '⚠️ Sin documento'}</div>
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <div style={{ padding: '0 14px 12px', borderTop: '1px solid #fecaca' }}>
+                                  <input
+                                    type="text"
+                                    placeholder="Motivo específico (opcional) — ej: foto borrosa, documento vencido"
+                                    value={selectedDoc?.reason || ''}
+                                    onChange={e => updateDocReason(doc.key, e.target.value)}
+                                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #fecaca', fontSize: 13, fontFamily: 'inherit', color: '#374151', background: '#fff5f5', boxSizing: 'border-box', marginTop: 8 }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {rejectedDocs.length > 0 && (
+                        <div style={{ background: '#fef2f2', borderRadius: 10, padding: '10px 14px', marginTop: 12, border: '1px solid #fecaca' }}>
+                          <div style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>
+                            ⚠️ {rejectedDocs.length} documento{rejectedDocs.length !== 1 ? 's' : ''} seleccionado{rejectedDocs.length !== 1 ? 's' : ''} para corrección.
+                            El operador regresará al paso {Math.min(...rejectedDocs.map(d => d.step))} del onboarding.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Motivo de rechazo total */}
                   {reviewAction === 'reject' && (
                     <div>
                       <label style={{ ...labelStyle, color: '#991b1b' }}>Motivo de rechazo * <span style={{ fontWeight: 400, color: '#9ca3af' }}>(se enviará al operador)</span></label>
                       <textarea placeholder="Ej: Las fotos del INE no son claras..." value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} style={{ ...inputStyle, height: 80, resize: 'vertical', borderColor: '#fecaca', background: '#fff5f5' }} />
                     </div>
                   )}
+
                   {reviewAction === 'approve' && (
                     <div style={{ background: '#f0fdf4', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 16 }}>ℹ️</span>
-                      <span style={{ fontSize: 12, color: '#065f46' }}>Al aprobar, el operador recibirá un WhatsApp de bienvenida y podrá recibir servicios.</span>
+                      <span style={{ fontSize: 12, color: '#065f46' }}>Al aprobar, el operador recibirá un WhatsApp de bienvenida y podrá recibir servicios de inmediato.</span>
                     </div>
                   )}
+
                   {reviewError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', color: '#dc2626', fontSize: 13 }}>⚠️ {reviewError}</div>}
                 </div>
               )}
@@ -801,8 +983,11 @@ const AdminViewB = ({
               <button onClick={() => setReviewModal(false)} style={{ padding: '12px 22px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cancelar</button>
               {reviewDocTab === 'decision' && (
                 <button onClick={submitReview} disabled={savingReview || !reviewAction}
-                  style={{ padding: '12px 28px', background: savingReview || !reviewAction ? '#9ca3af' : reviewAction === 'approve' ? '#10b981' : '#ef4444', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: !reviewAction ? 'not-allowed' : 'pointer', minHeight: 48 }}>
-                  {savingReview ? '⏳ Guardando...' : reviewAction === 'approve' ? '✅ Confirmar Aprobación' : reviewAction === 'reject' ? '❌ Confirmar Rechazo' : 'Selecciona una acción'}
+                  style={{ padding: '12px 28px', background: savingReview || !reviewAction ? '#9ca3af' : reviewAction === 'approve' ? '#10b981' : reviewAction === 'reject_docs' ? '#f59e0b' : '#ef4444', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: !reviewAction ? 'not-allowed' : 'pointer', minHeight: 48 }}>
+                  {savingReview ? '⏳ Guardando...' :
+                   reviewAction === 'approve' ? '✅ Confirmar Aprobación' :
+                   reviewAction === 'reject_docs' ? `⚠️ Solicitar ${rejectedDocs.length} corrección${rejectedDocs.length !== 1 ? 'es' : ''}` :
+                   reviewAction === 'reject' ? '❌ Confirmar Rechazo' : 'Selecciona una acción'}
                 </button>
               )}
               {reviewDocTab !== 'decision' && (
@@ -874,23 +1059,20 @@ const AdminViewB = ({
               {loadingKpis ? (
                 <div style={{ textAlign: 'center', padding: 40, color: '#9ca3af' }}>⏳ Calculando KPIs...</div>
               ) : (
-                <>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 20 }}>
-                    {[
-                      { label: 'Prom. traslado', value: formatSeconds(Math.round(kpisData?.avg_travel_seconds || 0)), icon: '🚗', color: '#3b82f6' },
-                      { label: 'Prom. lavado',   value: formatSeconds(Math.round(kpisData?.avg_washing_seconds || 0)), icon: '🧽', color: '#f97316' },
-                      { label: 'Servicios',      value: kpisData?.total_services || 0, icon: '✅', color: '#10b981' },
-                      { label: 'Real vs Est.',   value: kpisData?.avg_real_vs_estimated ? `${Math.round(kpisData.avg_real_vs_estimated)}%` : '—', icon: '📊', color: kpisData?.avg_real_vs_estimated > 110 ? '#ef4444' : '#7c3aed' },
-                    ].map((k, i) => (
-                      <div key={i} style={{ background: '#f9fafb', borderRadius: 12, padding: '12px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
-                        <div style={{ fontSize: 20, marginBottom: 4 }}>{k.icon}</div>
-                        <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{k.label}</div>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: k.color }}>{k.value}</div>
-                      </div>
-                    ))}
-                  </div>
-                  {kpisTimeline.length === 0 && <p style={{ color: '#9ca3af', fontSize: 13, fontStyle: 'italic', textAlign: 'center' }}>Sin servicios finalizados aún.</p>}
-                </>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
+                  {[
+                    { label: 'Prom. traslado', value: formatSeconds(Math.round(kpisData?.avg_travel_seconds || 0)), icon: '🚗', color: '#3b82f6' },
+                    { label: 'Prom. lavado',   value: formatSeconds(Math.round(kpisData?.avg_washing_seconds || 0)), icon: '🧽', color: '#f97316' },
+                    { label: 'Servicios',      value: kpisData?.total_services || 0, icon: '✅', color: '#10b981' },
+                    { label: 'Real vs Est.',   value: kpisData?.avg_real_vs_estimated ? `${Math.round(kpisData.avg_real_vs_estimated)}%` : '—', icon: '📊', color: '#7c3aed' },
+                  ].map((k, i) => (
+                    <div key={i} style={{ background: '#f9fafb', borderRadius: 12, padding: '12px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
+                      <div style={{ fontSize: 20, marginBottom: 4 }}>{k.icon}</div>
+                      <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{k.label}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: k.color }}>{k.value}</div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
             <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', textAlign: 'right' }}>
@@ -910,7 +1092,7 @@ const AdminViewB = ({
             <div style={{ padding: 24 }}>
               <p style={{ fontSize: 14, color: '#374151', margin: '0 0 8px', lineHeight: 1.6 }}>¿Confirmas reiniciar el onboarding de <strong>{resetOnboardingModal.full_name}</strong>?</p>
               <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#854d0e', lineHeight: 1.5 }}>
-                ⚠️ Se eliminarán todos los documentos y datos del onboarding. El operador deberá completar los 5 pasos de nuevo.
+                ⚠️ Se eliminarán todos los documentos. El operador deberá completar los 5 pasos de nuevo.
               </div>
             </div>
             <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10 }}>
