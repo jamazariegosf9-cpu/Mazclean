@@ -243,7 +243,7 @@ export default function OnboardingView({ onComplete }) {
   const { user, profile, updateProfile } = useAuth()
   const isMobile = useIsMobile()
 
-  const [step, setStep]       = useState(profile?.onboarding_step || 1)
+  const [step, setStep] = useState(profile?.onboarding_step > 0 ? profile.onboarding_step : 0)
   const [subStep, setSubStep] = useState(1)
   const [saving, setSaving]   = useState(false)
   const [error, setError]     = useState('')
@@ -471,8 +471,48 @@ export default function OnboardingView({ onComplete }) {
           </div>
         )}
 
-        {/* ════ PASO 1 — Datos personales ════ */}
-        {step === 1 && (
+        {/* ════ PASO 0 — Bienvenida y documentos requeridos ════ */}
+{step === 0 && (
+  <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+    <div style={{ textAlign: 'center', marginBottom: 20 }}>
+      <div style={{ fontSize: 48, marginBottom: 8 }}>📋</div>
+      <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1f2937', margin: '0 0 8px' }}>Antes de comenzar</h2>
+      <p style={{ fontSize: 14, color: '#6b7280', margin: 0, lineHeight: 1.6 }}>Ten a la mano los siguientes documentos y materiales. El proceso toma aproximadamente <strong>10-15 minutos</strong>.</p>
+    </div>
+
+    <div style={{ display: 'grid', gap: 10, marginBottom: 20 }}>
+      {[
+        { icon: '🪪', title: 'Identificación oficial', desc: 'INE o licencia de conducir — frente y reverso' },
+        { icon: '🤳', title: 'Selfie con tu INE', desc: 'Foto tuya sosteniendo tu identificación' },
+        { icon: '🏦', title: 'Datos bancarios', desc: 'CLABE interbancaria de 18 dígitos y nombre del banco' },
+        { icon: '📄', title: 'Comprobante de domicilio', desc: 'Recibo de luz, agua o internet — máximo 3 meses de antigüedad' },
+        { icon: '🎥', title: 'Video de prueba de vida', desc: 'Video de 30-60 seg mostrando la fachada de tu domicilio' },
+        { icon: '🧴', title: 'Kit de materiales', desc: 'Shampoo, 4 microfibras, cubeta doble balde y aspiradora portátil' },
+        { icon: '🚗', title: 'Datos de tu vehículo', desc: 'Foto y placa — solo si operarás a más de 2 km de tu domicilio' },
+      ].map((item, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: '#f9fafb', borderRadius: 12, padding: '12px 14px', border: '1px solid #e5e7eb' }}>
+          <span style={{ fontSize: 22, flexShrink: 0 }}>{item.icon}</span>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#1f2937', marginBottom: 2 }}>{item.title}</div>
+            <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>{item.desc}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginBottom: 20 }}>
+      <p style={{ fontSize: 13, color: '#1e40af', margin: 0, lineHeight: 1.5 }}>💡 <strong>Consejo:</strong> Prepara todos los documentos antes de iniciar para completar el registro sin interrupciones.</p>
+    </div>
+
+    <button onClick={() => setStep(1)}
+      style={{ width: '100%', padding: '15px 0', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
+      ✅ Estoy listo — Comenzar registro
+    </button>
+  </div>
+)}
+
+{/* ════ PASO 1 — Datos personales ════ */}
+{step === 1 && (
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>👤 Datos personales</h2>
             <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 24px' }}>Confirma tu información básica.</p>
