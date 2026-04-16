@@ -13,8 +13,17 @@ export function AuthProvider({ children }) {
     profile: null,
     loading: true,
   })
+  const [sessionExpired, setSessionExpired] = useState(false)
   const initDone         = useRef(false)
   const skipNextSignedIn = useRef(false)
+
+  // ── Cerrar sesión por expiración ────────────────────────────────────────
+  const handleExpiredSession = async (reason = 'expirada') => {
+    console.warn('[AuthContext] Sesión', reason, '— cerrando...')
+    try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
+    setAuthState({ user: null, profile: null, loading: false })
+    setSessionExpired(true)
+  }
 
   // Carga profile desde Supabase - siempre fresco
   const loadProfile = async (user) => {
@@ -26,6 +35,11 @@ export function AuthProvider({ children }) {
         .single()
 
       if (error) {
+        // JWT inválido = sesión expirada
+        if (error.code === 'PGRST301' || error.message?.includes('JWT')) {
+          await handleExpiredSession('inválida (JWT)')
+          return { user: null, profile: null }
+        }
         console.error('[AuthContext] Error cargando perfil:', error.message)
         return { user, profile: null }
       }
@@ -45,13 +59,11 @@ export function AuthProvider({ children }) {
     return { user, profile: null }
   }
 
-  // loadProfileWithRetry: si el profile viene null (trigger aun no termino)
-  // reintenta hasta 3 veces con 600ms de espera entre intentos
-  // Esto resuelve la condicion de carrera entre el signUp y el trigger handle_new_user
   const loadProfileWithRetry = async (user, maxRetries = 3) => {
     for (let i = 0; i < maxRetries; i++) {
       const result = await loadProfile(user)
       if (result.profile !== null) return result
+      if (result.user === null) return result // sesión expirada durante retry
       if (i < maxRetries - 1) {
         console.log('[AuthContext] Profile null, reintentando en 600ms... (intento ' + (i + 1) + ')')
         await new Promise(resolve => setTimeout(resolve, 600))
@@ -63,18 +75,27 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('[AuthContext] Auth event:', event, '| session:', !!session)
+
         if (event === 'SIGNED_OUT') {
           initDone.current         = false
           skipNextSignedIn.current = false
           setAuthState({ user: null, profile: null, loading: false })
           return
         }
+
+        // Token refresh fallido = sesión expirada
         if (event === 'TOKEN_REFRESHED' && !session) {
-          try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
-          setAuthState({ user: null, profile: null, loading: false })
+          await handleExpiredSession('expirada (refresh fallido)')
           return
         }
-        if (event === 'TOKEN_REFRESHED') return
+
+        // Token refresh exitoso — no recargar profile
+        if (event === 'TOKEN_REFRESHED' && session) {
+          console.log('[AuthContext] Token renovado correctamente')
+          return
+        }
+
         if (event === 'SIGNED_IN' && session?.user) {
           if (skipNextSignedIn.current) {
             skipNextSignedIn.current = false
@@ -92,20 +113,27 @@ export function AuthProvider({ children }) {
       try {
         const { data: { session }, error } = await supabase.auth.getSession()
         if (error) {
-          try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
-          setAuthState({ user: null, profile: null, loading: false })
+          await handleExpiredSession('inválida (getSession error)')
           return
         }
         if (!session?.user) {
           setAuthState({ user: null, profile: null, loading: false })
           return
         }
+
+        // Verificar que el token no esté ya expirado al abrir la app
+        const expiresAt = session.expires_at
+        const nowSecs   = Math.floor(Date.now() / 1000)
+        if (expiresAt && nowSecs > expiresAt) {
+          await handleExpiredSession('expirada (token vencido al iniciar)')
+          return
+        }
+
         const result = await loadProfileWithRetry(session.user)
         setAuthState({ ...result, loading: false })
       } catch (err) {
         console.error('[AuthContext] Error en initAuth:', err)
-        try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
-        setAuthState({ user: null, profile: null, loading: false })
+        await handleExpiredSession('error inesperado')
       } finally {
         initDone.current = true
       }
@@ -115,22 +143,33 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  // signUp acepta role opcional - por defecto 'cliente'
-  // Si role='operador', el trigger y el upsert en AuthModal crean el perfil correcto
+  // ── Watcher: verificar sesión cada 60 segundos ──────────────────────────
+  // Detecta expiración cuando la app lleva horas abierta sin actividad
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (!authState.user) return
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) await handleExpiredSession('expirada (watcher periódico)')
+      } catch {
+        // silencioso — no romper la app por error de red momentáneo
+      }
+    }, 60 * 1000)
+
+    return () => clearInterval(interval)
+  }, [authState.user])
+
   const signUp = async ({ email, password, fullName, phone, role = 'cliente' }) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: { full_name: fullName, phone, role },
-      },
+      options: { data: { full_name: fullName, phone, role } },
     })
     return { data, error }
   }
 
-  // signIn usa retry para manejar el caso donde el profile aun no existe
-  // (importante despues de un signUp de operador con upsert manual)
   const signIn = async ({ email, password }) => {
+    setSessionExpired(false)
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (!error && data?.user) {
       skipNextSignedIn.current = true
@@ -142,6 +181,7 @@ export function AuthProvider({ children }) {
   }
 
   const signInWithGoogle = async () => {
+    setSessionExpired(false)
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: `${window.location.origin}/auth/callback` },
@@ -168,10 +208,10 @@ export function AuthProvider({ children }) {
 
   const signOut = async () => {
     try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
+    setSessionExpired(false)
     setAuthState({ user: null, profile: null, loading: false })
   }
 
-  // updateProfile: actualiza DB y sincroniza el state en memoria
   const updateProfile = async (updates) => {
     const { data, error } = await supabase
       .from('profiles')
@@ -179,6 +219,11 @@ export function AuthProvider({ children }) {
       .eq('id', authState.user.id)
       .select()
       .single()
+
+    if (error?.code === 'PGRST301' || error?.message?.includes('JWT')) {
+      await handleExpiredSession('expirada (updateProfile)')
+      return { data: null, error }
+    }
 
     if (!error && data) {
       console.log('[AuthContext] updateProfile OK:', {
@@ -191,7 +236,6 @@ export function AuthProvider({ children }) {
     return { data, error }
   }
 
-  // refreshProfile: fuerza recarga desde Supabase
   const refreshProfile = async () => {
     if (!authState.user) return
     console.log('[AuthContext] refreshProfile - recargando desde Supabase...')
@@ -200,12 +244,13 @@ export function AuthProvider({ children }) {
   }
 
   const value = {
-    user:    authState.user,
-    profile: authState.profile,
-    loading: authState.loading,
-    isClient:   authState.profile?.role === 'cliente',
-    isOperator: authState.profile?.role === 'operador',
-    isAdmin:    authState.profile?.role === 'admin',
+    user:          authState.user,
+    profile:       authState.profile,
+    loading:       authState.loading,
+    sessionExpired,
+    isClient:      authState.profile?.role === 'cliente',
+    isOperator:    authState.profile?.role === 'operador',
+    isAdmin:       authState.profile?.role === 'admin',
     signUp, signIn, signInWithGoogle, signInWithPhone,
     verifyOTP, resetPassword, signOut, updateProfile,
     loadProfile: refreshProfile,
@@ -213,6 +258,39 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={value}>
+      {/* Modal de sesión expirada — visible sobre cualquier pantalla */}
+      {sessionExpired && !authState.user && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.85)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 24,
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 20, padding: '32px 28px',
+            maxWidth: 380, width: '100%', textAlign: 'center',
+            boxShadow: '0 8px 48px rgba(0,0,0,0.3)',
+          }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>⏰</div>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1f2937', margin: '0 0 10px' }}>
+              Sesión expirada
+            </h2>
+            <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 24px', lineHeight: 1.6 }}>
+              Tu sesión ha expirado por inactividad. Vuelve a iniciar sesión para continuar.
+            </p>
+            <button
+              onClick={() => setSessionExpired(false)}
+              style={{
+                width: '100%', padding: '14px 0',
+                background: '#3b82f6', color: '#fff',
+                border: 'none', borderRadius: 12,
+                fontSize: 15, fontWeight: 700, cursor: 'pointer', minHeight: 52,
+              }}>
+              🔐 Iniciar sesión
+            </button>
+          </div>
+        </div>
+      )}
       {children}
     </AuthContext.Provider>
   )
