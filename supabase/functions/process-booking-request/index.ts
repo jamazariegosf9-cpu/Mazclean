@@ -1,10 +1,10 @@
-// process-booking-request v1
+// process-booking-request v3
 // Motor principal del sistema de asignación automática por rondas.
 // Flujo:
 //   Ronda 1 (5 min) → operadores admin_asignado en zona
 //   Ronda 2 (5 min) → operadores autonomo en zona
 //   Ronda 3 (5 min) → segunda oportunidad (mismos candidatos ronda 2)
-//   Ronda 4         → alerta al admin para asignación manual
+//   Ronda 4         → notifica cliente que seguimos buscando + alerta admin
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -19,36 +19,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 }
 
-async function sendWhatsAppToOperator(phone: string, booking: any, ronda: number, expiresAt: string) {
-  const minutesLeft = RONDA_DURATION_MINUTES
-  const timeFrom    = booking.scheduled_time_from?.slice(0, 5) ?? ''
-  const timeTo      = booking.scheduled_time_to?.slice(0, 5) ?? ''
-  const price       = booking.total_price ?? ''
-  const service     = booking.service_name ?? ''
-  const date        = booking.scheduled_date ?? ''
-  const ref         = booking.booking_ref ?? ''
-
-  const message = [
-    `🚗 Maz Clean — Nueva solicitud de servicio!`,
-    ``,
-    `Ref: ${ref}`,
-    `Servicio: ${service}`,
-    `Fecha: ${date}`,
-    `Horario solicitado: ${timeFrom} a ${timeTo} hrs`,
-    `Pago: $${price} MXN`,
-    ``,
-    `⏱ Tienes ${minutesLeft} minutos para aceptar.`,
-    ``,
-    `Entra a la app para aceptar:`,
-    `${APP_URL}`,
-  ].join('\n')
-
+async function sendWhatsApp(event: string, phone: string, bookingData: any) {
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
       method:  'POST',
@@ -57,25 +32,38 @@ async function sendWhatsAppToOperator(phone: string, booking: any, ronda: number
         'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
         'apikey':        SUPABASE_SERVICE_KEY,
       },
-      body: JSON.stringify({
-        event:   'operator_service_request',
-        phone,
-        booking: { ...booking, custom_message: message },
-      }),
+      body: JSON.stringify({ event, phone, booking: bookingData }),
     })
     return res.ok
   } catch (e) {
-    console.error('Error enviando WhatsApp a operador:', e)
+    console.error(`Error enviando WhatsApp [${event}]:`, e)
     return false
   }
 }
 
-async function scheduleNextRound(bookingId: string, nextRonda: number, delayMinutes: number) {
-  // Llamar expire-booking-round con delay usando setTimeout en background
-  // La función expire-booking-round se encarga de transicionar a la siguiente ronda
-  const delayMs = delayMinutes * 60 * 1000
+async function sendWhatsAppToOperator(phone: string, booking: any, ronda: number) {
+  const timeFrom = booking.scheduled_time_from?.slice(0, 5) ?? ''
+  const timeTo   = booking.scheduled_time_to?.slice(0, 5) ?? ''
+  const message  = [
+    `🚗 Maz Clean — Nueva solicitud de servicio!`,
+    ``,
+    `Ref: ${booking.booking_ref ?? ''}`,
+    `Servicio: ${booking.service_name ?? ''}`,
+    `Fecha: ${booking.scheduled_date ?? ''}`,
+    `Horario solicitado: ${timeFrom} a ${timeTo} hrs`,
+    `Pago: $${booking.total_price ?? ''} MXN`,
+    ``,
+    `⏱ Tienes ${RONDA_DURATION_MINUTES} minutos para aceptar.`,
+    ``,
+    `Entra a la app para aceptar:`,
+    `${APP_URL}`,
+  ].join('\n')
 
-  // Usamos EdgeRuntime.waitUntil para no bloquear la respuesta
+  return sendWhatsApp('operator_service_request', phone, { ...booking, custom_message: message })
+}
+
+async function scheduleNextRound(bookingId: string, ronda: number, delayMinutes: number) {
+  const delayMs = delayMinutes * 60 * 1000
   const runAfterDelay = async () => {
     await new Promise(resolve => setTimeout(resolve, delayMs))
     try {
@@ -86,22 +74,19 @@ async function scheduleNextRound(bookingId: string, nextRonda: number, delayMinu
           'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
           'apikey':        SUPABASE_SERVICE_KEY,
         },
-        body: JSON.stringify({ booking_id: bookingId, ronda: nextRonda }),
+        body: JSON.stringify({ booking_id: bookingId, ronda }),
       })
     } catch (e) {
       console.error('Error llamando expire-booking-round:', e)
     }
   }
-
-  // @ts-ignore — EdgeRuntime disponible en Supabase Edge Functions
+  // @ts-ignore
   if (typeof EdgeRuntime !== 'undefined') {
     EdgeRuntime.waitUntil(runAfterDelay())
   } else {
-    runAfterDelay() // fallback local
+    runAfterDelay()
   }
 }
-
-// ── Handler principal ─────────────────────────────────────────────────────────
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -123,7 +108,7 @@ serve(async (req) => {
     // ── 1. Obtener datos del booking ──────────────────────────────────────────
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
-      .select('*')
+      .select('*, client:client_id(phone, full_name)')
       .eq('id', booking_id)
       .single()
 
@@ -133,26 +118,46 @@ serve(async (req) => {
       })
     }
 
-    // Si ya tiene operador asignado, no hacer nada
     if (booking.operator_id) {
       return new Response(JSON.stringify({ message: 'Booking ya tiene operador asignado', booking_id }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // ── 2. Ronda 4 → alerta admin, ya no se pueden hacer más rondas ──────────
+    const clientPhone = booking.client?.phone || booking.client_phone || null
+
+    // ── 2. Ronda 4 → 3 rondas fallaron ───────────────────────────────────────
     if (ronda >= 4) {
       await supabase
         .from('bookings')
         .update({
-          current_ronda:       4,
-          request_expires_at:  null,
-          status:              'pendiente', // mantener pendiente para que admin lo vea
-          updated_at:          new Date().toISOString(),
+          current_ronda:      4,
+          request_expires_at: null,
+          status:             'pendiente',
+          updated_at:         new Date().toISOString(),
         })
         .eq('id', booking_id)
 
-      // Notificar a todos los admins
+      const bookingData = {
+        booking_ref:         booking.booking_ref,
+        service_name:        booking.service_name,
+        scheduled_date:      booking.scheduled_date,
+        scheduled_time_from: booking.scheduled_time_from,
+        scheduled_time_to:   booking.scheduled_time_to,
+        address_line:        booking.address_line,
+        total_price:         booking.total_price,
+      }
+
+      // ── Notificar al CLIENTE que seguimos buscando ────────────────────────
+      if (clientPhone) {
+        await sendWhatsApp('booking_searching', clientPhone, {
+          ...bookingData,
+          client_name: booking.client?.full_name || 'cliente',
+        })
+        console.log(`Cliente notificado (booking_searching): ${clientPhone}`)
+      }
+
+      // ── Notificar a todos los admins ──────────────────────────────────────
       const { data: admins } = await supabase
         .from('profiles')
         .select('phone, full_name')
@@ -160,36 +165,16 @@ serve(async (req) => {
 
       for (const admin of admins ?? []) {
         if (admin.phone) {
-          await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
-            method:  'POST',
-            headers: {
-              'Content-Type':  'application/json',
-              'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-              'apikey':        SUPABASE_SERVICE_KEY,
-            },
-            body: JSON.stringify({
-              event: 'admin_assignment_needed',
-              phone: admin.phone,
-              booking: {
-                booking_ref:  booking.booking_ref,
-                service_name: booking.service_name,
-                scheduled_date: booking.scheduled_date,
-                scheduled_time_from: booking.scheduled_time_from,
-                scheduled_time_to:   booking.scheduled_time_to,
-                address_line: booking.address_line,
-                total_price:  booking.total_price,
-              },
-            }),
-          })
+          await sendWhatsApp('admin_assignment_needed', admin.phone, bookingData)
         }
       }
 
-      return new Response(JSON.stringify({ message: 'Ronda 4: admin notificado', booking_id }), {
+      return new Response(JSON.stringify({ message: 'Ronda 4: cliente y admin notificados', booking_id }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // ── 3. Obtener candidatos disponibles para esta ronda ─────────────────────
+    // ── 3. Obtener candidatos disponibles ─────────────────────────────────────
     const { data: candidates, error: candidatesError } = await supabase
       .rpc('get_available_operators', { p_booking_id: booking_id, p_ronda: ronda })
 
@@ -200,52 +185,31 @@ serve(async (req) => {
       })
     }
 
-    // ── 4. Si no hay candidatos en ronda 1, saltar directo a ronda 2 ─────────
+    // ── 4. Sin candidatos → saltar a siguiente ronda ──────────────────────────
     if (!candidates || candidates.length === 0) {
       console.log(`Ronda ${ronda}: sin candidatos, avanzando a ronda ${ronda + 1}`)
-
-      // Si tampoco hay candidatos en ronda 2 y 3, ir a admin
       const nextRonda = ronda + 1
-      if (nextRonda >= 4) {
-        // Llamar recursivo con ronda 4 inmediatamente
-        await fetch(`${SUPABASE_URL}/functions/v1/process-booking-request`, {
-          method:  'POST',
-          headers: {
-            'Content-Type':  'application/json',
-            'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-            'apikey':        SUPABASE_SERVICE_KEY,
-          },
-          body: JSON.stringify({ booking_id, ronda: 4 }),
-        })
-      } else {
-        // Llamar siguiente ronda inmediatamente (sin delay) porque no hubo candidatos
-        await fetch(`${SUPABASE_URL}/functions/v1/process-booking-request`, {
-          method:  'POST',
-          headers: {
-            'Content-Type':  'application/json',
-            'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-            'apikey':        SUPABASE_SERVICE_KEY,
-          },
-          body: JSON.stringify({ booking_id, ronda: nextRonda }),
-        })
-      }
-
+      await fetch(`${SUPABASE_URL}/functions/v1/process-booking-request`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'apikey':        SUPABASE_SERVICE_KEY,
+        },
+        body: JSON.stringify({ booking_id, ronda: nextRonda }),
+      })
       return new Response(JSON.stringify({ message: `Ronda ${ronda} sin candidatos, saltando a ronda ${nextRonda}`, booking_id }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // ── 5. Actualizar booking con ronda actual y tiempo de expiración ─────────
+    // ── 5. Actualizar booking ─────────────────────────────────────────────────
     await supabase
       .from('bookings')
-      .update({
-        current_ronda:      ronda,
-        request_expires_at: expiresAt,
-        updated_at:         new Date().toISOString(),
-      })
+      .update({ current_ronda: ronda, request_expires_at: expiresAt, updated_at: new Date().toISOString() })
       .eq('id', booking_id)
 
-    // ── 6. Crear booking_requests para cada candidato ─────────────────────────
+    // ── 6. Crear booking_requests ─────────────────────────────────────────────
     const requests = candidates.map((c: any) => ({
       booking_id,
       operator_id: c.operator_id,
@@ -261,10 +225,9 @@ serve(async (req) => {
 
     if (insertError) {
       console.error('Error insertando booking_requests:', insertError)
-      // No fallar — el insert puede fallar por UNIQUE constraint si ya existe
     }
 
-    // ── 7. Obtener teléfonos de candidatos y notificar ────────────────────────
+    // ── 7. Notificar operadores ───────────────────────────────────────────────
     const operatorIds = candidates.map((c: any) => c.operator_id)
     const { data: operatorProfiles } = await supabase
       .from('profiles')
@@ -274,14 +237,14 @@ serve(async (req) => {
     let notifiedCount = 0
     for (const op of operatorProfiles ?? []) {
       if (op.phone) {
-        const sent = await sendWhatsAppToOperator(op.phone, booking, ronda, expiresAt)
+        const sent = await sendWhatsAppToOperator(op.phone, booking, ronda)
         if (sent) notifiedCount++
       }
     }
 
-    console.log(`Ronda ${ronda}: ${candidates.length} candidatos, ${notifiedCount} notificados por WhatsApp`)
+    console.log(`Ronda ${ronda}: ${candidates.length} candidatos, ${notifiedCount} notificados`)
 
-    // ── 8. Programar expiración de esta ronda después de 5 minutos ────────────
+    // ── 8. Programar expiración ───────────────────────────────────────────────
     await scheduleNextRound(booking_id, ronda, RONDA_DURATION_MINUTES)
 
     return new Response(JSON.stringify({

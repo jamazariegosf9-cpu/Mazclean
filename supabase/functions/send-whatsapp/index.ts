@@ -1,4 +1,4 @@
-// send-whatsapp v6 — agrega operator_service_request y admin_assignment_needed
+// send-whatsapp v8 — agrega booking_searching (notificación al cliente cuando 3 rondas fallan)
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID') ?? ''
@@ -39,6 +39,21 @@ function getMessage(event: string, data: any): string {
         `Total: $${price} MXN`,
         ``,
         `Estamos buscando el mejor operador para ti. Te avisamos en breve!`,
+      ].join('\n')
+
+    case 'booking_searching':
+      return [
+        `⏳ Maz Clean — Seguimos buscando tu operador`,
+        ``,
+        `Ref: ${ref}`,
+        ``,
+        `Hola${data.client_name ? ` ${data.client_name}` : ''}! Tu reservacion para el ${date} sigue activa.`,
+        ``,
+        `No encontramos un operador disponible de forma automatica en tu zona, pero nuestro equipo ya esta buscando uno manualmente para ti.`,
+        ``,
+        `Te notificaremos en cuanto tengamos a alguien asignado. Disculpa la espera!`,
+        ``,
+        `Si deseas cancelar o tienes dudas, respondenos a este mensaje.`,
       ].join('\n')
 
     case 'operator_assigned':
@@ -116,7 +131,6 @@ function getMessage(event: string, data: any): string {
 
     // ── Mensajes al operador ────────────────────────────────────────────────
     case 'operator_service_request':
-      // Si viene custom_message lo usamos directamente (generado en process-booking-request)
       if (data.custom_message) return data.custom_message
       return [
         `🚗 Maz Clean — Nueva solicitud de servicio!`,
@@ -153,6 +167,48 @@ function getMessage(event: string, data: any): string {
         `Mantente activo en la app para no perder proximas oportunidades.`,
       ].join('\n')
 
+    case 'operator_docs_required':
+      return [
+        `⚠️ Maz Clean — Documentos requeridos`,
+        ``,
+        `Hola ${data.operator_name || 'operador'},`,
+        ``,
+        `Revisamos tu solicitud y necesitamos que corrijas los siguientes documentos:`,
+        ``,
+        data.docs_list || '',
+        ``,
+        `Ingresa a la app para corregirlos:`,
+        `${APP_URL}`,
+        ``,
+        `Una vez que los corrijas tu solicitud sera revisada nuevamente.`,
+      ].join('\n')
+
+    case 'operator_approved':
+      return [
+        `✅ Maz Clean — Solicitud aprobada!`,
+        ``,
+        `Hola ${data.operator_name || 'operador'},`,
+        ``,
+        `Tu solicitud ha sido aprobada. Ya puedes recibir servicios en la app.`,
+        ``,
+        `Bienvenido al equipo Maz Clean! 🎉`,
+        ``,
+        `${APP_URL}`,
+      ].join('\n')
+
+    case 'operator_rejected':
+      return [
+        `❌ Maz Clean — Solicitud rechazada`,
+        ``,
+        `Hola ${data.operator_name || 'operador'},`,
+        ``,
+        `Lamentablemente tu solicitud no fue aprobada.`,
+        ``,
+        `Motivo: ${data.rejection_reason || 'No cumple con los requisitos.'}`,
+        ``,
+        `Si tienes dudas contacta a nuestro equipo.`,
+      ].join('\n')
+
     // ── Mensajes al admin ───────────────────────────────────────────────────
     case 'admin_assignment_needed':
       return [
@@ -165,7 +221,7 @@ function getMessage(event: string, data: any): string {
         `Direccion: ${address}`,
         `Total: $${price} MXN`,
         ``,
-        `Ningún operador aceptó en las 3 rondas automaticas.`,
+        `Ningun operador acepto en las 3 rondas automaticas.`,
         `Ingresa al panel de admin para asignar manualmente o cancelar.`,
         ``,
         `${APP_URL}`,
