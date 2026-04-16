@@ -418,8 +418,8 @@ const AdminViewB = ({
 
       {/* ── CHIPS + FILTROS ── */}
       <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', padding: '16px 20px' }}>
-        {/* Chips */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+        {/* Chips — scroll horizontal en móvil */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
           {CHIPS.map(chip => (
             <button key={chip.id} onClick={() => setActiveChip(chip.id)}
               style={{ padding: '7px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${activeChip === chip.id ? chip.color : '#e5e7eb'}`, background: activeChip === chip.id ? chip.color : '#fff', color: activeChip === chip.id ? '#fff' : '#374151', minHeight: 36, display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s' }}>
@@ -431,9 +431,9 @@ const AdminViewB = ({
           ))}
         </div>
 
-        {/* Filtros de zona */}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+        {/* Filtros de zona — columna en móvil */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', flexDirection: isMobile ? 'column' : 'row' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: 0, width: isMobile ? '100%' : 'auto' }}>
             <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 14 }}>📍</span>
             <input type="text" placeholder="Filtrar por zona o colonia..." value={zoneSearch} onChange={e => setZoneSearch(e.target.value)}
               style={{ ...inputStyle, paddingLeft: 32, fontSize: 14, minHeight: 40 }} />
@@ -483,14 +483,14 @@ const AdminViewB = ({
                 <div key={op.id} style={{ background: '#fff', borderRadius: 12, border: cardBorder, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
 
                   {/* ── Header: avatar + info + badge — responsivo ── */}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                     {/* Avatar */}
                     <div style={{ position: 'relative', flexShrink: 0 }}>
                       {op.selfie_with_id_url ? (
                         <img src={getPhotoStorageUrl(op.selfie_with_id_url)} alt="selfie"
-                          style={{ height: 48, width: 48, borderRadius: '50%', objectFit: 'cover', border: '2px solid #fde68a' }} />
+                          style={{ height: 44, width: 44, borderRadius: '50%', objectFit: 'cover', border: '2px solid #fde68a' }} />
                       ) : (
-                        <div style={{ height: 48, width: 48, borderRadius: '50%', background: 'linear-gradient(135deg,#f59e0b,#fbbf24)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 20 }}>
+                        <div style={{ height: 44, width: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#f59e0b,#fbbf24)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 18 }}>
                           {op.full_name?.charAt(0) || '?'}
                         </div>
                       )}
@@ -499,23 +499,22 @@ const AdminViewB = ({
                       </span>
                     </div>
 
-                    {/* Info — ocupa todo el ancho disponible */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap' }}>
-                        <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }}>{op.full_name || 'Sin nombre'}</div>
-                        {/* Badge estado — ahora en la misma línea que el nombre */}
-                        <span style={{
-                          fontSize: 10, padding: '3px 8px', borderRadius: 20, fontWeight: 700, flexShrink: 0,
-                          background: fromCorrection ? '#dbeafe' : isDocsRequired ? '#fef2f2' : '#fffbeb',
-                          color: fromCorrection ? '#1e40af' : isDocsRequired ? '#dc2626' : '#92400e',
-                          border: `1px solid ${fromCorrection ? '#93c5fd' : isDocsRequired ? '#fecaca' : '#fde68a'}`,
-                        }}>
-                          {fromCorrection ? `🔄 ${correctedDocs.length} corregido${correctedDocs.length !== 1 ? 's' : ''}` : isDocsRequired ? `⚠️ ${pendingDocs.length} pendiente${pendingDocs.length !== 1 ? 's' : ''}` : '⏳ Nuevo'}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{op.phone || '—'}</div>
-                      {op.base_address && <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>📍 {op.base_address.substring(0, 45)}{op.base_address.length > 45 ? '…' : ''}</div>}
+                    {/* Info — ocupa todo el ancho disponible, sin overflow */}
+                    <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                      <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{op.full_name || 'Sin nombre'}</div>
+                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 1 }}>{op.phone || '—'}</div>
+                      {op.base_address && <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>📍 {op.base_address}</div>}
                       {op.coverage_radius && <div style={{ fontSize: 11, color: '#9ca3af' }}>Radio: {op.coverage_radius} km</div>}
+                      {/* Badge estado — debajo del radio, siempre visible */}
+                      <span style={{
+                        display: 'inline-block', marginTop: 6,
+                        fontSize: 10, padding: '3px 10px', borderRadius: 20, fontWeight: 700,
+                        background: fromCorrection ? '#dbeafe' : isDocsRequired ? '#fef2f2' : '#fffbeb',
+                        color: fromCorrection ? '#1e40af' : isDocsRequired ? '#dc2626' : '#92400e',
+                        border: `1px solid ${fromCorrection ? '#93c5fd' : isDocsRequired ? '#fecaca' : '#fde68a'}`,
+                      }}>
+                        {fromCorrection ? `🔄 ${correctedDocs.length} corregido${correctedDocs.length !== 1 ? 's' : ''}` : isDocsRequired ? `⚠️ ${pendingDocs.length} pendiente${pendingDocs.length !== 1 ? 's' : ''}` : '⏳ Nuevo'}
+                      </span>
                     </div>
                   </div>
 
@@ -546,13 +545,13 @@ const AdminViewB = ({
                   )}
 
                   {/* ── Botones acción ── */}
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                     <button onClick={() => openReviewModal(op)}
-                      style={{ flex: 1, padding: '11px 0', background: fromCorrection ? 'linear-gradient(135deg,#3b82f6,#1e40af)' : isDocsRequired ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'linear-gradient(135deg,#f59e0b,#d97706)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 46 }}>
+                      style={{ flex: 1, padding: '12px 8px', background: fromCorrection ? 'linear-gradient(135deg,#3b82f6,#1e40af)' : isDocsRequired ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'linear-gradient(135deg,#f59e0b,#d97706)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                       {fromCorrection ? '🔍 Revisar correcciones' : isDocsRequired ? '⚠️ Ver pendientes' : '🔍 Revisar'}
                     </button>
                     <button onClick={() => { setDeleteModal(op); setDeleteMode('deactivate'); }}
-                      style={{ padding: '11px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, color: '#dc2626', fontSize: 13, cursor: 'pointer', minHeight: 46 }}>🗑</button>
+                      style={{ padding: '12px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, color: '#dc2626', fontSize: 16, cursor: 'pointer', minHeight: 48, minWidth: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>🗑</button>
                   </div>
                 </div>
               );
