@@ -506,7 +506,7 @@ const AdminViewB = ({
                   background: '#fff', borderRadius: 10, border: cardBorder,
                   padding: isMobile ? '10px 12px' : 14,
                   display: 'flex', flexDirection: 'column', gap: 8,
-                  boxSizing: 'border-box', width: '100%', overflow: 'hidden',
+                  boxSizing: 'border-box', width: '100%',
                 }}>
 
                   {/* ── Fila superior: avatar + info + botones ── */}
@@ -542,19 +542,23 @@ const AdminViewB = ({
 
                     {/* Botones: revisar + eliminar — siempre visibles */}
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      <button onClick={() => openReviewModal(op)} style={{
+                      <button type="button" onClick={() => openReviewModal(op)} style={{
                         padding: isMobile ? '6px 10px' : '8px 14px',
                         background: fromCorrection ? 'linear-gradient(135deg,#3b82f6,#1e40af)' : isDocsRequired ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'linear-gradient(135deg,#f59e0b,#d97706)',
                         border: 'none', borderRadius: 8, color: '#fff',
                         fontSize: isMobile ? 11 : 12, fontWeight: 700, cursor: 'pointer',
-                        whiteSpace: 'nowrap', minHeight: 36,
+                        whiteSpace: 'nowrap', minHeight: 44, minWidth: 44,
+                        WebkitTapHighlightColor: 'transparent',
+                        touchAction: 'manipulation',
                       }}>
                         {fromCorrection ? '🔍 Corr.' : isDocsRequired ? '⚠️ Ver' : '🔍 Revisar'}
                       </button>
-                      <button onClick={() => { setDeleteModal(op); setDeleteMode('deactivate'); }} style={{
+                      <button type="button" onClick={() => { setDeleteModal(op); setDeleteMode('deactivate'); }} style={{
                         background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
                         color: '#dc2626', fontSize: 15, cursor: 'pointer',
-                        width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                        width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                        WebkitTapHighlightColor: 'transparent',
+                        touchAction: 'manipulation',
                       }}>🗑</button>
                     </div>
                   </div>
