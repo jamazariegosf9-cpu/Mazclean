@@ -13,6 +13,12 @@ function validarCLABE(clabe) {
   return (10 - (suma % 10)) % 10 === parseInt(clabe[17])
 }
 
+function validarCURP(curp) {
+  // Formato: 4 letras | 6 dígitos fecha | 1 letra sexo | 2 letras estado | 3 consonantes | 2 dígitos
+  const re = /^[A-Z]{1}[AEIOUX]{1}[A-Z]{2}\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[HMX]{1}(AS|BC|BS|CC|CH|CL|CM|CO|CS|DF|DG|GR|GT|HG|JC|MC|MD|ME|MN|MS|MT|NE|NL|NT|OC|PL|QR|QT|SL|SP|SR|TC|TL|TS|VZ|YN|ZS)[B-DF-HJ-NP-TV-Z]{3}[0-9A-Z]{1}\d{1}$/
+  return re.test(curp)
+}
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   useEffect(() => {
@@ -384,7 +390,9 @@ export default function OnboardingView({ onComplete }) {
   const handleStep1 = async () => {
     if (!fullName.trim()) { setError('El nombre completo es requerido.'); return }
     if (!/^\d{10}$/.test(phone.replace(/\s/g,''))) { setError('El teléfono debe tener 10 dígitos.'); return }
-    if (!curp.trim() || curp.trim().length < 18) { setError('La CURP debe tener 18 caracteres.'); return }
+    const curpVal = curp.trim().toUpperCase()
+if (!curpVal || curpVal.length !== 18) { setError('La CURP debe tener 18 caracteres.'); return }
+if (!validarCURP(curpVal)) { setError('La CURP no tiene un formato válido. Verifica en gob.mx/curp'); return }
     await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,''), curp: curp.trim().toUpperCase() }, 2)
   }
 
