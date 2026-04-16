@@ -361,7 +361,37 @@ export default function OnboardingView({ onComplete }) {
   const saveStep = async (data, next) => {
     setSaving(true); setError('')
     try {
-      const { error: e } = await updateProfile({ ...data, onboarding_step: next, updated_at: new Date().toISOString() })
+      // Si el operador está en modo corrección, limpiar los documentos
+      // corregidos de rejected_documents y volver a pending_review cuando queden 0
+      let extraData = {}
+      if (profile?.operator_status === 'docs_requeridos' &&
+          Array.isArray(profile?.rejected_documents) &&
+          profile.rejected_documents.length > 0) {
+        // Determinar qué campos se están guardando en este paso
+        const keysBeingSaved = Object.keys(data)
+        const remaining = profile.rejected_documents.filter(doc =>
+          !keysBeingSaved.includes(doc.key)
+        )
+        extraData = {
+          rejected_documents: remaining,
+          // Si ya no quedan docs pendientes → volver a pending_review para que admin revise
+          ...(remaining.length === 0 ? {
+            operator_status: 'pending_review',
+            onboarding_done: true,
+            onboarding_step: 6,
+          } : {}),
+        }
+        // Si quedan docs, no avanzar a paso 6 todavía — mostrar pantalla de corrección
+        if (remaining.length > 0) {
+          next = 6
+        }
+      }
+      const { error: e } = await updateProfile({
+        ...data,
+        ...extraData,
+        onboarding_step: next,
+        updated_at: new Date().toISOString(),
+      })
       if (e) throw e
       setStep(next); setSubStep(1)
     } catch (e) { setError(e.message) }
@@ -934,83 +964,125 @@ export default function OnboardingView({ onComplete }) {
           </div>
         )}
 
-        {/* ════ PASO 6 — Confirmación ════ */}
-        {step >= 6 && (
-          <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '28px 20px' : 40, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', textAlign: 'center' }}>
-            <div style={{ fontSize: 64, marginBottom: 16 }}>🎉</div>
-            <h2 style={{ fontSize: 22, fontWeight: 800, color: '#1f2937', margin: '0 0 12px' }}>¡Registro completado!</h2>
-            <p style={{ fontSize: 15, color: '#374151', margin: '0 0 8px', lineHeight: 1.6 }}>Tu solicitud está siendo revisada por nuestro equipo.</p>
-            <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 24px', lineHeight: 1.6 }}>Recibirás una notificación en máximo <strong>4 horas hábiles</strong>.</p>
-            <div style={{ background: '#f9fafb', borderRadius: 12, padding: '16px 20px', marginBottom: 24, textAlign: 'left' }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: '#374151', margin: '0 0 12px' }}>📋 Estado de tu solicitud:</p>
-              {[
-                { label: 'Datos personales + CURP', done: !!profile?.full_name && !!profile?.curp },
-                { label: 'INE frente y reverso',    done: !!profile?.ine_front_url && !!profile?.ine_back_url },
-                { label: 'Selfie con INE',           done: !!profile?.selfie_with_id_url },
-                { label: 'Datos bancarios',          done: !!profile?.clabe },
-                { label: 'Zona de trabajo',          done: !!profile?.base_address },
-                { label: 'Comprobante de domicilio', done: !!profile?.proof_of_address_url },
-                { label: 'Video de prueba de vida',  done: !!profile?.proof_of_life_video_url },
-                { label: 'Kit de materiales',        done: !!profile?.kit_photo_url },
-                { label: 'Contrato firmado',         done: !!profile?.terms_accepted_at },
-                { label: 'Firma digital persistida', done: !!profile?.signature_url },
-              ].map(item => (
-                <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                  <span style={{ fontSize: 14 }}>{item.done ? '✅' : '⏳'}</span>
-                  <span style={{ fontSize: 13, color: item.done ? '#166534' : '#9ca3af', fontWeight: item.done ? 600 : 400 }}>{item.label}</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 11, color: item.done ? '#10b981' : '#d97706', fontWeight: 600 }}>{item.done ? 'Entregado' : 'Pendiente'}</span>
+        {/* ════ PASO 6 — Lógica según operator_status ════ */}
+        {step >= 6 && (() => {
+          const status = profile?.operator_status
+          const rejDocs = Array.isArray(profile?.rejected_documents) ? profile.rejected_documents : []
+
+          // ── A) Documentos a corregir ──────────────────────────────────────
+          if (status === 'docs_requeridos' && rejDocs.length > 0) {
+            const DOC_LOCATION = {
+              ine_front_url:           { step: 2, subStep: 1 },
+              ine_back_url:            { step: 2, subStep: 2 },
+              selfie_with_id_url:      { step: 2, subStep: 3 },
+              clabe:                   { step: 2, subStep: 4 },
+              proof_of_address_url:    { step: 3, subStep: 3 },
+              proof_of_life_video_url: { step: 3, subStep: 3 },
+              vehicle_photo_url:       { step: 3, subStep: 5 },
+              kit_photo_url:           { step: 4, subStep: 1 },
+              terms_accepted_at:       { step: 5, subStep: 2 },
+            }
+            const handleCorrect = () => {
+              const locations = rejDocs.map(d => DOC_LOCATION[d.key] || { step: d.step || 1, subStep: 1 })
+              const earliest  = locations.reduce((min, loc) =>
+                loc.step < min.step || (loc.step === min.step && loc.subStep < min.subStep) ? loc : min
+              , locations[0])
+              setStep(earliest.step)
+              setSubStep(earliest.subStep)
+              setError('')
+            }
+            return (
+              <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '24px 16px' : 36, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+                <div style={{ textAlign: 'center', marginBottom: 24 }}>
+                  <div style={{ fontSize: 52, marginBottom: 12 }}>⚠️</div>
+                  <h2 style={{ fontSize: 20, fontWeight: 800, color: '#dc2626', margin: '0 0 8px' }}>Documentos a corregir</h2>
+                  <p style={{ fontSize: 14, color: '#6b7280', margin: 0, lineHeight: 1.6 }}>
+                    El administrador revisó tu solicitud y necesita que corrijas los siguientes documentos.
+                  </p>
                 </div>
-              ))}
-            </div>
-
-            {profile?.operator_status === 'aprobado' && (
-              <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
-                <p style={{ fontSize: 15, fontWeight: 700, color: '#166534', margin: 0 }}>🎉 ¡Tu cuenta está activa! Ya puedes recibir servicios.</p>
-              </div>
-            )}
-
-            {profile?.operator_status === 'docs_requeridos' && Array.isArray(profile?.rejected_documents) && profile.rejected_documents.length > 0 && (
-              <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
-                <p style={{ fontSize: 15, fontWeight: 700, color: '#dc2626', margin: '0 0 12px' }}>⚠️ Documentos a corregir</p>
-                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 12px', lineHeight: 1.5 }}>El administrador revisó tu solicitud y necesita que corrijas los siguientes documentos:</p>
-                <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
-                  {profile.rejected_documents.map((doc, i) => (
-                    <div key={i} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #fecaca', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                      <span style={{ fontSize: 18, flexShrink: 0 }}>{doc.icon}</span>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>{doc.label}</div>
-                        {doc.reason && <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{doc.reason}</div>}
+                <div style={{ display: 'grid', gap: 10, marginBottom: 20 }}>
+                  {rejDocs.map((doc, i) => (
+                    <div key={i} style={{ background: '#fef2f2', borderRadius: 12, padding: '14px 16px', border: '1.5px solid #fecaca', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                      <span style={{ fontSize: 24, flexShrink: 0 }}>{doc.icon}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: '#dc2626', marginBottom: 2 }}>{doc.label}</div>
+                        {doc.reason && <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>{doc.reason}</div>}
                       </div>
                     </div>
                   ))}
                 </div>
-                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#1e40af' }}>
-                  💡 Solo necesitas corregir los documentos marcados arriba. Tu demás información está guardada.
+                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginBottom: 20 }}>
+                  <p style={{ fontSize: 13, color: '#1e40af', margin: 0, lineHeight: 1.5 }}>
+                    💡 <strong>Solo necesitas corregir los documentos marcados arriba.</strong> Tu demás información está guardada.
+                  </p>
                 </div>
-                <button onClick={() => {
-                  const minStep = Math.min(...profile.rejected_documents.map(d => d.step || 1))
-                  goStep(minStep)
-                }} style={{ width: '100%', padding: '13px 0', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', minHeight: 50 }}>
+                <button onClick={handleCorrect}
+                  style={{ width: '100%', padding: '15px 0', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
                   ✏️ Corregir documentos →
                 </button>
               </div>
-            )}
+            )
+          }
 
-            {profile?.operator_status === 'rechazado' && profile?.rejection_reason && (
-              <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
-                <p style={{ fontSize: 14, fontWeight: 700, color: '#dc2626', margin: '0 0 6px' }}>❌ Solicitud rechazada</p>
-                <p style={{ fontSize: 13, color: '#991b1b', margin: 0, lineHeight: 1.5 }}>{profile.rejection_reason}</p>
-                <button onClick={() => goStep(1)} style={{ marginTop: 12, padding: '10px 20px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 44 }}>Corregir y reenviar</button>
+          // ── B) Aprobado ───────────────────────────────────────────────────
+          if (status === 'aprobado') {
+            return (
+              <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '28px 20px' : 40, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+                <div style={{ fontSize: 64, marginBottom: 16 }}>🎉</div>
+                <h2 style={{ fontSize: 22, fontWeight: 800, color: '#166534', margin: '0 0 12px' }}>¡Cuenta aprobada!</h2>
+                <p style={{ fontSize: 15, color: '#374151', margin: '0 0 24px', lineHeight: 1.6 }}>Ya puedes recibir servicios en la app.</p>
+                <button onClick={onComplete} style={{ width: '100%', padding: '15px 0', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
+                  Ir al Panel de Operador →
+                </button>
               </div>
-            )}
+            )
+          }
 
-            {profile?.operator_status === 'aprobado' && (
-              <button onClick={onComplete} style={{ width: '100%', padding: '15px 0', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
-                Ir al Panel de Operador →
-              </button>
-            )}
-          </div>
-        )}
+          // ── C) Rechazado total ─────────────────────────────────────────────
+          if (status === 'rechazado') {
+            return (
+              <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '28px 20px' : 40, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+                <div style={{ fontSize: 64, marginBottom: 16 }}>❌</div>
+                <h2 style={{ fontSize: 22, fontWeight: 800, color: '#dc2626', margin: '0 0 12px' }}>Solicitud rechazada</h2>
+                <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 24px', lineHeight: 1.6 }}>{profile?.rejection_reason || 'Tu solicitud no cumplió con los requisitos.'}</p>
+                <button onClick={() => goStep(1)} style={{ width: '100%', padding: '14px 0', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
+                  🔄 Corregir y reenviar
+                </button>
+              </div>
+            )
+          }
+
+          // ── D) Pendiente / pending_review — en revisión ───────────────────
+          return (
+            <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '28px 20px' : 40, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+              <div style={{ fontSize: 64, marginBottom: 16 }}>📋</div>
+              <h2 style={{ fontSize: 22, fontWeight: 800, color: '#1f2937', margin: '0 0 12px' }}>¡Solicitud enviada!</h2>
+              <p style={{ fontSize: 15, color: '#374151', margin: '0 0 8px', lineHeight: 1.6 }}>Tu registro está siendo revisado por nuestro equipo.</p>
+              <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 24px', lineHeight: 1.6 }}>Recibirás una notificación en máximo <strong>4 horas hábiles</strong>.</p>
+              <div style={{ background: '#f9fafb', borderRadius: 12, padding: '16px 20px', textAlign: 'left' }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#374151', margin: '0 0 12px' }}>📋 Estado de tu solicitud:</p>
+                {[
+                  { label: 'Datos personales + CURP', done: !!profile?.full_name && !!profile?.curp },
+                  { label: 'INE frente y reverso',    done: !!profile?.ine_front_url && !!profile?.ine_back_url },
+                  { label: 'Selfie con INE',           done: !!profile?.selfie_with_id_url },
+                  { label: 'Datos bancarios',          done: !!profile?.clabe },
+                  { label: 'Zona de trabajo',          done: !!profile?.base_address },
+                  { label: 'Comprobante de domicilio', done: !!profile?.proof_of_address_url },
+                  { label: 'Video de prueba de vida',  done: !!profile?.proof_of_life_video_url },
+                  { label: 'Kit de materiales',        done: !!profile?.kit_photo_url },
+                  { label: 'Contrato firmado',         done: !!profile?.terms_accepted_at },
+                  { label: 'Firma digital',            done: !!profile?.signature_url },
+                ].map(item => (
+                  <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <span style={{ fontSize: 14 }}>{item.done ? '✅' : '⏳'}</span>
+                    <span style={{ fontSize: 13, color: item.done ? '#166534' : '#9ca3af', fontWeight: item.done ? 600 : 400 }}>{item.label}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: item.done ? '#10b981' : '#d97706', fontWeight: 600 }}>{item.done ? 'Entregado' : 'Pendiente'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
       </div>
       <style>{`@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }`}</style>
     </div>
