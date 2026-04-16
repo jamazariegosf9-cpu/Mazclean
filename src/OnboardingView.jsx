@@ -92,6 +92,34 @@ async function uploadFile({ file, folder, userId, onProgress }) {
   return path
 }
 
+// ── Upload firma digital desde base64 ────────────────────────────────────────
+async function uploadSignature({ base64DataUrl, userId }) {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token || supabaseKey
+
+  // Convertir base64 a Blob
+  const res     = await fetch(base64DataUrl)
+  const blob    = await res.blob()
+  const path    = `firmas/${userId}/firma_contrato_${Date.now()}.png`
+
+  await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`)
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.setRequestHeader('apikey', supabaseKey)
+    xhr.setRequestHeader('Content-Type', 'image/png')
+    xhr.setRequestHeader('x-upsert', 'true')
+    xhr.timeout = 30000
+    xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0, 100)}`)) }
+    xhr.onerror   = () => reject(new Error('Error de red al subir firma'))
+    xhr.ontimeout = () => reject(new Error('Tiempo agotado al subir firma'))
+    xhr.send(blob)
+  })
+  return path
+}
+
 // ── Componente PhotoUpload ────────────────────────────────────────────────────
 function PhotoUpload({ label, hint, icon, value, onChange, accept = 'image/*', capture, maxMB = 50 }) {
   const [uploading, setUploading] = useState(false)
@@ -244,10 +272,9 @@ export default function OnboardingView({ onComplete }) {
   const isMobile = useIsMobile()
 
   const [step, setStep] = useState(() => {
-  const savedStep = profile?.onboarding_step || 0
-  // Mostrar bienvenida si es operador nuevo (step 0 o 1)
-  return savedStep <= 1 ? 0 : savedStep
-})
+    const savedStep = profile?.onboarding_step || 0
+    return savedStep <= 1 ? 0 : savedStep
+  })
   const [subStep, setSubStep] = useState(1)
   const [saving, setSaving]   = useState(false)
   const [error, setError]     = useState('')
@@ -291,17 +318,17 @@ export default function OnboardingView({ onComplete }) {
   const [experienceNotes, setExperienceNotes] = useState(profile?.experience_notes || '')
   const [termsAccepted, setTermsAccepted]     = useState(!!profile?.terms_accepted_at)
   const [signature, setSignature]             = useState(null)
+  const [uploadingSignature, setUploadingSignature] = useState(false)
 
   useEffect(() => {
-  if (profile?.onboarding_step > 1 && step < 2) {
-    setStep(profile.onboarding_step)
-  }
-}, [profile])
+    if (profile?.onboarding_step > 1 && step < 2) {
+      setStep(profile.onboarding_step)
+    }
+  }, [profile])
 
   // Actualizar mapa cuando cambia lat/lng/radius
   useEffect(() => {
     if (baseLat && baseLng && GOOGLE_MAPS_KEY) {
-      const radiusMeters = radius * 1000
       const zoom = radius > 10 ? 11 : radius > 5 ? 12 : 13
       const path = `color:0x3b82f680|fillcolor:0x3b82f620|weight:2`
       const url = `https://maps.googleapis.com/maps/api/staticmap?center=${baseLat},${baseLng}&zoom=${zoom}&size=400x200&maptype=roadmap&markers=color:blue%7C${baseLat},${baseLng}&path=${path}&key=${GOOGLE_MAPS_KEY}`
@@ -400,25 +427,49 @@ export default function OnboardingView({ onComplete }) {
     await saveStep({ kit_photo_url: kitPhotoUrl }, 5)
   }
 
+  // ── handleStep5 con firma persistida ─────────────────────────────────────
   const handleStep5 = async () => {
     if (!termsAccepted) { setError('Debes aceptar el contrato.'); return }
     if (!signature)     { setError('Por favor firma el contrato.'); return }
-    await saveStep({
-      experience_years: experienceYears ? parseInt(experienceYears) : null,
-      experience_notes: experienceNotes.trim() || null,
-      terms_accepted_at: new Date().toISOString(),
-      operator_status: 'pendiente',
-      onboarding_done: true,
-    }, 6)
+
+    setSaving(true); setError('')
+    try {
+      // 1. Subir firma a Storage
+      setUploadingSignature(true)
+      let signatureUrl = null
+      try {
+        signatureUrl = await uploadSignature({ base64DataUrl: signature, userId: user.id })
+      } catch (sigErr) {
+        console.warn('No se pudo subir la firma, continuando sin ella:', sigErr.message)
+        // No bloqueamos el flujo si falla la firma — el contrato digital sigue válido
+      } finally {
+        setUploadingSignature(false)
+      }
+
+      // 2. Guardar en profiles
+      const { error: e } = await updateProfile({
+        experience_years:   experienceYears ? parseInt(experienceYears) : null,
+        experience_notes:   experienceNotes.trim() || null,
+        terms_accepted_at:  new Date().toISOString(),
+        signature_url:      signatureUrl || null,
+        operator_status:    'pendiente',
+        onboarding_done:    true,
+        onboarding_step:    6,
+        updated_at:         new Date().toISOString(),
+      })
+      if (e) throw e
+      setStep(6); setSubStep(1)
+    } catch (e) { setError(e.message) }
+    finally { setSaving(false) }
   }
 
   // ── Configuración de pasos ────────────────────────────────────────────────
   const STEPS = [
-    { n: 1, label: 'Datos',     icon: '👤', subs: 1 },
-    { n: 2, label: 'Identidad', icon: '🪪', subs: 4 },
-    { n: 3, label: 'Zona',      icon: '📍', subs: 5 },
-    { n: 4, label: 'Materiales',icon: '🧴', subs: 1 },
-    { n: 5, label: 'Contrato',  icon: '📋', subs: 2 },
+    { n: 1, label: 'Datos',      icon: '👤', subs: 1 },
+    { n: 2, label: 'Identidad',  icon: '🪪', subs: 4 },
+    { n: 3, label: 'Zona',       icon: '📍', subs: 5 },
+    { n: 4, label: 'Materiales', icon: '🧴', subs: 1 },
+    { n: 5, label: 'Contrato',   icon: '📋', subs: 2 },
   ]
 
   const currentStepCfg = STEPS.find(s => s.n === step)
@@ -430,7 +481,7 @@ export default function OnboardingView({ onComplete }) {
       {onBack && <button onClick={onBack} style={{ flex: 1, padding: '13px 0', background: '#f3f4f6', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 52 }}>← Atrás</button>}
       <button onClick={onNext} disabled={nextDisabled || saving}
         style={{ flex: 2, padding: '13px 0', background: nextDisabled || saving ? '#9ca3af' : nextColor, color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: nextDisabled || saving ? 'not-allowed' : 'pointer', minHeight: 52 }}>
-        {saving ? '⏳ Guardando...' : nextLabel}
+        {saving ? (uploadingSignature ? '⏳ Subiendo firma...' : '⏳ Guardando...') : nextLabel}
       </button>
     </div>
   )
@@ -447,7 +498,7 @@ export default function OnboardingView({ onComplete }) {
         </div>
 
         {/* Barra de progreso */}
-        {step <= 5 && (
+        {step >= 1 && step <= 5 && (
           <div style={{ background: '#fff', borderRadius: 16, padding: '16px 20px', marginBottom: 20, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               {STEPS.map((s, i) => (
@@ -479,48 +530,44 @@ export default function OnboardingView({ onComplete }) {
           </div>
         )}
 
-        {/* ════ PASO 0 — Bienvenida y documentos requeridos ════ */}
-{step === 0 && (
-  <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-    <div style={{ textAlign: 'center', marginBottom: 20 }}>
-      <div style={{ fontSize: 48, marginBottom: 8 }}>📋</div>
-      <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1f2937', margin: '0 0 8px' }}>Antes de comenzar</h2>
-      <p style={{ fontSize: 14, color: '#6b7280', margin: 0, lineHeight: 1.6 }}>Ten a la mano los siguientes documentos y materiales. El proceso toma aproximadamente <strong>10-15 minutos</strong>.</p>
-    </div>
-
-    <div style={{ display: 'grid', gap: 10, marginBottom: 20 }}>
-      {[
-        { icon: '🪪', title: 'Identificación oficial', desc: 'INE o licencia de conducir — frente y reverso' },
-        { icon: '🤳', title: 'Selfie con tu INE', desc: 'Foto tuya sosteniendo tu identificación' },
-        { icon: '🏦', title: 'Datos bancarios', desc: 'CLABE interbancaria de 18 dígitos y nombre del banco' },
-        { icon: '📄', title: 'Comprobante de domicilio', desc: 'Recibo de luz, agua o internet — máximo 3 meses de antigüedad' },
-        { icon: '🎥', title: 'Video de prueba de vida', desc: 'Video de 30-60 seg mostrando la fachada de tu domicilio' },
-        { icon: '🧴', title: 'Kit de materiales', desc: 'Shampoo, 4 microfibras, cubeta doble balde y aspiradora portátil' },
-        { icon: '🚗', title: 'Datos de tu vehículo', desc: 'Foto y placa — solo si operarás a más de 2 km de tu domicilio' },
-      ].map((item, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: '#f9fafb', borderRadius: 12, padding: '12px 14px', border: '1px solid #e5e7eb' }}>
-          <span style={{ fontSize: 22, flexShrink: 0 }}>{item.icon}</span>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#1f2937', marginBottom: 2 }}>{item.title}</div>
-            <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>{item.desc}</div>
+        {/* ════ PASO 0 — Bienvenida ════ */}
+        {step === 0 && (
+          <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 48, marginBottom: 8 }}>📋</div>
+              <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1f2937', margin: '0 0 8px' }}>Antes de comenzar</h2>
+              <p style={{ fontSize: 14, color: '#6b7280', margin: 0, lineHeight: 1.6 }}>Ten a la mano los siguientes documentos y materiales. El proceso toma aproximadamente <strong>10-15 minutos</strong>.</p>
+            </div>
+            <div style={{ display: 'grid', gap: 10, marginBottom: 20 }}>
+              {[
+                { icon: '🪪', title: 'Identificación oficial', desc: 'INE o licencia de conducir — frente y reverso' },
+                { icon: '🤳', title: 'Selfie con tu INE', desc: 'Foto tuya sosteniendo tu identificación' },
+                { icon: '🏦', title: 'Datos bancarios', desc: 'CLABE interbancaria de 18 dígitos y nombre del banco' },
+                { icon: '📄', title: 'Comprobante de domicilio', desc: 'Recibo de luz, agua o internet — máximo 3 meses de antigüedad' },
+                { icon: '🎥', title: 'Video de prueba de vida', desc: 'Video de 30-60 seg mostrando la fachada de tu domicilio' },
+                { icon: '🧴', title: 'Kit de materiales', desc: 'Shampoo, 4 microfibras, cubeta doble balde y aspiradora portátil' },
+                { icon: '🚗', title: 'Datos de tu vehículo', desc: 'Foto y placa — solo si operarás a más de 2 km de tu domicilio' },
+              ].map((item, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: '#f9fafb', borderRadius: 12, padding: '12px 14px', border: '1px solid #e5e7eb' }}>
+                  <span style={{ fontSize: 22, flexShrink: 0 }}>{item.icon}</span>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#1f2937', marginBottom: 2 }}>{item.title}</div>
+                    <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>{item.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginBottom: 20 }}>
+              <p style={{ fontSize: 13, color: '#1e40af', margin: 0, lineHeight: 1.5 }}>💡 <strong>Consejo:</strong> Prepara todos los documentos antes de iniciar para completar el registro sin interrupciones.</p>
+            </div>
+            <button onClick={() => setStep(1)} style={{ width: '100%', padding: '15px 0', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
+              ✅ Estoy listo — Comenzar registro
+            </button>
           </div>
-        </div>
-      ))}
-    </div>
+        )}
 
-    <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginBottom: 20 }}>
-      <p style={{ fontSize: 13, color: '#1e40af', margin: 0, lineHeight: 1.5 }}>💡 <strong>Consejo:</strong> Prepara todos los documentos antes de iniciar para completar el registro sin interrupciones.</p>
-    </div>
-
-    <button onClick={() => setStep(1)}
-      style={{ width: '100%', padding: '15px 0', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
-      ✅ Estoy listo — Comenzar registro
-    </button>
-  </div>
-)}
-
-{/* ════ PASO 1 — Datos personales ════ */}
-{step === 1 && (
+        {/* ════ PASO 1 — Datos personales ════ */}
+        {step === 1 && (
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>👤 Datos personales</h2>
             <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 24px' }}>Confirma tu información básica.</p>
@@ -550,8 +597,6 @@ export default function OnboardingView({ onComplete }) {
         {/* ════ PASO 2 — Identidad + Banco ════ */}
         {step === 2 && (
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-
-            {/* 2a: INE frente */}
             {subStep === 1 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🪪 INE — Frente</h2>
@@ -564,8 +609,6 @@ export default function OnboardingView({ onComplete }) {
                 <NavButtons onBack={() => goStep(1)} onNext={() => { if (!ineFrontUrl) { setError('Sube el frente de tu INE.'); return } nextSub() }} />
               </>
             )}
-
-            {/* 2b: INE reverso */}
             {subStep === 2 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🪪 INE — Reverso</h2>
@@ -575,8 +618,6 @@ export default function OnboardingView({ onComplete }) {
                 <NavButtons onBack={prevSub} onNext={() => { if (!ineBackUrl) { setError('Sube el reverso de tu INE.'); return } nextSub() }} />
               </>
             )}
-
-            {/* 2c: Selfie con INE */}
             {subStep === 3 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🤳 Selfie con tu INE</h2>
@@ -589,8 +630,6 @@ export default function OnboardingView({ onComplete }) {
                 <NavButtons onBack={prevSub} onNext={() => { if (!selfieIdUrl) { setError('Sube tu selfie con el INE.'); return } nextSub() }} />
               </>
             )}
-
-            {/* 2d: Datos bancarios */}
             {subStep === 4 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🏦 Datos bancarios</h2>
@@ -630,8 +669,6 @@ export default function OnboardingView({ onComplete }) {
         {/* ════ PASO 3 — Zona de trabajo + Vehículo ════ */}
         {step === 3 && (
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-
-            {/* 3a: Dirección base */}
             {subStep === 1 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🏠 Tu dirección base</h2>
@@ -649,8 +686,7 @@ export default function OnboardingView({ onComplete }) {
                   {geoError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginTop: 8, color: '#dc2626', fontSize: 13 }}>⚠️ {geoError}</div>}
                   {baseLat && baseLng && (
                     <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 12px', marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span>✅</span>
-                      <span style={{ fontSize: 12, color: '#166534' }}>Ubicación registrada: {Number(baseLat).toFixed(4)}, {Number(baseLng).toFixed(4)}</span>
+                      <span>✅</span><span style={{ fontSize: 12, color: '#166534' }}>Ubicación registrada: {Number(baseLat).toFixed(4)}, {Number(baseLng).toFixed(4)}</span>
                     </div>
                   )}
                 </div>
@@ -658,8 +694,6 @@ export default function OnboardingView({ onComplete }) {
                 <NavButtons onBack={() => goStep(2)} onNext={() => { if (!baseAddress.trim()) { setError('Ingresa tu dirección.'); return } nextSub() }} />
               </>
             )}
-
-            {/* 3b: Radio de cobertura + mapa */}
             {subStep === 2 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>📍 Zona de cobertura</h2>
@@ -679,13 +713,10 @@ export default function OnboardingView({ onComplete }) {
                     </div>
                   )}
                 </div>
-                {/* Mapa de cobertura */}
                 {mapUrl ? (
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>🗺️ Tu zona de cobertura aproximada</div>
-                    <img src={mapUrl} alt="zona de cobertura"
-                      style={{ width: '100%', borderRadius: 12, border: '1.5px solid #bfdbfe', maxHeight: 200, objectFit: 'cover' }}
-                      onError={e => { e.target.style.display = 'none' }} />
+                    <img src={mapUrl} alt="zona de cobertura" style={{ width: '100%', borderRadius: 12, border: '1.5px solid #bfdbfe', maxHeight: 200, objectFit: 'cover' }} onError={e => { e.target.style.display = 'none' }} />
                     <p style={{ fontSize: 11, color: '#9ca3af', margin: '6px 0 0' }}>El círculo azul representa tu área de trabajo estimada ({radius} km de radio)</p>
                   </div>
                 ) : baseLat && baseLng && !GOOGLE_MAPS_KEY ? (
@@ -696,15 +727,11 @@ export default function OnboardingView({ onComplete }) {
                 <NavButtons onBack={prevSub} onNext={nextSub} />
               </>
             )}
-
-            {/* 3c: Comprobante + video */}
             {subStep === 3 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>📄 Verificación de domicilio</h2>
                 <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Documentos que confirman que vives donde declaras.</p>
-                <PhotoUpload label="Comprobante de domicilio"
-                  hint="Recibo de luz, agua, internet o estado de cuenta (máximo 3 meses de antigüedad). JPG, PNG o PDF."
-                  icon="📄" value={proofAddressUrl} onChange={setProofAddressUrl} accept="image/*,.pdf" maxMB={15} />
+                <PhotoUpload label="Comprobante de domicilio" hint="Recibo de luz, agua, internet o estado de cuenta (máximo 3 meses de antigüedad). JPG, PNG o PDF." icon="📄" value={proofAddressUrl} onChange={setProofAddressUrl} accept="image/*,.pdf" maxMB={15} />
                 <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
                   <p style={{ fontSize: 13, fontWeight: 700, color: '#854d0e', margin: '0 0 6px' }}>🎬 Video de prueba de vida (30-60 segundos):</p>
                   {['1. Sal afuera de tu domicilio', '2. Muestra la fachada y el número de tu casa', '3. Di en voz alta tu nombre y la fecha de hoy', '4. Entra al domicilio brevemente'].map(i => (
@@ -717,8 +744,6 @@ export default function OnboardingView({ onComplete }) {
                 <NavButtons onBack={prevSub} onNext={() => { if (!proofAddressUrl) { setError('Sube tu comprobante de domicilio.'); return } if (!proofLifeUrl) { setError('Sube el video de prueba de vida.'); return } nextSub() }} />
               </>
             )}
-
-            {/* 3d: Días y horario */}
             {subStep === 4 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🗓️ Días y horario</h2>
@@ -753,8 +778,6 @@ export default function OnboardingView({ onComplete }) {
                 }} nextLabel={radius > 2 ? 'Continuar →' : 'Guardar y continuar →'} nextColor={radius > 2 ? '#3b82f6' : '#10b981'} />
               </>
             )}
-
-            {/* 3e: Vehículo (solo si radio > 2km) */}
             {subStep === 5 && radius > 2 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🚗 Tu medio de transporte</h2>
@@ -762,12 +785,7 @@ export default function OnboardingView({ onComplete }) {
                 <div style={{ marginBottom: 16 }}>
                   <label style={lbl}>Tipo de transporte *</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
-                    {[
-                      { value: 'auto',              label: '🚗 Automóvil' },
-                      { value: 'motocicleta',       label: '🏍️ Motocicleta' },
-                      { value: 'camioneta',         label: '🚐 Camioneta' },
-                      { value: 'bicicleta_electrica', label: '⚡ Bici eléctrica' },
-                    ].map(opt => (
+                    {[{ value: 'auto', label: '🚗 Automóvil' }, { value: 'motocicleta', label: '🏍️ Motocicleta' }, { value: 'camioneta', label: '🚐 Camioneta' }, { value: 'bicicleta_electrica', label: '⚡ Bici eléctrica' }].map(opt => (
                       <button key={opt.value} onClick={() => setVehicleType(opt.value)}
                         style={{ padding: '10px 16px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: 'none', background: vehicleType === opt.value ? '#3b82f6' : '#f3f4f6', color: vehicleType === opt.value ? '#fff' : '#374151', minHeight: 40 }}>
                         {opt.label}
@@ -776,9 +794,7 @@ export default function OnboardingView({ onComplete }) {
                   </div>
                   <p style={{ fontSize: 11, color: '#9ca3af', margin: '4px 0 0' }}>Transporte público y bicicleta convencional no aplican para zonas mayores a 2 km.</p>
                 </div>
-                <PhotoUpload label="Foto del vehículo"
-                  hint="La placa debe ser legible en la fotografía."
-                  icon="🚗" value={vehiclePhotoUrl} onChange={setVehiclePhotoUrl} capture="environment" />
+                <PhotoUpload label="Foto del vehículo" hint="La placa debe ser legible en la fotografía." icon="🚗" value={vehiclePhotoUrl} onChange={setVehiclePhotoUrl} capture="environment" />
                 <div style={{ marginBottom: 8 }}>
                   <label style={lbl}>Número de placa *</label>
                   <input style={{ ...inp, textTransform: 'uppercase', fontFamily: 'monospace' }} placeholder="Ej: ABC-123-D" value={vehiclePlate} onChange={e => setVehiclePlate(e.target.value.toUpperCase())} maxLength={10} />
@@ -811,8 +827,6 @@ export default function OnboardingView({ onComplete }) {
         {/* ════ PASO 5 — Contrato ════ */}
         {step === 5 && (
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-
-            {/* 5a: Encuesta + Contrato */}
             {subStep === 1 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>📋 Tu experiencia</h2>
@@ -840,14 +854,10 @@ export default function OnboardingView({ onComplete }) {
                 <NavButtons onBack={() => goStep(4)} onNext={nextSub} />
               </>
             )}
-
-            {/* 5b: Contrato digital */}
             {subStep === 2 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>📋 Contrato de Operador</h2>
                 <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Lee el contrato con tus datos y fírmalo digitalmente.</p>
-
-                {/* Contrato generado */}
                 <div style={{ background: '#f9fafb', border: '1.5px solid #e5e7eb', borderRadius: 12, padding: '16px 18px', marginBottom: 16, maxHeight: 280, overflowY: 'auto', fontSize: 13, color: '#374151', lineHeight: 1.7 }}>
                   <div style={{ textAlign: 'center', marginBottom: 12 }}>
                     <div style={{ fontSize: 16, fontWeight: 800, color: '#1f2937' }}>CONTRATO DE PRESTACIÓN DE SERVICIOS</div>
@@ -864,7 +874,6 @@ export default function OnboardingView({ onComplete }) {
                   <p style={{ fontSize: 12, color: '#6b7280' }}>Al firmar este contrato, el Operador declara que toda la información proporcionada durante el proceso de registro es verídica y acepta los términos y condiciones aquí establecidos.</p>
                 </div>
 
-                {/* Checkbox de aceptación */}
                 <div style={{ background: termsAccepted ? '#f0fdf4' : '#f9fafb', border: `1.5px solid ${termsAccepted ? '#bbf7d0' : '#e5e7eb'}`, borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                     <button onClick={() => setTermsAccepted(!termsAccepted)}
@@ -878,15 +887,23 @@ export default function OnboardingView({ onComplete }) {
                   </div>
                 </div>
 
-                {/* Firma digital */}
                 <div style={{ marginBottom: 16 }}>
                   <label style={{ ...lbl, marginBottom: 10 }}>✍️ Firma digital <span style={{ color: '#ef4444' }}>*</span></label>
                   <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 10px' }}>Dibuja tu firma con el dedo o con el mouse en el área de abajo.</p>
                   <SignaturePad onSign={setSignature} signed={!!signature} />
-                  {signature && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 12px', marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span>✅</span><span style={{ fontSize: 12, color: '#166534' }}>Firma registrada correctamente</span>
-                  </div>}
+                  {signature && (
+                    <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 12px', marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span>✅</span><span style={{ fontSize: 12, color: '#166534' }}>Firma registrada — se guardará al enviar</span>
+                    </div>
+                  )}
                 </div>
+
+                {uploadingSignature && (
+                  <div style={{ background: '#eff6ff', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 16, height: 16, border: '2px solid #bfdbfe', borderTop: '2px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, color: '#1e40af', fontWeight: 600 }}>Subiendo firma digital...</span>
+                  </div>
+                )}
 
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
 
@@ -919,6 +936,7 @@ export default function OnboardingView({ onComplete }) {
                 { label: 'Video de prueba de vida',  done: !!profile?.proof_of_life_video_url },
                 { label: 'Kit de materiales',        done: !!profile?.kit_photo_url },
                 { label: 'Contrato firmado',         done: !!profile?.terms_accepted_at },
+                { label: 'Firma digital persistida', done: !!profile?.signature_url },
               ].map(item => (
                 <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                   <span style={{ fontSize: 14 }}>{item.done ? '✅' : '⏳'}</span>
@@ -927,45 +945,48 @@ export default function OnboardingView({ onComplete }) {
                 </div>
               ))}
             </div>
+
             {profile?.operator_status === 'aprobado' && (
               <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
                 <p style={{ fontSize: 15, fontWeight: 700, color: '#166534', margin: 0 }}>🎉 ¡Tu cuenta está activa! Ya puedes recibir servicios.</p>
               </div>
             )}
-            {profile?.operator_status === 'docs_requeridos' && Array.isArray(profile?.rejected_documents) && profile.rejected_documents.length > 0 && (
-  <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
-    <p style={{ fontSize: 15, fontWeight: 700, color: '#dc2626', margin: '0 0 12px' }}>⚠️ Documentos a corregir</p>
-    <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 12px', lineHeight: 1.5 }}>El administrador revisó tu solicitud y necesita que corrijas los siguientes documentos:</p>
-    <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
-      {profile.rejected_documents.map((doc, i) => (
-        <div key={i} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #fecaca', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-          <span style={{ fontSize: 18, flexShrink: 0 }}>{doc.icon}</span>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>{doc.label}</div>
-            {doc.reason && <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{doc.reason}</div>}
-          </div>
-        </div>
-      ))}
-    </div>
-    <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#1e40af' }}>
-      💡 Solo necesitas corregir los documentos marcados arriba. Tu demás información está guardada.
-    </div>
-    <button onClick={() => {
-      const minStep = Math.min(...profile.rejected_documents.map(d => d.step || 1))
-      goStep(minStep)
-    }} style={{ width: '100%', padding: '13px 0', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', minHeight: 50 }}>
-      ✏️ Corregir documentos →
-    </button>
-  </div>
-)}
 
-{profile?.operator_status === 'rechazado' && profile?.rejection_reason && (
-  <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
-    <p style={{ fontSize: 14, fontWeight: 700, color: '#dc2626', margin: '0 0 6px' }}>❌ Solicitud rechazada</p>
-    <p style={{ fontSize: 13, color: '#991b1b', margin: 0, lineHeight: 1.5 }}>{profile.rejection_reason}</p>
-    <button onClick={() => goStep(1)} style={{ marginTop: 12, padding: '10px 20px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 44 }}>Corregir y reenviar</button>
-  </div>
-)}
+            {profile?.operator_status === 'docs_requeridos' && Array.isArray(profile?.rejected_documents) && profile.rejected_documents.length > 0 && (
+              <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
+                <p style={{ fontSize: 15, fontWeight: 700, color: '#dc2626', margin: '0 0 12px' }}>⚠️ Documentos a corregir</p>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 12px', lineHeight: 1.5 }}>El administrador revisó tu solicitud y necesita que corrijas los siguientes documentos:</p>
+                <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
+                  {profile.rejected_documents.map((doc, i) => (
+                    <div key={i} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #fecaca', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <span style={{ fontSize: 18, flexShrink: 0 }}>{doc.icon}</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>{doc.label}</div>
+                        {doc.reason && <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{doc.reason}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#1e40af' }}>
+                  💡 Solo necesitas corregir los documentos marcados arriba. Tu demás información está guardada.
+                </div>
+                <button onClick={() => {
+                  const minStep = Math.min(...profile.rejected_documents.map(d => d.step || 1))
+                  goStep(minStep)
+                }} style={{ width: '100%', padding: '13px 0', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', minHeight: 50 }}>
+                  ✏️ Corregir documentos →
+                </button>
+              </div>
+            )}
+
+            {profile?.operator_status === 'rechazado' && profile?.rejection_reason && (
+              <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
+                <p style={{ fontSize: 14, fontWeight: 700, color: '#dc2626', margin: '0 0 6px' }}>❌ Solicitud rechazada</p>
+                <p style={{ fontSize: 13, color: '#991b1b', margin: 0, lineHeight: 1.5 }}>{profile.rejection_reason}</p>
+                <button onClick={() => goStep(1)} style={{ marginTop: 12, padding: '10px 20px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 44 }}>Corregir y reenviar</button>
+              </div>
+            )}
+
             {profile?.operator_status === 'aprobado' && (
               <button onClick={onComplete} style={{ width: '100%', padding: '15px 0', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
                 Ir al Panel de Operador →
