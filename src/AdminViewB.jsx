@@ -509,16 +509,16 @@ const AdminViewB = ({
                   boxSizing: 'border-box', width: '100%',
                 }}>
 
-                  {/* ── Fila superior: avatar + info + botones ── */}
+                  {/* ── Fila superior: avatar + info ── */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', minWidth: 0 }}>
 
                     {/* Avatar compacto */}
                     <div style={{ position: 'relative', flexShrink: 0 }}>
                       {op.selfie_with_id_url ? (
                         <img src={getPhotoStorageUrl(op.selfie_with_id_url)} alt="selfie"
-                          style={{ height: isMobile ? 36 : 44, width: isMobile ? 36 : 44, borderRadius: '50%', objectFit: 'cover', border: '2px solid #fde68a', display: 'block' }} />
+                          style={{ height: 44, width: 44, borderRadius: '50%', objectFit: 'cover', border: '2px solid #fde68a', display: 'block' }} />
                       ) : (
-                        <div style={{ height: isMobile ? 36 : 44, width: isMobile ? 36 : 44, borderRadius: '50%', background: 'linear-gradient(135deg,#f59e0b,#fbbf24)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: isMobile ? 15 : 18, flexShrink: 0 }}>
+                        <div style={{ height: 44, width: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#f59e0b,#fbbf24)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 18, flexShrink: 0 }}>
                           {op.full_name?.charAt(0) || '?'}
                         </div>
                       )}
@@ -529,38 +529,38 @@ const AdminViewB = ({
 
                     {/* Info — sin overflow */}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, color: '#1f2937', fontSize: isMobile ? 13 : 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {op.full_name || 'Sin nombre'}
                       </div>
-                      <div style={{ fontSize: isMobile ? 11 : 12, color: '#6b7280' }}>{op.phone || '—'}</div>
+                      <div style={{ fontSize: 12, color: '#6b7280' }}>{op.phone || '—'}</div>
                       {op.base_address && (
                         <div style={{ fontSize: 10, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           📍 {op.base_address}
                         </div>
                       )}
                     </div>
+                  </div>
 
-                    {/* Botones: revisar + eliminar — siempre visibles */}
-                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      <button type="button" onClick={() => openReviewModal(op)} style={{
-                        padding: isMobile ? '6px 10px' : '8px 14px',
-                        background: fromCorrection ? 'linear-gradient(135deg,#3b82f6,#1e40af)' : isDocsRequired ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'linear-gradient(135deg,#f59e0b,#d97706)',
-                        border: 'none', borderRadius: 8, color: '#fff',
-                        fontSize: isMobile ? 11 : 12, fontWeight: 700, cursor: 'pointer',
-                        whiteSpace: 'nowrap', minHeight: 44, minWidth: 44,
-                        WebkitTapHighlightColor: 'transparent',
-                        touchAction: 'manipulation',
-                      }}>
-                        {fromCorrection ? '🔍 Corr.' : isDocsRequired ? '⚠️ Ver' : '🔍 Revisar'}
-                      </button>
-                      <button type="button" onClick={() => { setDeleteModal(op); setDeleteMode('deactivate'); }} style={{
-                        background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
-                        color: '#dc2626', fontSize: 15, cursor: 'pointer',
-                        width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                        WebkitTapHighlightColor: 'transparent',
-                        touchAction: 'manipulation',
-                      }}>🗑</button>
-                    </div>
+                  {/* ── Botones: ancho completo, siempre visibles ── */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 44px', gap: 6, width: '100%' }}>
+                    <button type="button" onClick={() => openReviewModal(op)} style={{
+                      padding: '11px 0',
+                      background: fromCorrection ? 'linear-gradient(135deg,#3b82f6,#1e40af)' : isDocsRequired ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'linear-gradient(135deg,#f59e0b,#d97706)',
+                      border: 'none', borderRadius: 8, color: '#fff',
+                      fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                      width: '100%', minHeight: 44,
+                      WebkitTapHighlightColor: 'transparent',
+                      touchAction: 'manipulation',
+                    }}>
+                      {fromCorrection ? '🔍 Revisar correcciones' : isDocsRequired ? '⚠️ Ver pendientes' : '🔍 Revisar'}
+                    </button>
+                    <button type="button" onClick={() => { setDeleteModal(op); setDeleteMode('deactivate'); }} style={{
+                      background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
+                      color: '#dc2626', fontSize: 16, cursor: 'pointer',
+                      width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      WebkitTapHighlightColor: 'transparent',
+                      touchAction: 'manipulation',
+                    }}>🗑</button>
                   </div>
 
                   {/* Badge de estado — debajo, ocupa solo lo que necesita */}
