@@ -482,7 +482,7 @@ const AdminViewB = ({
 
       {/* ── PENDIENTES ── */}
       {showPending && filteredPending.length > 0 && (
-        <div style={{ background: '#fffbeb', borderRadius: 14, border: '2px solid #fde68a', padding: isMobile ? '12px' : '20px 24px', overflow: 'hidden', boxSizing: 'border-box' }}>
+        <div style={{ background: '#fffbeb', borderRadius: 14, border: '2px solid #fde68a', padding: isMobile ? '12px' : '20px 24px', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: '#92400e', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
               {activeChip === 'correcciones' ? '⚠️ Esperando correcciones' : '🕐 Pendientes de Aprobación'}
