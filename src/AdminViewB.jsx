@@ -176,6 +176,13 @@ const AdminViewB = ({
     setRejectedDocs([]); setReviewError(''); setReviewDocTab('personal'); setReviewModal(true);
   };
 
+  // Docs que el operador acaba de corregir (status = 'corregido')
+  const isDocCorrected = (key) => {
+    if (!reviewingOp) return false;
+    return (reviewingOp.rejected_documents || []).some(d => d.key === key && d.status === 'corregido');
+  };
+  const getCorrectedDocs = (op) => (op?.rejected_documents || []).filter(d => d.status === 'corregido');
+
   const toggleRejectedDoc = (doc) => {
     setRejectedDocs(prev => prev.find(d => d.key === doc.key) ? prev.filter(d => d.key !== doc.key) : [...prev, { ...doc, reason: '' }]);
   };
@@ -703,6 +710,30 @@ const AdminViewB = ({
             </div>
 
             <div style={{ padding: isMobile ? '16px' : 24, maxHeight: isMobile ? '65vh' : '60vh', overflowY: 'auto' }}>
+
+              {/* Banner docs corregidos — solo visible cuando vienen de corrección */}
+              {(() => {
+                const corrected = getCorrectedDocs(reviewingOp);
+                if (corrected.length === 0) return null;
+                return (
+                  <div style={{ background: '#eff6ff', border: '1.5px solid #3b82f6', borderRadius: 12, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <span style={{ fontSize: 20, flexShrink: 0 }}>🔄</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1e40af', marginBottom: 4 }}>
+                        El operador corrigió {corrected.length} documento{corrected.length !== 1 ? 's' : ''} — revisa los marcados en azul
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {corrected.map(doc => (
+                          <span key={doc.key} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: '#dbeafe', color: '#1e40af', fontWeight: 700, border: '1px solid #93c5fd' }}>
+                            {doc.icon} {doc.label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {reviewDocTab === 'personal' && (
                 <div style={{ background: '#f9fafb', borderRadius: 12, padding: '14px 16px', border: '1px solid #e5e7eb' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', marginBottom: 10 }}>👤 Datos Personales</div>
@@ -717,7 +748,13 @@ const AdminViewB = ({
               {reviewDocTab === 'identidad' && (
                 <div style={{ display: 'grid', gap: 16 }}>
                   {[{ field: 'ine_front_url', label: '🪪 INE — Frente' }, { field: 'ine_back_url', label: '🪪 INE — Reverso' }, { field: 'selfie_with_id_url', label: '🤳 Selfie con INE' }].map(({ field, label }) => (
-                    <div key={field}><div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>{label}</div><DocImage url={reviewingOp[field]} label={label} rejected={isDocRejected(field)} /></div>
+                    <div key={field}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>{label}</div>
+                        {isDocCorrected(field) && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: '#dbeafe', color: '#1e40af', fontWeight: 700, border: '1px solid #93c5fd' }}>🔄 Recién corregido</span>}
+                      </div>
+                      <DocImage url={reviewingOp[field]} label={label} rejected={isDocRejected(field)} />
+                    </div>
                   ))}
                 </div>
               )}
@@ -744,8 +781,20 @@ const AdminViewB = ({
                       return mapUrl ? <div style={{ marginTop: 10 }}><img src={mapUrl} alt="zona" style={{ width: '100%', borderRadius: 10, border: '1.5px solid #bae6fd', maxHeight: 160, objectFit: 'cover' }} onError={e => { e.target.style.display = 'none'; }} /></div> : null;
                     })()}
                   </div>
-                  <div><div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>📄 Comprobante de Domicilio</div><DocImage url={reviewingOp.proof_of_address_url} label="Comprobante" rejected={isDocRejected('proof_of_address_url')} /></div>
-                  <div><div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>🎥 Video de Prueba de Vida</div><DocImage url={reviewingOp.proof_of_life_video_url} label="Video de vida" rejected={isDocRejected('proof_of_life_video_url')} /></div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>📄 Comprobante de Domicilio</div>
+                      {isDocCorrected('proof_of_address_url') && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: '#dbeafe', color: '#1e40af', fontWeight: 700, border: '1px solid #93c5fd' }}>🔄 Recién corregido</span>}
+                    </div>
+                    <DocImage url={reviewingOp.proof_of_address_url} label="Comprobante" rejected={isDocRejected('proof_of_address_url')} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>🎥 Video de Prueba de Vida</div>
+                      {isDocCorrected('proof_of_life_video_url') && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: '#dbeafe', color: '#1e40af', fontWeight: 700, border: '1px solid #93c5fd' }}>🔄 Recién corregido</span>}
+                    </div>
+                    <DocImage url={reviewingOp.proof_of_life_video_url} label="Video de vida" rejected={isDocRejected('proof_of_life_video_url')} />
+                  </div>
                 </div>
               )}
 
@@ -759,8 +808,20 @@ const AdminViewB = ({
                       ))}
                     </div>
                   </div>
-                  <div><div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>📸 Foto del Vehículo</div><DocImage url={reviewingOp.vehicle_photo_url} label="Vehículo" rejected={isDocRejected('vehicle_photo_url')} /></div>
-                  <div><div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>📸 Kit de Materiales</div><DocImage url={reviewingOp.kit_photo_url} label="Kit" rejected={isDocRejected('kit_photo_url')} /></div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>📸 Foto del Vehículo</div>
+                      {isDocCorrected('vehicle_photo_url') && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: '#dbeafe', color: '#1e40af', fontWeight: 700, border: '1px solid #93c5fd' }}>🔄 Recién corregido</span>}
+                    </div>
+                    <DocImage url={reviewingOp.vehicle_photo_url} label="Vehículo" rejected={isDocRejected('vehicle_photo_url')} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>📸 Kit de Materiales</div>
+                      {isDocCorrected('kit_photo_url') && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: '#dbeafe', color: '#1e40af', fontWeight: 700, border: '1px solid #93c5fd' }}>🔄 Recién corregido</span>}
+                    </div>
+                    <DocImage url={reviewingOp.kit_photo_url} label="Kit" rejected={isDocRejected('kit_photo_url')} />
+                  </div>
                 </div>
               )}
 

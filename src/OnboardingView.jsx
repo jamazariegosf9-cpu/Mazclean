@@ -121,14 +121,14 @@ async function uploadSignature({ base64DataUrl, userId }) {
 }
 
 // ── Componente PhotoUpload ────────────────────────────────────────────────────
-function PhotoUpload({ label, hint, icon, value, onChange, accept = 'image/*', capture, maxMB = 50 }) {
+function PhotoUpload({ label, hint, icon, value, onChange, accept = 'image/*', capture, maxMB = 50, disabled = false }) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress]   = useState(0)
   const [localErr, setLocalErr]   = useState('')
   const { user } = useAuth()
 
   const handleFile = async (file) => {
-    if (!file) return
+    if (!file || disabled) return
     setUploading(true); setLocalErr(''); setProgress(0)
     try {
       if (file.size > maxMB * 1024 * 1024) throw new Error(`El archivo no debe pesar más de ${maxMB}MB.`)
@@ -173,9 +173,9 @@ function PhotoUpload({ label, hint, icon, value, onChange, accept = 'image/*', c
           <span style={{ position: 'absolute', top: 8, right: 8, background: '#10b981', color: '#fff', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>✅ Guardado</span>
         </div>
       ) : (
-        <div style={{ width: '100%', height: 110, background: '#f9fafb', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 10, border: '2px dashed #e5e7eb' }}>
-          <span style={{ fontSize: 32 }}>{icon}</span>
-          <span style={{ fontSize: 12, color: '#9ca3af', marginTop: 6 }}>Sin archivo aún</span>
+        <div style={{ width: '100%', height: 110, background: disabled ? '#f3f4f6' : '#f9fafb', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 10, border: `2px dashed ${disabled ? '#d1d5db' : '#e5e7eb'}` }}>
+          <span style={{ fontSize: 32 }}>{disabled ? '🔒' : icon}</span>
+          <span style={{ fontSize: 12, color: '#9ca3af', marginTop: 6 }}>{disabled ? 'No editable' : 'Sin archivo aún'}</span>
         </div>
       )}
 
@@ -193,9 +193,9 @@ function PhotoUpload({ label, hint, icon, value, onChange, accept = 'image/*', c
 
       {localErr && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#dc2626', fontSize: 13 }}>⚠️ {localErr}</div>}
 
-      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: uploading ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', pointerEvents: uploading ? 'none' : 'auto', minHeight: 50, flexShrink: 0 }}>
-        {icon} {value ? 'Cambiar archivo' : 'Seleccionar archivo'}
-        <input type="file" accept={accept} capture={capture} style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }} />
+      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: disabled ? '#e5e7eb' : uploading ? '#f3f4f6' : '#6366f1', color: disabled ? '#9ca3af' : uploading ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 700, cursor: disabled ? 'not-allowed' : uploading ? 'not-allowed' : 'pointer', pointerEvents: disabled || uploading ? 'none' : 'auto', minHeight: 50, flexShrink: 0 }}>
+        {disabled ? '🔒 Documento bloqueado' : icon + ' ' + (value ? 'Cambiar archivo' : 'Seleccionar archivo')}
+        <input type="file" accept={accept} capture={capture} style={{ display: 'none' }} onChange={e => { if (e.target.files[0] && !disabled) handleFile(e.target.files[0]) }} />
       </label>
     </div>
   )
@@ -361,28 +361,31 @@ export default function OnboardingView({ onComplete }) {
   const saveStep = async (data, next) => {
     setSaving(true); setError('')
     try {
-      // Si el operador está en modo corrección, limpiar los documentos
-      // corregidos de rejected_documents y volver a pending_review cuando queden 0
+      // Si el operador está en modo corrección, marcar como 'corregido' los docs
+      // que acaba de subir — el admin verá cuáles fueron revisados recientemente
       let extraData = {}
       if (profile?.operator_status === 'docs_requeridos' &&
           Array.isArray(profile?.rejected_documents) &&
           profile.rejected_documents.length > 0) {
-        // Determinar qué campos se están guardando en este paso
         const keysBeingSaved = Object.keys(data)
-        const remaining = profile.rejected_documents.filter(doc =>
-          !keysBeingSaved.includes(doc.key)
+        // Marcar como corregidos los que se acaban de guardar
+        const updatedDocs = profile.rejected_documents.map(doc =>
+          keysBeingSaved.includes(doc.key)
+            ? { ...doc, status: 'corregido', corrected_at: new Date().toISOString() }
+            : doc
         )
+        const stillPending = updatedDocs.filter(d => d.status !== 'corregido')
         extraData = {
-          rejected_documents: remaining,
+          rejected_documents: updatedDocs,
           // Si ya no quedan docs pendientes → volver a pending_review para que admin revise
-          ...(remaining.length === 0 ? {
+          ...(stillPending.length === 0 ? {
             operator_status: 'pending_review',
             onboarding_done: true,
             onboarding_step: 6,
           } : {}),
         }
-        // Si quedan docs, no avanzar a paso 6 todavía — mostrar pantalla de corrección
-        if (remaining.length > 0) {
+        // Si quedan docs pendientes, mantener en pantalla de corrección
+        if (stillPending.length > 0) {
           next = 6
         }
       }
@@ -401,6 +404,45 @@ export default function OnboardingView({ onComplete }) {
   const nextSub = () => { setError(''); setSubStep(s => s + 1) }
   const prevSub = () => { setError(''); setSubStep(s => s - 1) }
   const goStep  = (n) => { setStep(n); setSubStep(1); setError('') }
+
+  // ── Helpers de seguridad ──────────────────────────────────────────────────
+  // Docs que el operador puede editar en modo corrección
+  const getRejectedKeys = () => {
+    if (profile?.operator_status !== 'docs_requeridos') return []
+    return (profile?.rejected_documents || [])
+      .filter(d => d.status !== 'corregido')
+      .map(d => d.key)
+  }
+
+  // ¿Puede el operador editar este documento?
+  const canEdit = (docKey) => {
+    if (profile?.operator_status === 'aprobado') return false
+    if (profile?.operator_status === 'docs_requeridos') {
+      return getRejectedKeys().includes(docKey)
+    }
+    return true // pendiente / pending_review → libre
+  }
+
+  // ¿Puede el operador navegar a este paso?
+  const canNavigateTo = (targetStep) => {
+    if (profile?.operator_status === 'aprobado') return false
+    if (profile?.operator_status === 'docs_requeridos') {
+      // Solo puede ir al paso 6 (pantalla corrección) o a pasos con docs rechazados
+      const rejectedSteps = new Set(
+        (profile?.rejected_documents || [])
+          .filter(d => d.status !== 'corregido')
+          .map(d => d.step)
+      )
+      return targetStep === 6 || rejectedSteps.has(targetStep)
+    }
+    return true
+  }
+
+  // goStep seguro — redirige a paso 6 si el paso no está permitido
+  const goStepSafe = (n) => {
+    if (!canNavigateTo(n)) { setStep(6); setSubStep(1); setError(''); return }
+    setStep(n); setSubStep(1); setError('')
+  }
 
   const handleGeolocate = () => {
     if (!navigator.geolocation) { setGeoError('Tu navegador no soporta geolocalización.'); return }
@@ -607,9 +649,15 @@ export default function OnboardingView({ onComplete }) {
             <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginBottom: 20 }}>
               <p style={{ fontSize: 13, color: '#1e40af', margin: 0, lineHeight: 1.5 }}>💡 <strong>Consejo:</strong> Prepara todos los documentos antes de iniciar para completar el registro sin interrupciones.</p>
             </div>
-            <button onClick={() => setStep(1)} style={{ width: '100%', padding: '15px 0', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
-              ✅ Estoy listo — Comenzar registro
-            </button>
+            {profile?.operator_status === 'aprobado' ? (
+              <button onClick={onComplete} style={{ width: '100%', padding: '15px 0', background: '#10b981', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
+                Ir al Panel de Operador →
+              </button>
+            ) : (
+              <button onClick={() => setStep(1)} style={{ width: '100%', padding: '15px 0', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
+                ✅ Estoy listo — Comenzar registro
+              </button>
+            )}
           </div>
         )}
 
@@ -651,16 +699,16 @@ export default function OnboardingView({ onComplete }) {
                 <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
                   {['Foto legible sin reflejos ni sombras','Todos los datos visibles','No recortada ni doblada'].map(r => <div key={r} style={{ fontSize: 12, color: '#1e40af', marginBottom: 3 }}>• {r}</div>)}
                 </div>
-                <PhotoUpload label="INE Frente" icon="🪪" value={ineFrontUrl} onChange={setIneFrontUrl} capture="environment" />
+                <PhotoUpload label="INE Frente" icon="🪪" value={ineFrontUrl} onChange={setIneFrontUrl} capture="environment" disabled={!canEdit('ine_front_url')} />
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
-                <NavButtons onBack={() => goStep(1)} onNext={() => { if (!ineFrontUrl) { setError('Sube el frente de tu INE.'); return } nextSub() }} />
+                <NavButtons onBack={() => goStepSafe(1)} onNext={() => { if (!ineFrontUrl) { setError('Sube el frente de tu INE.'); return } nextSub() }} />
               </>
             )}
             {subStep === 2 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🪪 INE — Reverso</h2>
                 <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Ahora el reverso de tu INE o licencia.</p>
-                <PhotoUpload label="INE Reverso" hint="Asegúrate que el código de barras sea visible." icon="🪪" value={ineBackUrl} onChange={setIneBackUrl} capture="environment" />
+                <PhotoUpload label="INE Reverso" hint="Asegúrate que el código de barras sea visible." icon="🪪" value={ineBackUrl} onChange={setIneBackUrl} capture="environment" disabled={!canEdit('ine_back_url')} />
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
                 <NavButtons onBack={prevSub} onNext={() => { if (!ineBackUrl) { setError('Sube el reverso de tu INE.'); return } nextSub() }} />
               </>
@@ -672,7 +720,7 @@ export default function OnboardingView({ onComplete }) {
                 <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
                   {['Sostén tu INE con la foto hacia la cámara','Tu cara y el INE deben verse claramente','Buena iluminación, sin filtros ni lentes de sol'].map(r => <div key={r} style={{ fontSize: 12, color: '#854d0e', marginBottom: 3 }}>• {r}</div>)}
                 </div>
-                <PhotoUpload label="Selfie con INE" icon="🤳" value={selfieIdUrl} onChange={setSelfieIdUrl} capture="user" />
+                <PhotoUpload label="Selfie con INE" icon="🤳" value={selfieIdUrl} onChange={setSelfieIdUrl} capture="user" disabled={!canEdit('selfie_with_id_url')} />
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
                 <NavButtons onBack={prevSub} onNext={() => { if (!selfieIdUrl) { setError('Sube tu selfie con el INE.'); return } nextSub() }} />
               </>
@@ -684,9 +732,10 @@ export default function OnboardingView({ onComplete }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                   <div>
                     <label style={lbl}>CLABE interbancaria (18 dígitos) *</label>
-                    <input style={{ ...inp, borderColor: clabeError ? '#fca5a5' : '#e5e7eb', fontFamily: 'monospace' }}
+                    <input style={{ ...inp, borderColor: clabeError ? '#fca5a5' : '#e5e7eb', fontFamily: 'monospace', background: !canEdit('clabe') ? '#f3f4f6' : '#fff' }}
                       placeholder="012345678901234567" type="tel" maxLength={18}
-                      value={clabe} onChange={e => { setClabe(e.target.value.replace(/\D/g,'')); setClabeError('') }} />
+                      disabled={!canEdit('clabe')}
+                      value={clabe} onChange={e => { if(canEdit('clabe')){ setClabe(e.target.value.replace(/\D/g,'')); setClabeError('') }}} />
                     {clabeError && <p style={{ fontSize: 12, color: '#dc2626', margin: '4px 0 0' }}>⚠️ {clabeError}</p>}
                     {clabe.length === 18 && !clabeError && validarCLABE(clabe) && <p style={{ fontSize: 12, color: '#10b981', margin: '4px 0 0' }}>✅ CLABE válida</p>}
                     {profile?.clabe && !clabe && <p style={{ fontSize: 12, color: '#6b7280', margin: '4px 0 0' }}>CLABE registrada: {profile.clabe}</p>}
@@ -738,7 +787,7 @@ export default function OnboardingView({ onComplete }) {
                   )}
                 </div>
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
-                <NavButtons onBack={() => goStep(2)} onNext={() => { if (!baseAddress.trim()) { setError('Ingresa tu dirección.'); return } nextSub() }} />
+                <NavButtons onBack={() => goStepSafe(2)} onNext={() => { if (!baseAddress.trim()) { setError('Ingresa tu dirección.'); return } nextSub() }} />
               </>
             )}
             {subStep === 2 && (
@@ -778,7 +827,7 @@ export default function OnboardingView({ onComplete }) {
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>📄 Verificación de domicilio</h2>
                 <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Documentos que confirman que vives donde declaras.</p>
-                <PhotoUpload label="Comprobante de domicilio" hint="Recibo de luz, agua, internet o estado de cuenta (máximo 3 meses de antigüedad). JPG, PNG o PDF." icon="📄" value={proofAddressUrl} onChange={setProofAddressUrl} accept="image/*,.pdf" maxMB={15} />
+                <PhotoUpload label="Comprobante de domicilio" hint="Recibo de luz, agua, internet o estado de cuenta (máximo 3 meses de antigüedad). JPG, PNG o PDF." icon="📄" value={proofAddressUrl} onChange={setProofAddressUrl} accept="image/*,.pdf" maxMB={15} disabled={!canEdit('proof_of_address_url')} />
                 <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
                   <p style={{ fontSize: 13, fontWeight: 700, color: '#854d0e', margin: '0 0 6px' }}>🎬 Video de prueba de vida (30-60 segundos):</p>
                   {['1. Sal afuera de tu domicilio', '2. Muestra la fachada y el número de tu casa', '3. Di en voz alta tu nombre y la fecha de hoy', '4. Entra al domicilio brevemente'].map(i => (
@@ -786,7 +835,7 @@ export default function OnboardingView({ onComplete }) {
                   ))}
                   <p style={{ fontSize: 11, color: '#92400e', margin: '6px 0 0', fontStyle: 'italic' }}>MP4 o MOV, máximo 50MB</p>
                 </div>
-                <PhotoUpload label="Video de prueba de vida" icon="🎥" value={proofLifeUrl} onChange={setProofLifeUrl} accept="video/*" maxMB={50} />
+                <PhotoUpload label="Video de prueba de vida" icon="🎥" value={proofLifeUrl} onChange={setProofLifeUrl} accept="video/*" maxMB={50} disabled={!canEdit('proof_of_life_video_url')} />
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
                 <NavButtons onBack={prevSub} onNext={() => { if (!proofAddressUrl) { setError('Sube tu comprobante de domicilio.'); return } if (!proofLifeUrl) { setError('Sube el video de prueba de vida.'); return } nextSub() }} />
               </>
@@ -841,10 +890,10 @@ export default function OnboardingView({ onComplete }) {
                   </div>
                   <p style={{ fontSize: 11, color: '#9ca3af', margin: '4px 0 0' }}>Transporte público y bicicleta convencional no aplican para zonas mayores a 2 km.</p>
                 </div>
-                <PhotoUpload label="Foto del vehículo" hint="La placa debe ser legible en la fotografía." icon="🚗" value={vehiclePhotoUrl} onChange={setVehiclePhotoUrl} capture="environment" />
+                <PhotoUpload label="Foto del vehículo" hint="La placa debe ser legible en la fotografía." icon="🚗" value={vehiclePhotoUrl} onChange={setVehiclePhotoUrl} capture="environment" disabled={!canEdit('vehicle_photo_url')} />
                 <div style={{ marginBottom: 8 }}>
                   <label style={lbl}>Número de placa *</label>
-                  <input style={{ ...inp, textTransform: 'uppercase', fontFamily: 'monospace' }} placeholder="Ej: ABC-123-D" value={vehiclePlate} onChange={e => setVehiclePlate(e.target.value.toUpperCase())} maxLength={10} />
+                  <input style={{ ...inp, textTransform: 'uppercase', fontFamily: 'monospace', background: !canEdit('vehicle_photo_url') ? '#f3f4f6' : '#fff' }} placeholder="Ej: ABC-123-D" value={vehiclePlate} onChange={e => { if(canEdit('vehicle_photo_url')) setVehiclePlate(e.target.value.toUpperCase()) }} disabled={!canEdit('vehicle_photo_url')} maxLength={10} />
                 </div>
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
                 <NavButtons onBack={prevSub} onNext={handleStep3} nextLabel="Guardar y continuar →" nextColor="#10b981" />
@@ -865,9 +914,9 @@ export default function OnboardingView({ onComplete }) {
               ))}
               <p style={{ fontSize: 12, color: '#6b7280', margin: '8px 0 0', fontStyle: 'italic' }}>Recomendados: sellador de llantas, agua propia</p>
             </div>
-            <PhotoUpload label="Foto del kit" hint="Coloca todos los materiales visibles en la foto." icon="📦" value={kitPhotoUrl} onChange={setKitPhotoUrl} capture="environment" />
+            <PhotoUpload label="Foto del kit" hint="Coloca todos los materiales visibles en la foto." icon="📦" value={kitPhotoUrl} onChange={setKitPhotoUrl} capture="environment" disabled={!canEdit('kit_photo_url')} />
             {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
-            <NavButtons onBack={() => goStep(3)} onNext={handleStep4} nextLabel="Guardar y continuar →" nextColor="#10b981" />
+            <NavButtons onBack={() => goStepSafe(3)} onNext={handleStep4} nextLabel="Guardar y continuar →" nextColor="#10b981" />
           </div>
         )}
 
@@ -898,7 +947,7 @@ export default function OnboardingView({ onComplete }) {
                     <p style={{ fontSize: 11, color: '#9ca3af', margin: '4px 0 0', textAlign: 'right' }}>{experienceNotes.length}/500</p>
                   </div>
                 </div>
-                <NavButtons onBack={() => goStep(4)} onNext={nextSub} />
+                <NavButtons onBack={() => goStepSafe(4)} onNext={nextSub} />
               </>
             )}
             {subStep === 2 && (
@@ -970,7 +1019,9 @@ export default function OnboardingView({ onComplete }) {
           const rejDocs = Array.isArray(profile?.rejected_documents) ? profile.rejected_documents : []
 
           // ── A) Documentos a corregir ──────────────────────────────────────
-          if (status === 'docs_requeridos' && rejDocs.length > 0) {
+          // Solo mostrar docs pendientes (no los ya corregidos)
+          const pendingDocs = rejDocs.filter(d => d.status !== 'corregido')
+          if (status === 'docs_requeridos' && pendingDocs.length > 0) {
             const DOC_LOCATION = {
               ine_front_url:           { step: 2, subStep: 1 },
               ine_back_url:            { step: 2, subStep: 2 },
@@ -983,7 +1034,7 @@ export default function OnboardingView({ onComplete }) {
               terms_accepted_at:       { step: 5, subStep: 2 },
             }
             const handleCorrect = () => {
-              const locations = rejDocs.map(d => DOC_LOCATION[d.key] || { step: d.step || 1, subStep: 1 })
+              const locations = pendingDocs.map(d => DOC_LOCATION[d.key] || { step: d.step || 1, subStep: 1 })
               const earliest  = locations.reduce((min, loc) =>
                 loc.step < min.step || (loc.step === min.step && loc.subStep < min.subStep) ? loc : min
               , locations[0])
@@ -1001,7 +1052,7 @@ export default function OnboardingView({ onComplete }) {
                   </p>
                 </div>
                 <div style={{ display: 'grid', gap: 10, marginBottom: 20 }}>
-                  {rejDocs.map((doc, i) => (
+                  {pendingDocs.map((doc, i) => (
                     <div key={i} style={{ background: '#fef2f2', borderRadius: 12, padding: '14px 16px', border: '1.5px solid #fecaca', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                       <span style={{ fontSize: 24, flexShrink: 0 }}>{doc.icon}</span>
                       <div style={{ flex: 1 }}>
