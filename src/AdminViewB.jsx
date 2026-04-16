@@ -418,30 +418,38 @@ const AdminViewB = ({
 
       {/* ── CHIPS + FILTROS ── */}
       <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', padding: isMobile ? '12px' : '16px 20px' }}>
-        {/* Chips — scroll horizontal suave, sin overflow:hidden en padre */}
+
+        {/* Chips — flex-wrap en móvil para evitar scroll horizontal */}
         <div style={{
-          display: 'flex', gap: 8, marginBottom: 14,
-          overflowX: 'auto', paddingBottom: 8,
-          scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', msOverflowStyle: 'none',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 6,
+          marginBottom: 12,
         }}>
           {CHIPS.map(chip => (
             <button key={chip.id} onClick={() => setActiveChip(chip.id)}
               style={{
-                padding: '8px 16px', borderRadius: 20, fontSize: 13, fontWeight: 600,
+                padding: isMobile ? '6px 10px' : '7px 14px',
+                borderRadius: 20,
+                fontSize: isMobile ? 12 : 13,
+                fontWeight: 600,
                 cursor: 'pointer',
                 border: `1.5px solid ${activeChip === chip.id ? chip.color : '#e5e7eb'}`,
                 background: activeChip === chip.id ? chip.color : '#fff',
                 color: activeChip === chip.id ? '#fff' : '#374151',
-                minHeight: 38, display: 'flex', alignItems: 'center', gap: 6,
+                minHeight: 34,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
                 transition: 'all 0.15s',
-                whiteSpace: 'nowrap', flexShrink: 0,
+                whiteSpace: 'nowrap',
               }}>
               {chip.label}
               <span style={{
-                fontSize: 11,
+                fontSize: 10,
                 background: activeChip === chip.id ? 'rgba(255,255,255,0.3)' : '#f3f4f6',
                 color: activeChip === chip.id ? '#fff' : '#6b7280',
-                padding: '1px 7px', borderRadius: 10, fontWeight: 700,
+                padding: '1px 6px', borderRadius: 10, fontWeight: 700,
               }}>
                 {chipCounts[chip.id] || 0}
               </span>
@@ -449,15 +457,15 @@ const AdminViewB = ({
           ))}
         </div>
 
-        {/* Filtros de zona y radio */}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', flexDirection: isMobile ? 'column' : 'row' }}>
-          <div style={{ position: 'relative', flex: 1, minWidth: 0, width: isMobile ? '100%' : 'auto' }}>
+        {/* Filtros de zona y radio — siempre en columna en móvil */}
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 8, alignItems: 'stretch' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
             <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 14 }}>📍</span>
             <input type="text" placeholder="Filtrar por zona o colonia..." value={zoneSearch} onChange={e => setZoneSearch(e.target.value)}
-              style={{ ...inputStyle, paddingLeft: 32, fontSize: 14, minHeight: 40 }} />
+              style={{ ...inputStyle, paddingLeft: 32, fontSize: 14, minHeight: 40, width: '100%' }} />
           </div>
           <select value={radiusFilter} onChange={e => setRadiusFilter(e.target.value)}
-            style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, background: '#fff', cursor: 'pointer', fontFamily: 'inherit', color: '#1f2937', minHeight: 40, width: isMobile ? '100%' : 'auto' }}>
+            style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, background: '#fff', cursor: 'pointer', fontFamily: 'inherit', color: '#1f2937', minHeight: 40, width: '100%', boxSizing: 'border-box' }}>
             <option value="all">🗺 Todos los radios</option>
             <option value="0-5">Hasta 5 km</option>
             <option value="5-10">5 a 10 km</option>
@@ -465,8 +473,8 @@ const AdminViewB = ({
           </select>
           {(zoneSearch || radiusFilter !== 'all') && (
             <button onClick={() => { setZoneSearch(''); setRadiusFilter('all'); }}
-              style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#f3f4f6', color: '#6b7280', fontSize: 13, cursor: 'pointer', minHeight: 40, fontWeight: 600, width: isMobile ? '100%' : 'auto' }}>
-              ✕ Limpiar
+              style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#f3f4f6', color: '#6b7280', fontSize: 13, cursor: 'pointer', minHeight: 40, fontWeight: 600, width: '100%', boxSizing: 'border-box' }}>
+              ✕ Limpiar filtros
             </button>
           )}
         </div>
