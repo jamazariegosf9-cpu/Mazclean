@@ -13,12 +13,6 @@ function validarCLABE(clabe) {
   return (10 - (suma % 10)) % 10 === parseInt(clabe[17])
 }
 
-function validarCURP(curp) {
-  // Formato: 4 letras | 6 dígitos fecha | 1 letra sexo | 2 letras estado | 3 consonantes | 2 dígitos
-  const re = /^[A-Z]{1}[AEIOUX]{1}[A-Z]{2}\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[HMX]{1}(AS|BC|BS|CC|CH|CL|CM|CO|CS|DF|DG|GR|GT|HG|JC|MC|MD|ME|MN|MS|MT|NE|NL|NT|OC|PL|QR|QT|SL|SP|SR|TC|TL|TS|VZ|YN|ZS)[B-DF-HJ-NP-TV-Z]{3}[0-9A-Z]{1}\d{1}$/
-  return re.test(curp)
-}
-
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   useEffect(() => {
@@ -278,6 +272,12 @@ export default function OnboardingView({ onComplete }) {
   const isMobile = useIsMobile()
 
   const [step, setStep] = useState(() => {
+    // Operador con documentos rechazados → ir directo a pantalla de corrección
+    if (
+      profile?.operator_status === 'docs_requeridos' &&
+      Array.isArray(profile?.rejected_documents) &&
+      profile.rejected_documents.length > 0
+    ) return 6
     const savedStep = profile?.onboarding_step || 0
     return savedStep <= 1 ? 0 : savedStep
   })
@@ -327,7 +327,18 @@ export default function OnboardingView({ onComplete }) {
   const [uploadingSignature, setUploadingSignature] = useState(false)
 
   useEffect(() => {
-    if (profile?.onboarding_step > 1 && step < 2) {
+    if (!profile) return
+    // Operador con documentos rechazados → mostrar pantalla de corrección (paso 6)
+    if (
+      profile.operator_status === 'docs_requeridos' &&
+      Array.isArray(profile.rejected_documents) &&
+      profile.rejected_documents.length > 0
+    ) {
+      setStep(6)
+      return
+    }
+    // Retomar donde quedó si ya avanzó más allá del paso 1
+    if (profile.onboarding_step > 1 && step < 2) {
       setStep(profile.onboarding_step)
     }
   }, [profile])
@@ -390,9 +401,7 @@ export default function OnboardingView({ onComplete }) {
   const handleStep1 = async () => {
     if (!fullName.trim()) { setError('El nombre completo es requerido.'); return }
     if (!/^\d{10}$/.test(phone.replace(/\s/g,''))) { setError('El teléfono debe tener 10 dígitos.'); return }
-    const curpVal = curp.trim().toUpperCase()
-if (!curpVal || curpVal.length !== 18) { setError('La CURP debe tener 18 caracteres.'); return }
-if (!validarCURP(curpVal)) { setError('La CURP no tiene un formato válido. Verifica en gob.mx/curp'); return }
+    if (!curp.trim() || curp.trim().length < 18) { setError('La CURP debe tener 18 caracteres.'); return }
     await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,''), curp: curp.trim().toUpperCase() }, 2)
   }
 
