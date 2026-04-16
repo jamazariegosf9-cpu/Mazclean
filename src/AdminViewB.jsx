@@ -417,7 +417,7 @@ const AdminViewB = ({
     <div style={{ marginTop: 16, display: 'grid', gap: 16, overflowX: 'hidden', width: '100%' }}>
 
       {/* ── CHIPS + FILTROS ── */}
-      <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', padding: '16px 20px' }}>
+      <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', padding: isMobile ? '12px' : '16px 20px', overflow: 'hidden' }}>
         {/* Chips — scroll horizontal en móvil */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 14, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
           {CHIPS.map(chip => (
@@ -439,7 +439,7 @@ const AdminViewB = ({
               style={{ ...inputStyle, paddingLeft: 32, fontSize: 14, minHeight: 40 }} />
           </div>
           <select value={radiusFilter} onChange={e => setRadiusFilter(e.target.value)}
-            style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, background: '#fff', cursor: 'pointer', fontFamily: 'inherit', color: '#1f2937', minHeight: 40 }}>
+            style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, background: '#fff', cursor: 'pointer', fontFamily: 'inherit', color: '#1f2937', minHeight: 40, width: isMobile ? '100%' : 'auto' }}>
             <option value="all">🗺 Todos los radios</option>
             <option value="0-5">Hasta 5 km</option>
             <option value="5-10">5 a 10 km</option>
@@ -464,95 +464,122 @@ const AdminViewB = ({
             </h2>
             <button onClick={fetchPendingOperators} style={{ border: 'none', cursor: 'pointer', color: '#92400e', fontSize: 13, fontWeight: 600, padding: '6px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', minHeight: 36 }}>↻ Refrescar</button>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(300px,1fr))', gap: 12, width: '100%', boxSizing: 'border-box' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, width: '100%', boxSizing: 'border-box' }}>
             {filteredPending.map(op => {
-              const allRejDocs   = Array.isArray(op.rejected_documents) ? op.rejected_documents : [];
+              const allRejDocs    = Array.isArray(op.rejected_documents) ? op.rejected_documents : [];
               const correctedDocs = allRejDocs.filter(d => d.status === 'corregido');
               const pendingDocs   = allRejDocs.filter(d => d.status !== 'corregido');
               const isDocsRequired = op.operator_status === 'docs_requeridos';
-              const hasCorrected  = correctedDocs.length > 0;
-              // pending_review viniendo de corrección = tiene docs corregidos pero ya cambió status
               const fromCorrection = op.operator_status === 'pending_review' && correctedDocs.length > 0;
-
-              // Color del borde según estado
               const cardBorder = fromCorrection ? '2px solid #3b82f6'
                 : isDocsRequired ? '1.5px solid #fecaca'
                 : '1.5px solid #fde68a';
 
               return (
-                <div key={op.id} style={{ background: '#fff', borderRadius: 12, border: cardBorder, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, boxSizing: 'border-box', overflow: 'hidden', width: '100%' }}>
+                <div key={op.id} style={{
+                  background: '#fff', borderRadius: 10, border: cardBorder,
+                  padding: isMobile ? '10px 12px' : 14,
+                  display: 'flex', flexDirection: 'column', gap: 8,
+                  boxSizing: 'border-box', width: '100%', overflow: 'hidden',
+                }}>
 
-                  {/* ── Header: avatar + info + badge — responsivo ── */}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                    {/* Avatar */}
+                  {/* ── Fila superior: avatar + info + botones ── */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', minWidth: 0 }}>
+
+                    {/* Avatar compacto */}
                     <div style={{ position: 'relative', flexShrink: 0 }}>
                       {op.selfie_with_id_url ? (
                         <img src={getPhotoStorageUrl(op.selfie_with_id_url)} alt="selfie"
-                          style={{ height: 44, width: 44, borderRadius: '50%', objectFit: 'cover', border: '2px solid #fde68a' }} />
+                          style={{ height: isMobile ? 36 : 44, width: isMobile ? 36 : 44, borderRadius: '50%', objectFit: 'cover', border: '2px solid #fde68a', display: 'block' }} />
                       ) : (
-                        <div style={{ height: 44, width: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#f59e0b,#fbbf24)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 18 }}>
+                        <div style={{ height: isMobile ? 36 : 44, width: isMobile ? 36 : 44, borderRadius: '50%', background: 'linear-gradient(135deg,#f59e0b,#fbbf24)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: isMobile ? 15 : 18, flexShrink: 0 }}>
                           {op.full_name?.charAt(0) || '?'}
                         </div>
                       )}
-                      <span style={{ position: 'absolute', bottom: -2, right: -2, background: fromCorrection ? '#3b82f6' : isDocsRequired ? '#ef4444' : '#f59e0b', borderRadius: '50%', width: 16, height: 16, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff' }}>
-                        {fromCorrection ? '🔄' : isDocsRequired ? '!' : '⏳'}
+                      <span style={{ position: 'absolute', bottom: -1, right: -1, background: fromCorrection ? '#3b82f6' : isDocsRequired ? '#ef4444' : '#f59e0b', borderRadius: '50%', width: 13, height: 13, fontSize: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1.5px solid #fff' }}>
+                        {fromCorrection ? '↺' : isDocsRequired ? '!' : '⏳'}
                       </span>
                     </div>
 
-                    {/* Info — ocupa todo el ancho disponible, sin overflow */}
-                    <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-                      <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{op.full_name || 'Sin nombre'}</div>
-                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 1 }}>{op.phone || '—'}</div>
-                      {op.base_address && <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>📍 {op.base_address}</div>}
-                      {op.coverage_radius && <div style={{ fontSize: 11, color: '#9ca3af' }}>Radio: {op.coverage_radius} km</div>}
-                      {/* Badge estado — debajo del radio, siempre visible */}
-                      <span style={{
-                        display: 'inline-block', marginTop: 6,
-                        fontSize: 10, padding: '3px 10px', borderRadius: 20, fontWeight: 700,
-                        background: fromCorrection ? '#dbeafe' : isDocsRequired ? '#fef2f2' : '#fffbeb',
-                        color: fromCorrection ? '#1e40af' : isDocsRequired ? '#dc2626' : '#92400e',
-                        border: `1px solid ${fromCorrection ? '#93c5fd' : isDocsRequired ? '#fecaca' : '#fde68a'}`,
+                    {/* Info — sin overflow */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, color: '#1f2937', fontSize: isMobile ? 13 : 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {op.full_name || 'Sin nombre'}
+                      </div>
+                      <div style={{ fontSize: isMobile ? 11 : 12, color: '#6b7280' }}>{op.phone || '—'}</div>
+                      {op.base_address && (
+                        <div style={{ fontSize: 10, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          📍 {op.base_address}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Botones: revisar + eliminar — siempre visibles */}
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button onClick={() => openReviewModal(op)} style={{
+                        padding: isMobile ? '6px 10px' : '8px 14px',
+                        background: fromCorrection ? 'linear-gradient(135deg,#3b82f6,#1e40af)' : isDocsRequired ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'linear-gradient(135deg,#f59e0b,#d97706)',
+                        border: 'none', borderRadius: 8, color: '#fff',
+                        fontSize: isMobile ? 11 : 12, fontWeight: 700, cursor: 'pointer',
+                        whiteSpace: 'nowrap', minHeight: 36,
                       }}>
-                        {fromCorrection ? `🔄 ${correctedDocs.length} corregido${correctedDocs.length !== 1 ? 's' : ''}` : isDocsRequired ? `⚠️ ${pendingDocs.length} pendiente${pendingDocs.length !== 1 ? 's' : ''}` : '⏳ Nuevo'}
-                      </span>
+                        {fromCorrection ? '🔍 Corr.' : isDocsRequired ? '⚠️ Ver' : '🔍 Revisar'}
+                      </button>
+                      <button onClick={() => { setDeleteModal(op); setDeleteMode('deactivate'); }} style={{
+                        background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
+                        color: '#dc2626', fontSize: 15, cursor: 'pointer',
+                        width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      }}>🗑</button>
                     </div>
                   </div>
 
-                  {/* ── Docs corregidos (azul) — visibles para el admin ── */}
-                  {(fromCorrection || hasCorrected) && correctedDocs.length > 0 && (
-                    <div style={{ background: '#eff6ff', borderRadius: 8, padding: '10px 12px', border: '1.5px solid #93c5fd' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#1e40af', marginBottom: 6 }}>🔄 Documentos recién corregidos — revisar:</div>
+                  {/* Badge de estado — debajo, ocupa solo lo que necesita */}
+                  <div>
+                    <span style={{
+                      display: 'inline-block',
+                      fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700,
+                      background: fromCorrection ? '#dbeafe' : isDocsRequired ? '#fef2f2' : '#fffbeb',
+                      color: fromCorrection ? '#1e40af' : isDocsRequired ? '#dc2626' : '#92400e',
+                      border: `1px solid ${fromCorrection ? '#93c5fd' : isDocsRequired ? '#fecaca' : '#fde68a'}`,
+                    }}>
+                      {fromCorrection
+                        ? `🔄 ${correctedDocs.length} corregido${correctedDocs.length !== 1 ? 's' : ''}`
+                        : isDocsRequired
+                          ? `⚠️ ${pendingDocs.length} pendiente${pendingDocs.length !== 1 ? 's' : ''}`
+                          : '⏳ Nuevo — sin revisar'}
+                    </span>
+                  </div>
+
+                  {/* Docs corregidos (azul) */}
+                  {correctedDocs.length > 0 && (
+                    <div style={{ background: '#eff6ff', borderRadius: 6, padding: '8px 10px', border: '1.5px solid #93c5fd' }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#1e40af', marginBottom: 4 }}>🔄 Recién corregidos — revisar:</div>
                       {correctedDocs.map(doc => (
-                        <div key={doc.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#1e40af', marginBottom: 4 }}>
+                        <div key={doc.key} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#1e40af', marginBottom: 2 }}>
                           <span>{doc.icon}</span>
                           <strong>{doc.label}</strong>
-                          {doc.corrected_at && <span style={{ fontSize: 10, color: '#60a5fa', marginLeft: 'auto' }}>{new Date(doc.corrected_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</span>}
+                          {doc.corrected_at && (
+                            <span style={{ fontSize: 9, color: '#60a5fa', marginLeft: 'auto' }}>
+                              {new Date(doc.corrected_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
                         </div>
                       ))}
                     </div>
                   )}
 
-                  {/* ── Docs aún pendientes de corregir (rojo) ── */}
+                  {/* Docs pendientes (rojo) */}
                   {pendingDocs.length > 0 && (
-                    <div style={{ background: '#fef2f2', borderRadius: 8, padding: '8px 12px', border: '1px solid #fecaca' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', marginBottom: 4 }}>⚠️ Aún pendientes:</div>
+                    <div style={{ background: '#fef2f2', borderRadius: 6, padding: '6px 10px', border: '1px solid #fecaca' }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', marginBottom: 3 }}>⚠️ Pendientes de corregir:</div>
                       {pendingDocs.map(doc => (
-                        <div key={doc.key} style={{ fontSize: 12, color: '#991b1b', marginBottom: 2 }}>
+                        <div key={doc.key} style={{ fontSize: 11, color: '#991b1b', marginBottom: 1 }}>
                           {doc.icon} <strong>{doc.label}</strong>{doc.reason ? ` — ${doc.reason}` : ''}
                         </div>
                       ))}
                     </div>
                   )}
 
-                  {/* ── Botones acción ── */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 48px', gap: 8, marginTop: 4, width: '100%' }}>
-                    <button onClick={() => openReviewModal(op)}
-                      style={{ padding: '13px 0', background: fromCorrection ? 'linear-gradient(135deg,#3b82f6,#1e40af)' : isDocsRequired ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'linear-gradient(135deg,#f59e0b,#d97706)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 48, width: '100%', overflow: 'hidden' }}>
-                      {fromCorrection ? '🔍 Correcciones' : isDocsRequired ? '⚠️ Pendientes' : '🔍 Revisar'}
-                    </button>
-                    <button onClick={() => { setDeleteModal(op); setDeleteMode('deactivate'); }}
-                      style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, color: '#dc2626', fontSize: 18, cursor: 'pointer', height: 48, width: 48, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🗑</button>
-                  </div>
                 </div>
               );
             })}
