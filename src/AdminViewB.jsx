@@ -403,11 +403,11 @@ const AdminViewB = ({
 
   // ── CHIPS ─────────────────────────────────────────────────────────────────
   const CHIPS = [
-    { id: 'todos',        label: 'Todos',              color: '#6b7280' },
-    { id: 'sin_revisar',  label: '🆕 Sin revisar',     color: '#f59e0b' },
-    { id: 'correcciones', label: '⚠️ Correcciones',    color: '#ef4444' },
-    { id: 'aprobados',    label: '✅ Aprobados 30d',   color: '#10b981' },
-    { id: 'activos',      label: '🟢 Activos',         color: '#3b82f6' },
+    { id: 'todos',        label: 'Todos',        color: '#6b7280' },
+    { id: 'sin_revisar',  label: '🆕 Nuevos',    color: '#f59e0b' },
+    { id: 'correcciones', label: '⚠️ Correc.',   color: '#ef4444' },
+    { id: 'aprobados',    label: '✅ Aprobados', color: '#10b981' },
+    { id: 'activos',      label: '🟢 Activos',   color: '#3b82f6' },
   ];
 
   const showPending   = ['todos','sin_revisar','correcciones'].includes(activeChip);
