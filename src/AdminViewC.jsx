@@ -232,7 +232,7 @@ const AdminViewC = () => {
         </button>
       </div>
 
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: isMobile ? '0 12px' : '0 16px' }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: isMobile ? '0 12px' : '0 16px', overflowX: 'hidden', boxSizing: 'border-box' }}>
 
         {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(auto-fit,minmax(140px,1fr))', gap: isMobile ? 8 : 12, marginTop: 20 }}>

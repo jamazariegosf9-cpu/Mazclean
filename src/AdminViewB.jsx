@@ -414,7 +414,7 @@ const AdminViewB = ({
   const showOperators = ['todos','aprobados','activos'].includes(activeChip);
 
   return (
-    <div style={{ marginTop: 16, display: 'grid', gap: 16 }}>
+    <div style={{ marginTop: 16, display: 'grid', gap: 16, overflowX: 'hidden', width: '100%' }}>
 
       {/* ── CHIPS + FILTROS ── */}
       <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', padding: '16px 20px' }}>
@@ -456,7 +456,7 @@ const AdminViewB = ({
 
       {/* ── PENDIENTES ── */}
       {showPending && filteredPending.length > 0 && (
-        <div style={{ background: '#fffbeb', borderRadius: 14, border: '2px solid #fde68a', padding: isMobile ? '16px' : '20px 24px' }}>
+        <div style={{ background: '#fffbeb', borderRadius: 14, border: '2px solid #fde68a', padding: isMobile ? '12px' : '20px 24px', overflow: 'hidden', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: '#92400e', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
               {activeChip === 'correcciones' ? '⚠️ Esperando correcciones' : '🕐 Pendientes de Aprobación'}
@@ -464,7 +464,7 @@ const AdminViewB = ({
             </h2>
             <button onClick={fetchPendingOperators} style={{ border: 'none', cursor: 'pointer', color: '#92400e', fontSize: 13, fontWeight: 600, padding: '6px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', minHeight: 36 }}>↻ Refrescar</button>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(300px,1fr))', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(300px,1fr))', gap: 12, width: '100%', boxSizing: 'border-box' }}>
             {filteredPending.map(op => {
               const allRejDocs   = Array.isArray(op.rejected_documents) ? op.rejected_documents : [];
               const correctedDocs = allRejDocs.filter(d => d.status === 'corregido');
@@ -480,7 +480,7 @@ const AdminViewB = ({
                 : '1.5px solid #fde68a';
 
               return (
-                <div key={op.id} style={{ background: '#fff', borderRadius: 12, border: cardBorder, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div key={op.id} style={{ background: '#fff', borderRadius: 12, border: cardBorder, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, boxSizing: 'border-box', overflow: 'hidden', width: '100%' }}>
 
                   {/* ── Header: avatar + info + badge — responsivo ── */}
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
@@ -545,13 +545,13 @@ const AdminViewB = ({
                   )}
 
                   {/* ── Botones acción ── */}
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 48px', gap: 8, marginTop: 4, width: '100%' }}>
                     <button onClick={() => openReviewModal(op)}
-                      style={{ flex: 1, padding: '12px 8px', background: fromCorrection ? 'linear-gradient(135deg,#3b82f6,#1e40af)' : isDocsRequired ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'linear-gradient(135deg,#f59e0b,#d97706)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                      {fromCorrection ? '🔍 Revisar correcciones' : isDocsRequired ? '⚠️ Ver pendientes' : '🔍 Revisar'}
+                      style={{ padding: '13px 0', background: fromCorrection ? 'linear-gradient(135deg,#3b82f6,#1e40af)' : isDocsRequired ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'linear-gradient(135deg,#f59e0b,#d97706)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 48, width: '100%', overflow: 'hidden' }}>
+                      {fromCorrection ? '🔍 Correcciones' : isDocsRequired ? '⚠️ Pendientes' : '🔍 Revisar'}
                     </button>
                     <button onClick={() => { setDeleteModal(op); setDeleteMode('deactivate'); }}
-                      style={{ padding: '12px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, color: '#dc2626', fontSize: 16, cursor: 'pointer', minHeight: 48, minWidth: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>🗑</button>
+                      style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, color: '#dc2626', fontSize: 18, cursor: 'pointer', height: 48, width: 48, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🗑</button>
                   </div>
                 </div>
               );
