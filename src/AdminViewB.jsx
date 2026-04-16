@@ -631,22 +631,22 @@ const AdminViewB = ({
 
                     <div>
                       <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', marginBottom: 5 }}>Estado operativo</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 4 }}>
                         {Object.entries(OPERATOR_STATUS_CONFIG).map(([key, cfg]) => (
                           <button key={key} onClick={() => updateOperatorStatus(op.id, key)} disabled={updatingOpStatus === op.id || op.status === key}
-                            style={{ padding: '6px 2px', borderRadius: 8, border: `1.5px solid ${op.status === key ? cfg.color : '#e5e7eb'}`, background: op.status === key ? cfg.bg : '#fff', color: op.status === key ? cfg.color : '#6b7280', fontSize: 9, fontWeight: 700, cursor: op.status === key ? 'default' : 'pointer', textAlign: 'center', minHeight: 36, lineHeight: 1.3 }}>
+                            style={{ padding: '8px 4px', borderRadius: 8, border: `1.5px solid ${op.status === key ? cfg.color : '#e5e7eb'}`, background: op.status === key ? cfg.bg : '#fff', color: op.status === key ? cfg.color : '#6b7280', fontSize: 10, fontWeight: 700, cursor: op.status === key ? 'default' : 'pointer', textAlign: 'center', minHeight: 40, lineHeight: 1.4 }}>
                             {cfg.icon}<br/>{cfg.label}
                           </button>
                         ))}
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4 }}>
-                      <button onClick={() => fetchOperatorHistory(op.id)} style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 9, fontWeight: 600, cursor: 'pointer', minHeight: 40, textAlign: 'center', lineHeight: 1.3 }}>📊<br/>Historial</button>
-                      <button onClick={() => openCommissionModal(op)} style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 9, fontWeight: 600, cursor: 'pointer', minHeight: 40, textAlign: 'center', lineHeight: 1.3 }}>💰<br/>Comisión</button>
-                      <button onClick={() => fetchOperatorKpis(op)} style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 9, fontWeight: 600, cursor: 'pointer', minHeight: 40, textAlign: 'center', lineHeight: 1.3 }}>⏱<br/>Tiempos</button>
-                      <button onClick={() => setResetOnboardingModal(op)} style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #fde68a', background: '#fffbeb', color: '#92400e', fontSize: 9, fontWeight: 600, cursor: 'pointer', minHeight: 40, textAlign: 'center', lineHeight: 1.3 }}>🔄<br/>Onboard</button>
-                      <button onClick={() => { setDeleteModal(op); setDeleteMode('deactivate'); }} style={{ padding: '8px 0', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 9, fontWeight: 600, cursor: 'pointer', minHeight: 40, textAlign: 'center', lineHeight: 1.3 }}>🗑<br/>Eliminar</button>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(5,1fr)' : 'repeat(5,1fr)', gap: isMobile ? 3 : 4, overflowX: isMobile ? 'auto' : 'visible' }}>
+                      <button onClick={() => fetchOperatorHistory(op.id)} style={{ padding: isMobile ? '6px 0' : '8px 0', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: isMobile ? 8 : 9, fontWeight: 600, cursor: 'pointer', minHeight: 38, textAlign: 'center', lineHeight: 1.3 }}>📊<br/>Hist.</button>
+                      <button onClick={() => openCommissionModal(op)} style={{ padding: isMobile ? '6px 0' : '8px 0', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: isMobile ? 8 : 9, fontWeight: 600, cursor: 'pointer', minHeight: 38, textAlign: 'center', lineHeight: 1.3 }}>💰<br/>Com.</button>
+                      <button onClick={() => fetchOperatorKpis(op)} style={{ padding: isMobile ? '6px 0' : '8px 0', borderRadius: 8, border: '1.5px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: isMobile ? 8 : 9, fontWeight: 600, cursor: 'pointer', minHeight: 38, textAlign: 'center', lineHeight: 1.3 }}>⏱<br/>KPIs</button>
+                      <button onClick={() => setResetOnboardingModal(op)} style={{ padding: isMobile ? '6px 0' : '8px 0', borderRadius: 8, border: '1.5px solid #fde68a', background: '#fffbeb', color: '#92400e', fontSize: isMobile ? 8 : 9, fontWeight: 600, cursor: 'pointer', minHeight: 38, textAlign: 'center', lineHeight: 1.3 }}>🔄<br/>Reset</button>
+                      <button onClick={() => { setDeleteModal(op); setDeleteMode('deactivate'); }} style={{ padding: isMobile ? '6px 0' : '8px 0', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: isMobile ? 8 : 9, fontWeight: 600, cursor: 'pointer', minHeight: 38, textAlign: 'center', lineHeight: 1.3 }}>🗑<br/>Elim.</button>
                     </div>
 
                     <div style={{ background: '#f9fafb', borderRadius: 10, padding: '10px 14px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
