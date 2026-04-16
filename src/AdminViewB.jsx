@@ -417,21 +417,39 @@ const AdminViewB = ({
     <div style={{ marginTop: 16, display: 'grid', gap: 16, overflowX: 'hidden', width: '100%' }}>
 
       {/* ── CHIPS + FILTROS ── */}
-      <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', padding: isMobile ? '12px' : '16px 20px', overflow: 'hidden' }}>
-        {/* Chips — scroll horizontal en móvil */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+      <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', padding: isMobile ? '12px' : '16px 20px' }}>
+        {/* Chips — scroll horizontal suave, sin overflow:hidden en padre */}
+        <div style={{
+          display: 'flex', gap: 8, marginBottom: 14,
+          overflowX: 'auto', paddingBottom: 8,
+          scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', msOverflowStyle: 'none',
+        }}>
           {CHIPS.map(chip => (
             <button key={chip.id} onClick={() => setActiveChip(chip.id)}
-              style={{ padding: '7px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${activeChip === chip.id ? chip.color : '#e5e7eb'}`, background: activeChip === chip.id ? chip.color : '#fff', color: activeChip === chip.id ? '#fff' : '#374151', minHeight: 36, display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s' }}>
+              style={{
+                padding: '8px 16px', borderRadius: 20, fontSize: 13, fontWeight: 600,
+                cursor: 'pointer',
+                border: `1.5px solid ${activeChip === chip.id ? chip.color : '#e5e7eb'}`,
+                background: activeChip === chip.id ? chip.color : '#fff',
+                color: activeChip === chip.id ? '#fff' : '#374151',
+                minHeight: 38, display: 'flex', alignItems: 'center', gap: 6,
+                transition: 'all 0.15s',
+                whiteSpace: 'nowrap', flexShrink: 0,
+              }}>
               {chip.label}
-              <span style={{ fontSize: 11, background: activeChip === chip.id ? 'rgba(255,255,255,0.3)' : '#f3f4f6', color: activeChip === chip.id ? '#fff' : '#6b7280', padding: '1px 6px', borderRadius: 10, fontWeight: 700 }}>
+              <span style={{
+                fontSize: 11,
+                background: activeChip === chip.id ? 'rgba(255,255,255,0.3)' : '#f3f4f6',
+                color: activeChip === chip.id ? '#fff' : '#6b7280',
+                padding: '1px 7px', borderRadius: 10, fontWeight: 700,
+              }}>
                 {chipCounts[chip.id] || 0}
               </span>
             </button>
           ))}
         </div>
 
-        {/* Filtros de zona — columna en móvil */}
+        {/* Filtros de zona y radio */}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', flexDirection: isMobile ? 'column' : 'row' }}>
           <div style={{ position: 'relative', flex: 1, minWidth: 0, width: isMobile ? '100%' : 'auto' }}>
             <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 14 }}>📍</span>
@@ -447,7 +465,7 @@ const AdminViewB = ({
           </select>
           {(zoneSearch || radiusFilter !== 'all') && (
             <button onClick={() => { setZoneSearch(''); setRadiusFilter('all'); }}
-              style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#f3f4f6', color: '#6b7280', fontSize: 13, cursor: 'pointer', minHeight: 40, fontWeight: 600 }}>
+              style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#f3f4f6', color: '#6b7280', fontSize: 13, cursor: 'pointer', minHeight: 40, fontWeight: 600, width: isMobile ? '100%' : 'auto' }}>
               ✕ Limpiar
             </button>
           )}
