@@ -22,9 +22,9 @@ const emptyService = {
 };
 
 function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 640);
+    const handler = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, []);
@@ -221,7 +221,7 @@ const AdminViewC = () => {
   const sharedProps = { bookings, setBookings, operators, setOperators, loading, isMobile, sendWhatsApp };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f3f4f6', paddingBottom: 48 }}>
+    <div style={{ minHeight: '100vh', background: '#f3f4f6', paddingBottom: 48, overflowX: 'hidden', width: '100%', maxWidth: '100vw' }}>
 
       {/* Header */}
       <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: isMobile ? '20px 16px' : '28px 24px 24px', textAlign: 'center' }}>
