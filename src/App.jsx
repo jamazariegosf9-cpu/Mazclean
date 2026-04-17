@@ -8,6 +8,7 @@ import AuthModal from './components/auth/AuthModal'
 import BookingView from './BookingView'
 import OnboardingView from './OnboardingView'
 import { Menu, X } from 'lucide-react'
+import './App.css'
 
 function getTrackingId() {
   const path = window.location.pathname
@@ -25,9 +26,6 @@ function useIsMobile() {
   return isMobile
 }
 
-// Cubre ambos valores posibles del estado pendiente de revision
-// pending_review = creado por Admin antes de completar onboarding
-// pendiente      = completo onboarding, esperando aprobacion del admin
 const PENDING_STATUSES = ['pending_review', 'pendiente']
 
 function Navbar({ view, setView, onShowAuth }) {
@@ -168,7 +166,6 @@ function BookingViewProtected({ onNavigate, onShowAuth }) {
   return <BookingView onNavigate={onNavigate} />
 }
 
-// Pantalla generica de estado para operadores bloqueados
 function StatusScreen({ icon, title, message, extra, onSignOut }) {
   return (
     <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -191,14 +188,34 @@ function AppInner() {
   const [authModal, setAuthModal] = useState(null)
 
   const trackingId = getTrackingId()
-
   const handleOnboardingComplete = () => { refreshProfile() }
 
+  // CSS global + fix dinámico de overflow
   useEffect(() => {
     const style = document.createElement('style')
-  style.textContent = '* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #050A14; color: #F0F6FF; font-family: sans-serif; overflow-x: hidden; max-width: 100vw; } html { overflow-x: hidden; } #root { max-width: 100vw; overflow-x: hidden; } #root * { max-width: 100%; }'
+    style.textContent = '* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #050A14; color: #F0F6FF; font-family: sans-serif; overflow-x: hidden; max-width: 100vw; } html { overflow-x: hidden; }'
     document.head.appendChild(style)
-    return () => document.head.removeChild(style)
+
+    // Fix dinámico: fuerza max-width en elementos que excedan el viewport
+    const fixOverflow = () => {
+      document.querySelectorAll('*').forEach(el => {
+        if (el.offsetWidth > window.innerWidth) {
+          el.style.maxWidth = '100%'
+          el.style.overflowX = 'hidden'
+        }
+      })
+    }
+
+    // Ejecutar al cargar y después de cada render
+    fixOverflow()
+    const timer = setTimeout(fixOverflow, 500)
+    window.addEventListener('resize', fixOverflow)
+
+    return () => {
+      document.head.removeChild(style)
+      clearTimeout(timer)
+      window.removeEventListener('resize', fixOverflow)
+    }
   }, [])
 
   useEffect(() => {
@@ -213,19 +230,11 @@ function AppInner() {
     )
   }
 
-  // Pantalla en blanco mientras carga - evita flashes
   if (loading || (user && !profile)) {
     return <div style={{ minHeight: '100vh', background: '#050A14' }} />
   }
 
-  // ============================================================
-  // FLUJO OPERADOR
-  // El guard !profile.onboarding_done tiene prioridad absoluta.
-  // Cubre operadores recien registrados (onboarding_done=false)
-  // y operadores creados por Admin pendientes de completar el flujo.
-  // ============================================================
   if (profile?.role === 'operador') {
-
     console.log('[App] Flujo operador:', {
       onboarding_done: profile.onboarding_done,
       onboarding_step: profile.onboarding_step,
@@ -233,7 +242,6 @@ function AppInner() {
       status:          profile.status,
     })
 
-    // 1. Desactivado - bloquea todo
     if (profile.status === 'desactivado') {
       return (
         <StatusScreen
@@ -245,9 +253,6 @@ function AppInner() {
       )
     }
 
-    // 2. No completo onboarding - SIEMPRE va al OnboardingView
-    //    Prioridad maxima: cubre false, null y undefined
-    //    No importa el operator_status - onboarding tiene prioridad absoluta
     if (!profile.onboarding_done) {
       return (
         <div style={{ minHeight: '100vh', background: '#050A14' }}>
@@ -256,9 +261,6 @@ function AppInner() {
       )
     }
 
-    // A partir de aqui: onboarding_done = true
-
-    // 3. Rechazado
     if (profile.operator_status === 'rechazado') {
       return (
         <StatusScreen
@@ -277,9 +279,6 @@ function AppInner() {
       )
     }
 
-    // 4. Pendiente de revision
-    //    'pendiente'      = completo onboarding, espera aprobacion
-    //    'pending_review' = creado por Admin, en proceso
     if (PENDING_STATUSES.includes(profile.operator_status)) {
       return (
         <StatusScreen
@@ -291,7 +290,6 @@ function AppInner() {
       )
     }
 
-    // 5. Aprobado - panel de operador
     return (
       <div style={{ minHeight: '100vh', background: '#050A14' }}>
         <OperatorView onNavigate={setView} />
@@ -299,7 +297,6 @@ function AppInner() {
     )
   }
 
-  // FLUJO ADMIN
   if (profile?.role === 'admin') {
     return (
       <div style={{ minHeight: '100vh', background: '#050A14' }}>
@@ -314,7 +311,6 @@ function AppInner() {
     )
   }
 
-  // FLUJO CLIENTE / NO LOGUEADO
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>
       <Navbar view={view} setView={setView} onShowAuth={(tab) => setAuthModal(tab)} />
