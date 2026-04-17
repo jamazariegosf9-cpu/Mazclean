@@ -75,6 +75,23 @@ const AdminViewC = () => {
     if (activeTab === 'catalog') fetchServices();
   }, [activeTab]);
 
+  // Fix overflow al cambiar al tab de operadores
+  useEffect(() => {
+    if (activeTab !== 'operators') return;
+    const fixOverflow = () => {
+      document.querySelectorAll('*').forEach(el => {
+        if (el.offsetWidth > window.innerWidth) {
+          el.style.maxWidth = '100%';
+          el.style.overflowX = 'hidden';
+        }
+      });
+    };
+    const t1 = setTimeout(fixOverflow, 100);
+    const t2 = setTimeout(fixOverflow, 500);
+    const t3 = setTimeout(fixOverflow, 1000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [activeTab]);
+
   const fetchData = async () => {
     try {
       setLoading(true);
