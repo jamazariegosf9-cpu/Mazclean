@@ -145,12 +145,22 @@ export function AuthProvider({ children }) {
 
   // ── Watcher: verificar sesión cada 60 segundos ──────────────────────────
   // Detecta expiración cuando la app lleva horas abierta sin actividad
+  // Reintenta 2 veces antes de cerrar sesión para evitar falsos positivos
+  // cuando el navegador pausa la red al cambiar de ventana/app
   useEffect(() => {
     const interval = setInterval(async () => {
       if (!authState.user) return
+      // No verificar si el documento está oculto (usuario cambió de ventana)
+      if (document.hidden) return
       try {
         const { data: { session } } = await supabase.auth.getSession()
-        if (!session) await handleExpiredSession('expirada (watcher periódico)')
+        if (!session) {
+          // Esperar 3 segundos y reintentar antes de cerrar sesión
+          await new Promise(resolve => setTimeout(resolve, 3000))
+          if (!authState.user) return // ya se cerró sesión por otro medio
+          const { data: { session: retry } } = await supabase.auth.getSession()
+          if (!retry) await handleExpiredSession('expirada (watcher periódico)')
+        }
       } catch {
         // silencioso — no romper la app por error de red momentáneo
       }
