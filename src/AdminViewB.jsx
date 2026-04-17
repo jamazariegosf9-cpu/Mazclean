@@ -414,7 +414,7 @@ const AdminViewB = ({
   const showOperators = ['todos','aprobados','activos'].includes(activeChip);
 
   return (
-    <div style={{ marginTop: 16, display: 'grid', gap: 16, overflowX: 'hidden', width: '100%' }}>
+    <div style={{ marginTop: 16, display: 'grid', gap: 16, overflowX: 'hidden', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
 
       {/* ── CHIPS + FILTROS ── */}
       <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', padding: isMobile ? '12px' : '16px 20px' }}>
@@ -482,7 +482,7 @@ const AdminViewB = ({
 
       {/* ── PENDIENTES ── */}
       {showPending && filteredPending.length > 0 && (
-        <div style={{ background: '#fffbeb', borderRadius: 14, border: '2px solid #fde68a', padding: isMobile ? '12px' : '20px 24px', boxSizing: 'border-box' }}>
+        <div style={{ background: '#fffbeb', borderRadius: 14, border: '2px solid #fde68a', padding: isMobile ? '12px' : '20px 24px', boxSizing: 'border-box', width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: '#92400e', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
               {activeChip === 'correcciones' ? '⚠️ Esperando correcciones' : '🕐 Pendientes de Aprobación'}
@@ -490,7 +490,7 @@ const AdminViewB = ({
             </h2>
             <button onClick={fetchPendingOperators} style={{ border: 'none', cursor: 'pointer', color: '#92400e', fontSize: 13, fontWeight: 600, padding: '6px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', minHeight: 36 }}>↻ Refrescar</button>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, width: '100%', boxSizing: 'border-box' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, width: '100%', maxWidth: '100%', boxSizing: 'border-box', minWidth: 0 }}>
             {filteredPending.map(op => {
               const allRejDocs    = Array.isArray(op.rejected_documents) ? op.rejected_documents : [];
               const correctedDocs = allRejDocs.filter(d => d.status === 'corregido');
@@ -506,7 +506,7 @@ const AdminViewB = ({
                   background: '#fff', borderRadius: 10, border: cardBorder,
                   padding: isMobile ? '10px 12px' : 14,
                   display: 'flex', flexDirection: 'column', gap: 8,
-                  boxSizing: 'border-box', width: '100%',
+                  boxSizing: 'border-box', width: '100%', minWidth: 0, maxWidth: '100%',
                 }}>
 
                   {/* ── Fila superior: avatar + info ── */}
@@ -542,7 +542,7 @@ const AdminViewB = ({
                   </div>
 
                   {/* ── Botones: ancho completo, siempre visibles ── */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 44px', gap: 6, width: '100%' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 44px', gap: 6, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
                     <button type="button" onClick={() => openReviewModal(op)} style={{
                       padding: '11px 0',
                       background: fromCorrection ? 'linear-gradient(135deg,#3b82f6,#1e40af)' : isDocsRequired ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'linear-gradient(135deg,#f59e0b,#d97706)',
