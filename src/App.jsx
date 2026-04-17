@@ -220,8 +220,10 @@ function AppInner() {
       setView(prevView)
     }
 
-    // Registrar el estado inicial
+    // Registrar el estado inicial con dos entradas para que popstate
+    // siempre se dispare incluso desde la primera página
     window.history.replaceState({ view: 'home' }, '', window.location.pathname)
+    window.history.pushState({ view: 'home' }, '', window.location.pathname)
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
   }, [view])
