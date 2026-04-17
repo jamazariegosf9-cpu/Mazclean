@@ -2,7 +2,7 @@ import ClientView from './ClientView'
 import OperatorView from './OperatorView'
 import AdminViewC from './AdminViewC'
 import TrackingPublic from './TrackingPublic'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthModal from './components/auth/AuthModal'
 import BookingView from './BookingView'
@@ -190,6 +190,42 @@ function AppInner() {
   const trackingId = getTrackingId()
   const handleOnboardingComplete = () => { refreshProfile() }
 
+  // ── Manejo del botón Atrás del navegador ─────────────────────────────────
+  const viewHistory = useRef(['home'])
+
+  const navigateTo = (newView) => {
+    if (newView === view) return
+    viewHistory.current = [...viewHistory.current, newView]
+    window.history.pushState({ view: newView }, '', window.location.pathname)
+    setView(newView)
+  }
+
+  useEffect(() => {
+    const handlePopState = (e) => {
+      if (viewHistory.current.length <= 1) {
+        // Estamos en la primera página — pedir confirmación de salida
+        const confirm = window.confirm('¿Deseas salir de Maz Clean?')
+        if (confirm) {
+          window.history.back()
+        } else {
+          // Volver a empujar el estado actual para no salir
+          window.history.pushState({ view }, '', window.location.pathname)
+        }
+        return
+      }
+      // Regresar a la vista anterior
+      const newHistory = viewHistory.current.slice(0, -1)
+      viewHistory.current = newHistory
+      const prevView = newHistory[newHistory.length - 1]
+      setView(prevView)
+    }
+
+    // Registrar el estado inicial
+    window.history.replaceState({ view: 'home' }, '', window.location.pathname)
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [view])
+
   // CSS global + fix dinámico de overflow
   useEffect(() => {
     const style = document.createElement('style')
@@ -300,12 +336,12 @@ function AppInner() {
   if (profile?.role === 'admin') {
     return (
       <div style={{ minHeight: '100vh', background: '#050A14' }}>
-        <Navbar view={view} setView={setView} onShowAuth={(tab) => setAuthModal(tab)} />
-        {view === 'home'     && <HomeView setView={setView} onShowAuth={(tab) => setAuthModal(tab)} />}
-        {view === 'booking'  && <BookingViewProtected onNavigate={setView} onShowAuth={(tab) => setAuthModal(tab)} />}
-        {view === 'client'   && <ClientView onNavigate={setView} />}
-        {view === 'operator' && <OperatorView onNavigate={setView} />}
-        {view === 'admin'    && <AdminViewC onNavigate={setView} />}
+        <Navbar view={view} setView={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />
+        {view === 'home'     && <HomeView setView={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />}
+        {view === 'booking'  && <BookingViewProtected onNavigate={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />}
+        {view === 'client'   && <ClientView onNavigate={navigateTo} />}
+        {view === 'operator' && <OperatorView onNavigate={navigateTo} />}
+        {view === 'admin'    && <AdminViewC onNavigate={navigateTo} />}
         {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
       </div>
     )
@@ -313,10 +349,10 @@ function AppInner() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>
-      <Navbar view={view} setView={setView} onShowAuth={(tab) => setAuthModal(tab)} />
-      {view === 'home'     && <HomeView setView={setView} onShowAuth={(tab) => setAuthModal(tab)} />}
-      {view === 'booking'  && <BookingViewProtected onNavigate={setView} onShowAuth={(tab) => setAuthModal(tab)} />}
-      {view === 'client'   && <ClientView onNavigate={setView} />}
+      <Navbar view={view} setView={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />
+      {view === 'home'     && <HomeView setView={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />}
+      {view === 'booking'  && <BookingViewProtected onNavigate={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />}
+      {view === 'client'   && <ClientView onNavigate={navigateTo} />}
       {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
     </div>
   )
