@@ -196,7 +196,7 @@ function AppInner() {
 
   useEffect(() => {
     const style = document.createElement('style')
-    style.textContent = '* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #050A14; color: #F0F6FF; font-family: sans-serif; overflow-x: hidden; max-width: 100vw; } html { overflow-x: hidden; }'
+  style.textContent = '* { box-sizing: border-box; margin: 0; padding: 0; max-width: 100%; } img, video, svg { max-width: 100%; } body { background: #050A14; color: #F0F6FF; font-family: sans-serif; overflow-x: hidden; max-width: 100vw; } html { overflow-x: hidden; }'
     document.head.appendChild(style)
     return () => document.head.removeChild(style)
   }, [])
