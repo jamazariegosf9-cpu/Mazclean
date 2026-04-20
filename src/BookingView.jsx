@@ -326,9 +326,15 @@ export default function BookingView() {
           assignment_mode:     'autonomo',
           created_at:          new Date().toISOString(),
           updated_at:          new Date().toISOString(),
-        })
-        
-      if (insertError) throw insertError
+        });
+
+if (insertError) {
+  console.error('Error insertando booking:', insertError);
+  // Muestra el error real al usuario si quieres
+  throw insertError;
+}
+
+console.log('✅ Reserva creada:', newBooking);
 
       clearTimeout(timeoutId)
 
