@@ -307,7 +307,7 @@ export default function BookingView() {
           address_lng:         addressDetails.lng,
           address_notes:       notes || null,
           scheduled_date:      date,
-          scheduled_time:      timeFrom + ':00',    // hora de inicio como referencia
+          scheduled_time:      timeFrom + ':00',
           scheduled_time_from: timeFrom,
           scheduled_time_to:   timeTo,
           base_price:          price,
@@ -327,9 +327,7 @@ export default function BookingView() {
           created_at:          new Date().toISOString(),
           updated_at:          new Date().toISOString(),
         })
-        .select()
-        .single()
-
+        
       if (insertError) throw insertError
 
       clearTimeout(timeoutId)
