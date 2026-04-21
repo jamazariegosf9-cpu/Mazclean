@@ -326,7 +326,9 @@ export default function BookingView() {
           assignment_mode:     'autonomo',
           created_at:          new Date().toISOString(),
           updated_at:          new Date().toISOString(),
-        });
+          })
+        .select()
+        .single()
 
 if (insertError) {
   console.error('Error insertando booking:', insertError);
