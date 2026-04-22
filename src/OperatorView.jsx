@@ -20,35 +20,18 @@ function useIsMobile() {
 }
 
 async function compressForMobile(file) {
-  if (file.size < 500 * 1024) return file;
-  const MAX = 1000; const QUALITY = 0.78; const TIMEOUT = 5000;
-  if (typeof OffscreenCanvas !== 'undefined') {
-    try {
-      const bitmap = await Promise.race([
-        createImageBitmap(file),
-        new Promise((_, r) => setTimeout(() => r(new Error('t')), TIMEOUT)),
-      ]);
-      let w = bitmap.width, h = bitmap.height;
-      if (w > MAX || h > MAX) {
-        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
-        else       { w = Math.round(w * MAX / h); h = MAX; }
-      }
-      const oc = new OffscreenCanvas(w, h);
-      oc.getContext('2d').drawImage(bitmap, 0, 0, w, h);
-      bitmap.close();
-      const blob = await Promise.race([
-        oc.convertToBlob({ type: 'image/jpeg', quality: QUALITY }),
-        new Promise((_, r) => setTimeout(() => r(new Error('t')), TIMEOUT)),
-      ]);
-      if (blob && blob.size > 0) return blob;
-    } catch { }
-  }
+  // Si el archivo es pequeño, no comprimir
+  if (!file || file.size < 300 * 1024) return file;
+  const MAX = 1200; const QUALITY = 0.80;
   try {
     return await new Promise((resolve) => {
-      const safe = setTimeout(() => resolve(file), 10000);
+      // Timeout de seguridad — si falla, devuelve el original
+      const safe = setTimeout(() => resolve(file), 8000);
       const reader = new FileReader();
+      reader.onerror = () => { clearTimeout(safe); resolve(file); };
       reader.onload = (e) => {
         const img = new Image();
+        img.onerror = () => { clearTimeout(safe); resolve(file); };
         img.onload = () => {
           try {
             let w = img.width, h = img.height;
@@ -67,13 +50,12 @@ async function compressForMobile(file) {
               clearTimeout(safe);
               resolve(b && b.size > 0 ? b : file);
             }, 'image/jpeg', QUALITY);
-            setTimeout(() => { if (!done) { done = true; clearTimeout(safe); resolve(file); } }, 5000);
+            // Timeout interno por si toBlob no responde
+            setTimeout(() => { if (!done) { done = true; clearTimeout(safe); resolve(file); } }, 6000);
           } catch { clearTimeout(safe); resolve(file); }
         };
-        img.onerror = () => { clearTimeout(safe); resolve(file); };
-        img.src = e.target.result;
+        img.src = e.target?.result;
       };
-      reader.onerror = () => { clearTimeout(safe); resolve(file); };
       reader.readAsDataURL(file);
     });
   } catch { return file; }
@@ -610,18 +592,33 @@ const OperatorView = () => {
   }, [bookings])
 
   const handlePhotoUpload = async (file, bookingId, type) => {
-    if (!file) return;
-    setUploadingPhoto(true); setUploadError(''); setUploadProgress('Comprimiendo...');
+    if (!file || !bookingId || !type) return;
     const TYPE_TO_COLUMN = { front_before: 'photo_front_before', side_before: 'photo_side_before', front_after: 'photo_front_after', interior_after: 'photo_interior_after' };
+    setUploadingPhoto(true);
+    setUploadError('');
+    setUploadProgress('Comprimiendo...');
     try {
-      if (file.size > 15 * 1024 * 1024) throw new Error('La foto pesa mas de 15 MB.');
-      const compressed = await compressForMobile(file);
+      if (file.size > 20 * 1024 * 1024) throw new Error('La foto pesa mas de 20 MB.');
+
+      // Comprimir — si falla devuelve el original
+      let compressed = file;
+      try { compressed = await compressForMobile(file); } catch { compressed = file; }
+
       setUploadProgress('Subiendo...');
+
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const { data: { session: freshSession } } = await supabase.auth.getSession();
-      const token = freshSession?.access_token || sessionToken || supabaseKey;
+
+      // Obtener token fresco
+      let token = supabaseKey;
+      try {
+        const { data: { session: freshSession } } = await supabase.auth.getSession();
+        if (freshSession?.access_token) token = freshSession.access_token;
+      } catch { /* usar anon key como fallback */ }
+
       const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
+
+      // Upload via XHR con timeout de 45s
       await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', supabaseUrl + '/storage/v1/object/service-photos/' + path);
@@ -629,26 +626,43 @@ const OperatorView = () => {
         xhr.setRequestHeader('apikey', supabaseKey);
         xhr.setRequestHeader('Content-Type', 'image/jpeg');
         xhr.setRequestHeader('x-upsert', 'true');
-        xhr.timeout = 60000;
-        xhr.upload.onprogress = (e) => { if (e.lengthComputable) setUploadProgress(Math.round(e.loaded/e.total*100) + '%'); };
-        xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('HTTP ' + xhr.status));
-        xhr.onerror = () => reject(new Error('Error de red.'));
-        xhr.ontimeout = () => reject(new Error('Tiempo agotado.'));
+        xhr.timeout = 45000;
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setUploadProgress(Math.round(e.loaded / e.total * 100) + '%');
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error('Error HTTP ' + xhr.status));
+        };
+        xhr.onerror   = () => reject(new Error('Error de red al subir.'));
+        xhr.ontimeout = () => reject(new Error('Tiempo agotado. Intenta de nuevo.'));
         xhr.send(compressed);
       });
+
       setUploadProgress('Guardando...');
+
       const column = TYPE_TO_COLUMN[type] || type;
-      const { error: dbErr } = await supabase.from('bookings').update({ [column]: path, updated_at: new Date().toISOString() }).eq('id', bookingId);
-      if (dbErr) throw dbErr;
+      const { error: dbErr } = await supabase
+        .from('bookings')
+        .update({ [column]: path, updated_at: new Date().toISOString() })
+        .eq('id', bookingId);
+      if (dbErr) throw new Error(dbErr.message);
+
+      // Actualizar estado local
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, [column]: path } : b));
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, [column]: path }));
       if (photoBooking?.id === bookingId)    setPhotoBooking(prev => ({ ...prev, [column]: path }));
       setPhotosData(prev => ({ ...prev, [type]: path }));
       setUploadProgress('');
+
     } catch (err) {
-      setUploadError(err.message || 'Error al subir. Intenta de nuevo.');
+      console.error('[handlePhotoUpload] Error:', err);
+      setUploadError(err?.message || 'Error al subir la foto. Intenta de nuevo.');
       setUploadProgress('');
-    } finally { setUploadingPhoto(false); }
+    } finally {
+      // SIEMPRE liberar el estado de carga
+      setUploadingPhoto(false);
+    }
   };
 
   const sendIncidentReport = async () => {
