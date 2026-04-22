@@ -199,7 +199,6 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
   );
 }
 
-
 // ── Componente principal ──────────────────────────────────────────────────────
 const OperatorView = () => {
   const { user, profile, signOut } = useAuth();
@@ -218,7 +217,7 @@ const OperatorView = () => {
   // ── Estado solicitudes ────────────────────────────────────────────────────
   const [requests, setRequests]       = useState([]);
   const [loadingReqs, setLoadingReqs] = useState(false);
-  const [accepting, setAccepting]     = useState(null); // id del request que se está aceptando
+  const [accepting, setAccepting]     = useState(null);
   const [acceptError, setAcceptError] = useState('');
 
   // ── Estado fotos ──────────────────────────────────────────────────────────
@@ -253,7 +252,6 @@ const OperatorView = () => {
     fetchOperatorBookings();
     fetchBookingRequests();
 
-    // Realtime: cambios en bookings del operador
     const bookingsChannel = supabase
       .channel('operator-bookings')
       .on('postgres_changes', {
@@ -262,7 +260,6 @@ const OperatorView = () => {
       }, () => fetchOperatorBookings(true))
       .subscribe();
 
-    // Realtime: nuevas solicitudes para este operador
     const requestsChannel = supabase
       .channel('operator-requests')
       .on('postgres_changes', {
@@ -270,11 +267,9 @@ const OperatorView = () => {
         filter: `operator_id=eq.${user.id}`,
       }, (payload) => {
         fetchBookingRequests();
-        // Si se aceptó un request, refrescar bookings para ver el servicio confirmado
         if (payload.new?.status === 'aceptado') {
           setTimeout(() => fetchOperatorBookings(true), 500);
         }
-        // Cambiar al tab de solicitudes automáticamente si llega una nueva
         setActiveTab(prev => prev === 'solicitudes' ? prev : 'solicitudes');
       })
       .subscribe();
@@ -389,7 +384,6 @@ const OperatorView = () => {
     if (!user) return;
     setLoadingReqs(true);
     try {
-      // Paso 1: obtener booking_requests del operador
       const { data: reqs, error } = await supabase
         .from('booking_requests')
         .select('id, booking_id, ronda, status, notified_at, expires_at')
@@ -401,15 +395,12 @@ const OperatorView = () => {
       if (error) throw error;
       if (!reqs || reqs.length === 0) { setRequests([]); return; }
 
-      // Paso 2: obtener datos de cada booking por separado
-      // La política RLS ya permite ver bookings con request activo
       const bookingIds = reqs.map(r => r.booking_id);
       const { data: bookings } = await supabase
         .from('bookings')
         .select('id, booking_ref, service_name, scheduled_date, scheduled_time_from, scheduled_time_to, address_line, total_price')
         .in('id', bookingIds);
 
-      // Combinar requests con datos del booking
       const bookingsMap = Object.fromEntries((bookings || []).map(b => [b.id, b]));
       const combined = reqs.map(r => ({
         ...r,
@@ -429,20 +420,14 @@ const OperatorView = () => {
     setAccepting(request.id);
     setAcceptError('');
     try {
-      // Actualizar booking_request a 'aceptado'
-      // El trigger en DB se encarga de:
-      //   1. Asignar operator_id al booking
-      //   2. Cambiar status del booking a 'confirmado'
-      //   3. Cancelar las demás solicitudes del mismo booking
       const { error } = await supabase
         .from('booking_requests')
         .update({ status: 'aceptado', responded_at: new Date().toISOString() })
         .eq('id', request.id)
-        .eq('status', 'pendiente'); // evitar doble aceptación
+        .eq('status', 'pendiente');
 
       if (error) throw error;
 
-      // Notificar al cliente por WhatsApp
       const b = request.booking;
       if (b) {
         try {
@@ -466,10 +451,7 @@ const OperatorView = () => {
         } catch (e) { console.warn('No se pudo notificar al cliente:', e.message); }
       }
 
-      // Refrescar listas
       await Promise.all([fetchBookingRequests(), fetchOperatorBookings(true)]);
-
-      // Cambiar al tab de servicios activos
       setActiveTab('pendientes');
 
     } catch (err) {
@@ -582,7 +564,7 @@ const OperatorView = () => {
     setPendingFinalize(null); setChecklist([]);
   };
 
-  // Guardar estado del modal en sessionStorage para restaurar si la cámara recarga la app
+  // Guardar estado del modal en sessionStorage
   useEffect(() => {
     if (photoModal && photoBooking) {
       sessionStorage.setItem('photoModal', JSON.stringify({
@@ -596,7 +578,7 @@ const OperatorView = () => {
     }
   }, [photoModal, photoBooking, photoStep, photoPhase, photosData])
 
-  // Restaurar modal de fotos si la app se recargó mientras la cámara estaba abierta
+  // Restaurar modal
   useEffect(() => {
     const saved = sessionStorage.getItem('photoModal')
     if (!saved) return
@@ -630,7 +612,6 @@ const OperatorView = () => {
     try {
       const column = TYPE_TO_COLUMN[type] || type;
 
-      // Token fresco
       let token = sessionToken;
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -703,10 +684,9 @@ const OperatorView = () => {
   const currentPhotoConfig = PHOTO_STEPS.find(p => p.step === photoStep) || PHOTO_STEPS[0];
   const currentPhotoKey    = currentPhotoConfig.key;
   const currentPhotoSaved  = !!photosData[currentPhotoKey];
-  const photoBtnLabel      = uploadingPhoto ? (uploadProgress || 'Subiendo...') : currentPhotoSaved ? 'Cambiar foto' : 'Tomar foto';
   const canAdvancePhoto    = currentPhotoSaved && !uploadingPhoto;
 
-  // ── Tabs con el nuevo "Solicitudes" primero ───────────────────────────────
+  // ── Tabs ───────────────────────────────────────────────────────────────
   const tabs = [
     { id: 'solicitudes',  label: 'Solicitudes', icon: '🔔', count: pendingRequests.length },
     { id: 'pendientes',   label: 'Pendientes',  icon: '📋', count: pendingServices.length },
@@ -762,7 +742,7 @@ const OperatorView = () => {
           </div>
         )}
 
-        {/* ── TAB SOLICITUDES ── */}
+        {/* TAB SOLICITUDES */}
         {activeTab === 'solicitudes' && (
           <div style={{ display: 'grid', gap: 12 }}>
             {loadingReqs ? (
@@ -802,7 +782,7 @@ const OperatorView = () => {
           </div>
         )}
 
-        {/* ── TABS DE SERVICIOS ── */}
+        {/* TABS DE SERVICIOS */}
         {activeTab !== 'solicitudes' && (
           loading ? (
             <div style={{ background: '#fff', borderRadius: 16, padding: 48, textAlign: 'center' }}>
@@ -899,7 +879,7 @@ const OperatorView = () => {
               <span style={{ fontSize: tab.id === 'solicitudes' ? 18 : 20 }}>{tab.icon}</span>
               <span style={{ fontSize: 9, fontWeight: 700, color: activeTab === tab.id ? '#1e40af' : '#9ca3af' }}>{tab.label}</span>
               {tab.count > 0 && (
-                <span style={{ position: 'absolute', top: 6, right: '50%', transform: 'translateX(12px)', fontSize: 9, fontWeight: 700, background: tab.id === 'solicitudes' ? '#ef4444' : '#ef4444', color: '#fff', borderRadius: 10, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>{tab.count}</span>
+                <span style={{ position: 'absolute', top: 6, right: '50%', transform: 'translateX(12px)', fontSize: 9, fontWeight: 700, background: '#ef4444', color: '#fff', borderRadius: 10, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>{tab.count}</span>
               )}
             </button>
           ))}
@@ -1003,32 +983,14 @@ const OperatorView = () => {
                   <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 15, margin: '0 0 4px' }}>{currentPhotoConfig.label}</h3>
                   <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, margin: 0 }}>{currentPhotoConfig.desc}</p>
                 </div>
-                <button
-                  onClick={() => {
-                    setPhotoModal(false);
-                    setPhotosData({});
-                    setPhotoBooking(null);
-                    setPendingFinalize(null);
-                    setUploadingPhoto(false);
-                    setUploadError('');
-                    setUploadProgress('');
-                  }}
-                  style={{ background: 'rgba(255,255,255,0.3)', border: 'none', color: '#fff', fontSize: 22, width: 38, height: 38, borderRadius: 10, cursor: 'pointer' }}
-                >
-                  ✕
-                </button>
+                <button onClick={() => { setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); setUploadingPhoto(false); setUploadError(''); setUploadProgress(''); }} style={{ background: 'rgba(255,255,255,0.3)', border: 'none', color: '#fff', fontSize: 22, width: 38, height: 38, borderRadius: 10, cursor: 'pointer' }}>✕</button>
               </div>
             </div>
 
             <div style={{ padding: isMobile ? '20px 16px' : '24px', flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
               {getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`]) ? (
                 <div style={{ position: 'relative', marginBottom: 20 }}>
-                  <img
-                    src={getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`])}
-                    alt={currentPhotoConfig.label}
-                    style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 12, border: '2px solid #10b981' }}
-                    onError={e => e.target.style.display = 'none'}
-                  />
+                  <img src={getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`])} alt={currentPhotoConfig.label} style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 12, border: '2px solid #10b981' }} onError={e => e.target.style.display = 'none'} />
                   <span style={{ position: 'absolute', top: 12, right: 12, background: '#10b981', color: '#fff', fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 20 }}>✅ Guardada</span>
                 </div>
               ) : (
@@ -1038,61 +1000,30 @@ const OperatorView = () => {
                 </div>
               )}
 
-              {uploadError && (
-                <div style={{ background: '#fee2e2', border: '1px solid #ef4444', color: '#b91c1c', padding: '14px 16px', borderRadius: 12, marginBottom: 16, fontSize: 14 }}>
-                  ⚠️ {uploadError}
-                </div>
-              )}
+              {uploadError && <div style={{ background: '#fee2e2', border: '1px solid #ef4444', color: '#b91c1c', padding: '14px 16px', borderRadius: 12, marginBottom: 16, fontSize: 14 }}>⚠️ {uploadError}</div>}
 
-              <label
-                style={{
-                  display: 'block',
-                  background: uploadingPhoto ? '#cbd5e1' : '#2563eb',
-                  color: uploadingPhoto ? '#64748b' : '#fff',
-                  padding: '18px 0',
-                  textAlign: 'center',
-                  borderRadius: 16,
-                  fontSize: 17,
-                  fontWeight: 700,
-                  cursor: uploadingPhoto ? 'not-allowed' : 'pointer',
-                  marginBottom: 16,
-                  boxShadow: '0 4px 12px rgba(37,99,235,0.3)'
-                }}
-              >
+              <label style={{ display: 'block', background: uploadingPhoto ? '#cbd5e1' : '#2563eb', color: uploadingPhoto ? '#64748b' : '#fff', padding: '18px 0', textAlign: 'center', borderRadius: 16, fontSize: 17, fontWeight: 700, cursor: uploadingPhoto ? 'not-allowed' : 'pointer', marginBottom: 16, boxShadow: '0 4px 12px rgba(37,99,235,0.3)' }}>
                 📸 {uploadingPhoto ? `Subiendo... ${uploadProgress || 0}%` : (photosData[currentPhotoKey] ? 'Cambiar foto' : 'Tomar foto con cámara')}
-                <input
+                <input 
                   key={`photo-input-${currentPhotoKey}-${Date.now()}`}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  style={{ display: 'none' }}
+                  type="file" 
+                  accept="image/*" 
+                  capture="environment" 
+                  style={{ display: 'none' }} 
                   disabled={uploadingPhoto}
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
                     e.target.value = '';
                     if (e.target) e.target.value = '';
-                    await handleNewPhotoUpload(file, photoBooking.id, currentPhotoKey);
-                  }}
+                    setTimeout(async () => {
+                      await handleNewPhotoUpload(file, photoBooking.id, currentPhotoKey);
+                    }, 10);
+                  }} 
                 />
               </label>
 
-              <button
-                onClick={handleNextPhotoStep}
-                disabled={!canAdvancePhoto || uploadingPhoto}
-                style={{
-                  width: '100%',
-                  padding: '16px 0',
-                  borderRadius: 16,
-                  border: 'none',
-                  background: canAdvancePhoto && !uploadingPhoto ? (currentPhotoConfig.phase === 'before' ? '#f97316' : '#10b981') : '#94a3b8',
-                  color: '#fff',
-                  fontSize: 16,
-                  fontWeight: 700,
-                  cursor: (canAdvancePhoto && !uploadingPhoto) ? 'pointer' : 'not-allowed',
-                  minHeight: 56
-                }}
-              >
+              <button onClick={handleNextPhotoStep} disabled={!canAdvancePhoto || uploadingPhoto} style={{ width: '100%', padding: '16px 0', borderRadius: 16, border: 'none', background: canAdvancePhoto && !uploadingPhoto ? (currentPhotoConfig.phase === 'before' ? '#f97316' : '#10b981') : '#94a3b8', color: '#fff', fontSize: 16, fontWeight: 700, cursor: (canAdvancePhoto && !uploadingPhoto) ? 'pointer' : 'not-allowed', minHeight: 56 }}>
                 {photoStep < 4 ? 'Siguiente foto →' : pendingFinalize ? 'Ir al Checklist' : 'Listo'}
               </button>
             </div>
@@ -1100,7 +1031,7 @@ const OperatorView = () => {
         </div>
       )}
 
-            {/* MODAL CHECKLIST */}
+      {/* MODAL CHECKLIST */}
       {checklistModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 110, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
           <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, width: '100%', maxWidth: isMobile ? '100%' : 460, display: 'flex', flexDirection: 'column', maxHeight: isMobile ? 'calc(92vh - 60px)' : '85vh' }}>
