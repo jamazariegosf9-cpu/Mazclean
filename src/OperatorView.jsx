@@ -211,9 +211,12 @@ function PhotoStep({ label, value, bookingId, photoKey, onSuccess, disabled }) {
     setUploading(true); setLocalErr(''); setProgress(0)
     try {
       if (file.size > 50 * 1024 * 1024) throw new Error('El archivo no debe pesar más de 50MB.')
-      const folder = bookingId
-      const userId = photoKey
-      const path   = await uploadFile({ file, folder, userId, onProgress: setProgress })
+      const path = `service_fotos/${bookingId}/${photoKey}_${Date.now()}.jpg`
+      const { error } = await supabase.storage
+        .from('service-photos')
+        .upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' })
+      if (error) throw error
+      setProgress(100)
       onSuccess(path)
     } catch (e) { setLocalErr(e.message) }
     finally { setUploading(false) }
