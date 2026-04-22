@@ -194,89 +194,6 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
   );
 }
 
-// ── Componente autocontenido de subida de foto (igual al OnboardingView) ────
-function PhotoUploadButton({ bookingId, photoKey, label, onSuccess, disabled, sessionToken }) {
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress]   = useState(0);
-  const [localErr, setLocalErr]   = useState('');
-
-  const handleFile = async (file) => {
-    if (!file || disabled) return;
-    setUploading(true); setLocalErr(''); setProgress(0);
-    try {
-      // Comprimir — si falla o devuelve vacío, usar archivo original
-      let fileToUpload = file;
-      try {
-        const compressed = await compressImage(file);
-        if (compressed && compressed.size > 0) fileToUpload = compressed;
-      } catch { fileToUpload = file; }
-
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-      // Refrescar sesión explícitamente antes de subir
-      let token = sessionToken || supabaseKey;
-      try {
-        const { data: { session: freshSession } } = await supabase.auth.refreshSession();
-        if (freshSession?.access_token) token = freshSession.access_token;
-        else {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.access_token) token = session.access_token;
-        }
-      } catch { /* usar token existente */ }
-
-      const path = `${bookingId}/${photoKey}_${Date.now()}.jpg`;
-
-      // Verificar que el archivo tiene contenido antes de enviar
-      if (!fileToUpload || fileToUpload.size === 0) throw new Error('El archivo está vacío. Intenta tomar la foto de nuevo.');
-
-      const responseText = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`);
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-        xhr.setRequestHeader('apikey', supabaseKey);
-        xhr.setRequestHeader('Content-Type', 'image/jpeg');
-        xhr.setRequestHeader('x-upsert', 'true');
-        xhr.timeout = 180000;
-        xhr.upload.onprogress = (e) => { if (e.lengthComputable) setProgress(Math.round(e.loaded / e.total * 100)); };
-        xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.responseText); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0,200)}`)); };
-        xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexión'));
-        xhr.ontimeout = () => reject(new Error('Tiempo agotado — intenta de nuevo'));
-        xhr.send(fileToUpload);
-      });
-
-      // Verificar que Supabase devolvió el path del archivo
-      console.log('[PhotoUploadButton] Storage response:', responseText);
-      onSuccess(path);
-    } catch (e) { setLocalErr(e.message); }
-    finally { setUploading(false); }
-  };
-
-  return (
-    <div>
-      {localErr && (
-        <div style={{ background: '#fee2e2', border: '1px solid #ef4444', color: '#b91c1c', padding: '10px 14px', borderRadius: 10, marginBottom: 12, fontSize: 13 }}>
-          ⚠️ {localErr}
-        </div>
-      )}
-      <label style={{ display: 'block', background: uploading ? '#cbd5e1' : '#2563eb', color: uploading ? '#64748b' : '#fff', padding: '18px 0', textAlign: 'center', borderRadius: 16, fontSize: 17, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', marginBottom: 16, boxShadow: '0 4px 12px rgba(37,99,235,0.3)' }}>
-        📸 {uploading ? `Subiendo... ${progress}%` : label}
-        <input
-          type="file"
-          accept="image/*"
-          capture="environment"
-          style={{ display: 'none' }}
-          disabled={uploading || disabled}
-          onChange={(e) => {
-            const file = e.target.files && e.target.files[0];
-            e.target.value = '';
-            if (file) handleFile(file);
-          }}
-        />
-      </label>
-    </div>
-  );
-}
 
 // ── Componente principal ──────────────────────────────────────────────────────
 const OperatorView = () => {
@@ -708,6 +625,13 @@ const OperatorView = () => {
     try {
       const column = TYPE_TO_COLUMN[type] || type;
 
+      // Token fresco
+      let token = sessionToken;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) token = session.access_token;
+      } catch {}
+
       const uploadedPath = await uploadFile({
         file,
         folder: bookingId,
@@ -728,9 +652,8 @@ const OperatorView = () => {
       setUploadProgress(100);
 
     } catch (err) {
-      console.error('Error en handleNewPhotoUpload:', err);
+      console.error('Error subida foto:', err);
       setUploadError(err.message || 'Error al subir la foto. Intenta de nuevo.');
-      setUploadProgress('');
     } finally {
       setUploadingPhoto(false);
     }
@@ -1109,24 +1032,22 @@ const OperatorView = () => {
                 </div>
               )}
 
-              <PhotoUploadButton
-                bookingId={photoBooking.id}
-                photoKey={currentPhotoKey}
-                label={photosData[currentPhotoKey] ? 'Cambiar foto' : 'Tomar foto con cámara'}
-                disabled={false}
-                sessionToken={sessionToken}
-                onSuccess={(path) => {
-                  const TYPE_TO_COLUMN = { front_before: 'photo_front_before', side_before: 'photo_side_before', front_after: 'photo_front_after', interior_after: 'photo_interior_after' };
-                  const column = TYPE_TO_COLUMN[currentPhotoKey] || currentPhotoKey;
-                  supabase.from('bookings').update({ [column]: path, updated_at: new Date().toISOString() }).eq('id', photoBooking.id).then(({ error }) => {
-                    if (error) { console.error(error); return; }
-                    setBookings(prev => prev.map(b => b.id === photoBooking.id ? { ...b, [column]: path } : b));
-                    if (selectedBooking?.id === photoBooking.id) setSelectedBooking(prev => ({ ...prev, [column]: path }));
-                    setPhotoBooking(prev => ({ ...prev, [column]: path }));
-                    setPhotosData(prev => ({ ...prev, [currentPhotoKey]: path }));
-                  });
-                }}
-              />
+              <label style={{ display: 'block', background: uploadingPhoto ? '#cbd5e1' : '#2563eb', color: uploadingPhoto ? '#64748b' : '#fff', padding: '18px 0', textAlign: 'center', borderRadius: 16, fontSize: 17, fontWeight: 700, cursor: uploadingPhoto ? 'not-allowed' : 'pointer', marginBottom: 16, boxShadow: '0 4px 12px rgba(37,99,235,0.3)' }}>
+                📸 {uploadingPhoto ? `Subiendo... ${uploadProgress || 0}%` : (photosData[currentPhotoKey] ? 'Cambiar foto' : 'Tomar foto con cámara')}
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: 'none' }}
+                  disabled={uploadingPhoto}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    e.target.value = '';
+                    await handleNewPhotoUpload(file, photoBooking.id, currentPhotoKey);
+                  }}
+                />
+              </label>
 
               <button
                 onClick={handleNextPhotoStep}
