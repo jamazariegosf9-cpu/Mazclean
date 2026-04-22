@@ -78,13 +78,19 @@ export function AuthProvider({ children }) {
         console.log('[AuthContext] Auth event:', event, '| session:', !!session)
 
         if (event === 'SIGNED_OUT') {
-          // Esperar 1 segundo antes de cerrar sesión
-          // En móvil, la cámara puede disparar SIGNED_OUT momentáneamente
-          await new Promise(resolve => setTimeout(resolve, 1000))
-          // Verificar si la sesión sigue activa antes de cerrar
-          const { data: { session: check } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
-          if (check) {
-            console.log('[AuthContext] SIGNED_OUT ignorado — sesión sigue activa')
+          // En móvil, la cámara dispara SIGNED_OUT momentáneamente
+          // Esperar 3 segundos y verificar dos veces antes de cerrar sesión
+          await new Promise(resolve => setTimeout(resolve, 3000))
+          const { data: { session: check1 } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
+          if (check1) {
+            console.log('[AuthContext] SIGNED_OUT ignorado — sesión sigue activa (check1)')
+            return
+          }
+          // Segunda verificación después de 2 segundos más
+          await new Promise(resolve => setTimeout(resolve, 2000))
+          const { data: { session: check2 } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
+          if (check2) {
+            console.log('[AuthContext] SIGNED_OUT ignorado — sesión sigue activa (check2)')
             return
           }
           initDone.current         = false
