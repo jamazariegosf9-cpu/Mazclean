@@ -218,21 +218,26 @@ function PhotoUploadButton({ bookingId, photoKey, label, onSuccess, disabled, se
       const token = session?.access_token || sessionToken || supabaseKey;
       const path = `${bookingId}/${photoKey}_${Date.now()}.jpg`;
 
-      await new Promise((resolve, reject) => {
+      // Verificar que el archivo tiene contenido antes de enviar
+      if (!fileToUpload || fileToUpload.size === 0) throw new Error('El archivo está vacío. Intenta tomar la foto de nuevo.');
+
+      const responseText = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`);
         xhr.setRequestHeader('Authorization', `Bearer ${token}`);
         xhr.setRequestHeader('apikey', supabaseKey);
-        xhr.setRequestHeader('Content-Type', fileToUpload.type || 'image/jpeg');
+        xhr.setRequestHeader('Content-Type', 'image/jpeg');
         xhr.setRequestHeader('x-upsert', 'true');
         xhr.timeout = 180000;
         xhr.upload.onprogress = (e) => { if (e.lengthComputable) setProgress(Math.round(e.loaded / e.total * 100)); };
-        xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0,100)}`)); };
+        xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.responseText); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0,200)}`)); };
         xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexión'));
         xhr.ontimeout = () => reject(new Error('Tiempo agotado — intenta de nuevo'));
         xhr.send(fileToUpload);
       });
 
+      // Verificar que Supabase devolvió el path del archivo
+      console.log('[PhotoUploadButton] Storage response:', responseText);
       onSuccess(path);
     } catch (e) { setLocalErr(e.message); }
     finally { setUploading(false); }
