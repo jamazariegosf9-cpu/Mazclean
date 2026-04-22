@@ -78,6 +78,12 @@ export function AuthProvider({ children }) {
         console.log('[AuthContext] Auth event:', event, '| session:', !!session)
 
         if (event === 'SIGNED_OUT') {
+          // En móvil, abrir la cámara puede disparar SIGNED_OUT momentáneamente
+          // Si el documento está oculto (cámara abierta), ignorar el evento
+          if (document.hidden) {
+            console.log('[AuthContext] SIGNED_OUT ignorado — documento oculto (cámara/fondo)')
+            return
+          }
           initDone.current         = false
           skipNextSignedIn.current = false
           setAuthState({ user: null, profile: null, loading: false })
