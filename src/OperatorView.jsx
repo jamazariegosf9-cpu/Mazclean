@@ -301,7 +301,12 @@ function PhotoModal({ isMobile, photoBooking, photoStep, photoPhase, photosData,
                 .update({ [column]: path, updated_at: new Date().toISOString() })
                 .eq('id', photoBooking.id)
                 .then(({ error }) => {
-                  if (!error) onPhotoSaved(currentPhotoKey, path, column);
+                  if (!error) {
+                    onPhotoSaved(currentPhotoKey, path, column);
+                    // Avanzar automáticamente al siguiente paso después de guardar
+                    // Esto desmonta y remonta PhotoStep limpiamente igual que el Onboarding
+                    setTimeout(() => onNext(), 800);
+                  }
                 });
             }}
           />
