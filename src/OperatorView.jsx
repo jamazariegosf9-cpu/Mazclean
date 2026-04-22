@@ -19,12 +19,33 @@ function useIsMobile() {
   return isMobile;
 }
 
-async function compressImage(file) {
-  if (!file.type.startsWith('image/') || file.size < 500 * 1024) return file;
-  const MAX = 1000; const QUALITY = 0.78;
+async function compressForMobile(file) {
+  if (file.size < 500 * 1024) return file;
+  const MAX = 1000; const QUALITY = 0.78; const TIMEOUT = 5000;
+  if (typeof OffscreenCanvas !== 'undefined') {
+    try {
+      const bitmap = await Promise.race([
+        createImageBitmap(file),
+        new Promise((_, r) => setTimeout(() => r(new Error('t')), TIMEOUT)),
+      ]);
+      let w = bitmap.width, h = bitmap.height;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else       { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      const oc = new OffscreenCanvas(w, h);
+      oc.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+      bitmap.close();
+      const blob = await Promise.race([
+        oc.convertToBlob({ type: 'image/jpeg', quality: QUALITY }),
+        new Promise((_, r) => setTimeout(() => r(new Error('t')), TIMEOUT)),
+      ]);
+      if (blob && blob.size > 0) return blob;
+    } catch { }
+  }
   try {
-    const blob = await new Promise((resolve) => {
-      const safeTimer = setTimeout(() => resolve(file), 10000);
+    return await new Promise((resolve) => {
+      const safe = setTimeout(() => resolve(file), 10000);
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = new Image();
@@ -38,48 +59,24 @@ async function compressImage(file) {
             const canvas = document.createElement('canvas');
             canvas.width = w; canvas.height = h;
             const ctx = canvas.getContext('2d');
-            if (!ctx) { clearTimeout(safeTimer); resolve(file); return; }
+            if (!ctx) { clearTimeout(safe); resolve(file); return; }
             ctx.drawImage(img, 0, 0, w, h);
-            canvas.toBlob((b) => { clearTimeout(safeTimer); resolve(b && b.size > 0 ? b : file); }, 'image/jpeg', QUALITY);
-          } catch { clearTimeout(safeTimer); resolve(file); }
+            let done = false;
+            canvas.toBlob((b) => {
+              if (done) return; done = true;
+              clearTimeout(safe);
+              resolve(b && b.size > 0 ? b : file);
+            }, 'image/jpeg', QUALITY);
+            setTimeout(() => { if (!done) { done = true; clearTimeout(safe); resolve(file); } }, 5000);
+          } catch { clearTimeout(safe); resolve(file); }
         };
-        img.onerror = () => { clearTimeout(safeTimer); resolve(file); };
+        img.onerror = () => { clearTimeout(safe); resolve(file); };
         img.src = e.target.result;
       };
-      reader.onerror = () => { clearTimeout(safeTimer); resolve(file); };
+      reader.onerror = () => { clearTimeout(safe); resolve(file); };
       reader.readAsDataURL(file);
     });
-    return blob;
   } catch { return file; }
-}
-
-// uploadFile — copia exacta del OnboardingView que funciona en móvil
-async function uploadFile({ file, folder, userId, onProgress }) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token || supabaseKey
-  const isVideo = file.type.startsWith('video/')
-  const isPdf   = file.type === 'application/pdf'
-  const ext     = isVideo ? (file.name?.endsWith('.mov') ? 'mov' : 'mp4') : isPdf ? 'pdf' : 'jpg'
-  const path    = `${folder}/${userId}/${folder}_${Date.now()}.${ext}`
-  const fileToUpload = (!isVideo && !isPdf) ? await compressImage(file) : file
-
-  await new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`)
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
-    xhr.setRequestHeader('apikey', supabaseKey)
-    xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg')
-    xhr.setRequestHeader('x-upsert', 'true')
-    xhr.timeout = 180000
-    xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100)) }
-    xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0, 100)}`)) }
-    xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexión'))
-    xhr.ontimeout = () => reject(new Error('Tiempo agotado — señal débil, intenta de nuevo'))
-    xhr.send(fileToUpload)
-  })
-  return path
 }
 
 // ── Countdown hook: devuelve segundos restantes hasta expires_at ──────────────
@@ -217,7 +214,7 @@ const OperatorView = () => {
   // ── Estado solicitudes ────────────────────────────────────────────────────
   const [requests, setRequests]       = useState([]);
   const [loadingReqs, setLoadingReqs] = useState(false);
-  const [accepting, setAccepting]     = useState(null);
+  const [accepting, setAccepting]     = useState(null); // id del request que se está aceptando
   const [acceptError, setAcceptError] = useState('');
 
   // ── Estado fotos ──────────────────────────────────────────────────────────
@@ -252,6 +249,7 @@ const OperatorView = () => {
     fetchOperatorBookings();
     fetchBookingRequests();
 
+    // Realtime: cambios en bookings del operador
     const bookingsChannel = supabase
       .channel('operator-bookings')
       .on('postgres_changes', {
@@ -260,16 +258,15 @@ const OperatorView = () => {
       }, () => fetchOperatorBookings(true))
       .subscribe();
 
+    // Realtime: nuevas solicitudes para este operador
     const requestsChannel = supabase
       .channel('operator-requests')
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'booking_requests',
         filter: `operator_id=eq.${user.id}`,
-      }, (payload) => {
+      }, () => {
         fetchBookingRequests();
-        if (payload.new?.status === 'aceptado') {
-          setTimeout(() => fetchOperatorBookings(true), 500);
-        }
+        // Cambiar al tab de solicitudes automáticamente si llega una nueva
         setActiveTab(prev => prev === 'solicitudes' ? prev : 'solicitudes');
       })
       .subscribe();
@@ -384,6 +381,7 @@ const OperatorView = () => {
     if (!user) return;
     setLoadingReqs(true);
     try {
+      // Paso 1: obtener booking_requests del operador
       const { data: reqs, error } = await supabase
         .from('booking_requests')
         .select('id, booking_id, ronda, status, notified_at, expires_at')
@@ -395,12 +393,15 @@ const OperatorView = () => {
       if (error) throw error;
       if (!reqs || reqs.length === 0) { setRequests([]); return; }
 
+      // Paso 2: obtener datos de cada booking por separado
+      // La política RLS ya permite ver bookings con request activo
       const bookingIds = reqs.map(r => r.booking_id);
       const { data: bookings } = await supabase
         .from('bookings')
         .select('id, booking_ref, service_name, scheduled_date, scheduled_time_from, scheduled_time_to, address_line, total_price')
         .in('id', bookingIds);
 
+      // Combinar requests con datos del booking
       const bookingsMap = Object.fromEntries((bookings || []).map(b => [b.id, b]));
       const combined = reqs.map(r => ({
         ...r,
@@ -420,14 +421,20 @@ const OperatorView = () => {
     setAccepting(request.id);
     setAcceptError('');
     try {
+      // Actualizar booking_request a 'aceptado'
+      // El trigger en DB se encarga de:
+      //   1. Asignar operator_id al booking
+      //   2. Cambiar status del booking a 'confirmado'
+      //   3. Cancelar las demás solicitudes del mismo booking
       const { error } = await supabase
         .from('booking_requests')
         .update({ status: 'aceptado', responded_at: new Date().toISOString() })
         .eq('id', request.id)
-        .eq('status', 'pendiente');
+        .eq('status', 'pendiente'); // evitar doble aceptación
 
       if (error) throw error;
 
+      // Notificar al cliente por WhatsApp
       const b = request.booking;
       if (b) {
         try {
@@ -451,7 +458,10 @@ const OperatorView = () => {
         } catch (e) { console.warn('No se pudo notificar al cliente:', e.message); }
       }
 
+      // Refrescar listas
       await Promise.all([fetchBookingRequests(), fetchOperatorBookings(true)]);
+
+      // Cambiar al tab de servicios activos
       setActiveTab('pendientes');
 
     } catch (err) {
@@ -564,85 +574,46 @@ const OperatorView = () => {
     setPendingFinalize(null); setChecklist([]);
   };
 
-  // Guardar estado del modal en sessionStorage
-  useEffect(() => {
-    if (photoModal && photoBooking) {
-      sessionStorage.setItem('photoModal', JSON.stringify({
-        bookingId: photoBooking.id,
-        photoStep,
-        photoPhase,
-        photosData,
-      }))
-    } else {
-      sessionStorage.removeItem('photoModal')
-    }
-  }, [photoModal, photoBooking, photoStep, photoPhase, photosData])
-
-  // Restaurar modal
-  useEffect(() => {
-    const saved = sessionStorage.getItem('photoModal')
-    if (!saved) return
+  const handlePhotoUpload = async (file, bookingId, type) => {
+    if (!file) return;
+    setUploadingPhoto(true); setUploadError(''); setUploadProgress('Comprimiendo...');
+    const TYPE_TO_COLUMN = { front_before: 'photo_front_before', side_before: 'photo_side_before', front_after: 'photo_front_after', interior_after: 'photo_interior_after' };
     try {
-      const { bookingId, photoStep: step, photoPhase: phase, photosData: data } = JSON.parse(saved)
-      const booking = bookings.find(b => b.id === bookingId)
-      if (!booking) return
-      setPhotoBooking(booking)
-      setPhotoStep(step)
-      setPhotoPhase(phase)
-      setPhotosData(data || {})
-      setPhotoModal(true)
-      if (phase === 'after') setPendingFinalize(bookingId)
-    } catch { sessionStorage.removeItem('photoModal') }
-  }, [bookings])
-
-  const handleNewPhotoUpload = async (file, bookingId, type) => {
-    if (!file || !bookingId || !type) return;
-
-    const TYPE_TO_COLUMN = {
-      front_before:   'photo_front_before',
-      side_before:    'photo_side_before',
-      front_after:    'photo_front_after',
-      interior_after: 'photo_interior_after',
-    };
-
-    setUploadingPhoto(true);
-    setUploadError('');
-    setUploadProgress(0);
-
-    try {
-      const column = TYPE_TO_COLUMN[type] || type;
-
-      let token = sessionToken;
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) token = session.access_token;
-      } catch {}
-
-      const uploadedPath = await uploadFile({
-        file,
-        folder: bookingId,
-        userId: type,
-        onProgress: (perc) => setUploadProgress(perc),
+      if (file.size > 15 * 1024 * 1024) throw new Error('La foto pesa mas de 15 MB.');
+      const compressed = await compressForMobile(file);
+      setUploadProgress('Subiendo...');
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const { data: { session: freshSession } } = await supabase.auth.getSession();
+      const token = freshSession?.access_token || sessionToken || supabaseKey;
+      const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', supabaseUrl + '/storage/v1/object/service-photos/' + path);
+        xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+        xhr.setRequestHeader('apikey', supabaseKey);
+        xhr.setRequestHeader('Content-Type', 'image/jpeg');
+        xhr.setRequestHeader('x-upsert', 'true');
+        xhr.timeout = 60000;
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) setUploadProgress(Math.round(e.loaded/e.total*100) + '%'); };
+        xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('HTTP ' + xhr.status));
+        xhr.onerror = () => reject(new Error('Error de red.'));
+        xhr.ontimeout = () => reject(new Error('Tiempo agotado.'));
+        xhr.send(compressed);
       });
-
-      const { error: dbErr } = await supabase
-        .from('bookings')
-        .update({ [column]: uploadedPath, updated_at: new Date().toISOString() })
-        .eq('id', bookingId);
+      setUploadProgress('Guardando...');
+      const column = TYPE_TO_COLUMN[type] || type;
+      const { error: dbErr } = await supabase.from('bookings').update({ [column]: path, updated_at: new Date().toISOString() }).eq('id', bookingId);
       if (dbErr) throw dbErr;
-
-      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, [column]: uploadedPath } : b));
-      if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, [column]: uploadedPath }));
-      if (photoBooking?.id === bookingId) setPhotoBooking(prev => ({ ...prev, [column]: uploadedPath }));
-      setPhotosData(prev => ({ ...prev, [type]: uploadedPath }));
-      setUploadProgress(100);
-
+      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, [column]: path } : b));
+      if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, [column]: path }));
+      if (photoBooking?.id === bookingId)    setPhotoBooking(prev => ({ ...prev, [column]: path }));
+      setPhotosData(prev => ({ ...prev, [type]: path }));
+      setUploadProgress('');
     } catch (err) {
-      console.error('Error subida foto:', err);
-      setUploadError(err.message || 'Error al subir la foto. Intenta de nuevo.');
-    } finally {
-      setUploadingPhoto(false);
-    }
+      setUploadError(err.message || 'Error al subir. Intenta de nuevo.');
+      setUploadProgress('');
+    } finally { setUploadingPhoto(false); }
   };
 
   const sendIncidentReport = async () => {
@@ -684,9 +655,10 @@ const OperatorView = () => {
   const currentPhotoConfig = PHOTO_STEPS.find(p => p.step === photoStep) || PHOTO_STEPS[0];
   const currentPhotoKey    = currentPhotoConfig.key;
   const currentPhotoSaved  = !!photosData[currentPhotoKey];
+  const photoBtnLabel      = uploadingPhoto ? (uploadProgress || 'Subiendo...') : currentPhotoSaved ? 'Cambiar foto' : 'Tomar foto';
   const canAdvancePhoto    = currentPhotoSaved && !uploadingPhoto;
 
-  // ── Tabs ───────────────────────────────────────────────────────────────
+  // ── Tabs con el nuevo "Solicitudes" primero ───────────────────────────────
   const tabs = [
     { id: 'solicitudes',  label: 'Solicitudes', icon: '🔔', count: pendingRequests.length },
     { id: 'pendientes',   label: 'Pendientes',  icon: '📋', count: pendingServices.length },
@@ -742,7 +714,7 @@ const OperatorView = () => {
           </div>
         )}
 
-        {/* TAB SOLICITUDES */}
+        {/* ── TAB SOLICITUDES ── */}
         {activeTab === 'solicitudes' && (
           <div style={{ display: 'grid', gap: 12 }}>
             {loadingReqs ? (
@@ -782,7 +754,7 @@ const OperatorView = () => {
           </div>
         )}
 
-        {/* TABS DE SERVICIOS */}
+        {/* ── TABS DE SERVICIOS ── */}
         {activeTab !== 'solicitudes' && (
           loading ? (
             <div style={{ background: '#fff', borderRadius: 16, padding: 48, textAlign: 'center' }}>
@@ -835,21 +807,7 @@ const OperatorView = () => {
                           <Play size={14} /> Empezar Lavado
                         </button>
                       )}
-                      {booking.status === 'en_proceso' && !(booking.photo_front_before && booking.photo_side_before) && (
-                        <button onClick={e => {
-                          e.stopPropagation();
-                          const existing = {};
-                          if (booking.photo_front_before) existing.front_before = booking.photo_front_before;
-                          if (booking.photo_side_before)  existing.side_before  = booking.photo_side_before;
-                          const startStep = booking.photo_front_before ? 2 : 1;
-                          setPhotoBooking(booking); setPhotosData(existing); setPhotoStep(startStep); setPhotoPhase('before');
-                          setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModal(true);
-                        }} disabled={updatingId === booking.id}
-                          style={{ flex: 1, background: '#f97316', color: '#fff', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
-                          <Camera size={14} /> {booking.photo_front_before ? 'Foto 2 ANTES' : 'Fotos ANTES'}
-                        </button>
-                      )}
-                      {booking.status === 'en_proceso' && booking.photo_front_before && booking.photo_side_before && (
+                      {booking.status === 'en_proceso' && (
                         <button onClick={e => { e.stopPropagation(); handleFinalizeClick(booking); }} disabled={updatingId === booking.id}
                           style={{ flex: 1, background: '#10b981', color: '#fff', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
                           <Check size={14} /> Finalizar
@@ -879,7 +837,7 @@ const OperatorView = () => {
               <span style={{ fontSize: tab.id === 'solicitudes' ? 18 : 20 }}>{tab.icon}</span>
               <span style={{ fontSize: 9, fontWeight: 700, color: activeTab === tab.id ? '#1e40af' : '#9ca3af' }}>{tab.label}</span>
               {tab.count > 0 && (
-                <span style={{ position: 'absolute', top: 6, right: '50%', transform: 'translateX(12px)', fontSize: 9, fontWeight: 700, background: '#ef4444', color: '#fff', borderRadius: 10, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>{tab.count}</span>
+                <span style={{ position: 'absolute', top: 6, right: '50%', transform: 'translateX(12px)', fontSize: 9, fontWeight: 700, background: tab.id === 'solicitudes' ? '#ef4444' : '#ef4444', color: '#fff', borderRadius: 10, padding: '1px 5px', minWidth: 16, textAlign: 'center' }}>{tab.count}</span>
               )}
             </button>
           ))}
@@ -947,24 +905,10 @@ const OperatorView = () => {
                     style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 14, padding: '16px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, minHeight: 56, flexShrink: 0 }}>
                     <AlertTriangle size={18} />
                   </button>
-                  {!(selectedBooking.photo_front_before && selectedBooking.photo_side_before) ? (
-                    <button onClick={() => {
-                      const existing = {};
-                      if (selectedBooking.photo_front_before) existing.front_before = selectedBooking.photo_front_before;
-                      if (selectedBooking.photo_side_before)  existing.side_before  = selectedBooking.photo_side_before;
-                      const startStep = selectedBooking.photo_front_before ? 2 : 1;
-                      setPhotoBooking(selectedBooking); setPhotosData(existing); setPhotoStep(startStep); setPhotoPhase('before');
-                      setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModal(true);
-                    }} disabled={updatingId === selectedBooking.id}
-                      style={{ flex: 1, background: '#f97316', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 56 }}>
-                      <Camera size={18} /> {selectedBooking.photo_front_before ? 'FOTO 2 ANTES' : 'SUBIR FOTOS ANTES'}
-                    </button>
-                  ) : (
-                    <button onClick={() => handleFinalizeClick(selectedBooking)} disabled={updatingId === selectedBooking.id}
-                      style={{ flex: 1, background: '#10b981', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 56 }}>
-                      <Check size={18} /> FINALIZAR SERVICIO
-                    </button>
-                  )}
+                  <button onClick={() => handleFinalizeClick(selectedBooking)} disabled={updatingId === selectedBooking.id}
+                    style={{ flex: 1, background: '#10b981', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 56 }}>
+                    <Check size={18} /> FINALIZAR SERVICIO
+                  </button>
                 </div>
               )}
             </div>
@@ -972,59 +916,56 @@ const OperatorView = () => {
         </div>
       )}
 
-      {/* MODAL FOTOS - Versión ultra-agresiva para reset input móvil */}
+      {/* MODAL FOTOS */}
       {photoModal && photoBooking && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
-          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 24, width: '100%', maxWidth: isMobile ? '100%' : 420, maxHeight: isMobile ? '92vh' : '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.3)' }}>
-
-            <div style={{ background: currentPhotoConfig.phase === 'before' ? 'linear-gradient(135deg,#f97316,#fb923c)' : 'linear-gradient(135deg,#10b981,#34d399)', padding: '16px 20px', flexShrink: 0 }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 110, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 24, width: '100%', maxWidth: isMobile ? '100%' : 420, display: 'flex', flexDirection: 'column', maxHeight: isMobile ? 'calc(92vh - 60px)' : '90vh' }}>
+            <div style={{ background: currentPhotoConfig.phase === 'before' ? 'linear-gradient(135deg,#f97316,#fb923c)' : 'linear-gradient(135deg,#10b981,#34d399)', padding: '16px 20px', borderRadius: isMobile ? '20px 20px 0 0' : '24px 24px 0 0', flexShrink: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                   <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 15, margin: '0 0 4px' }}>{currentPhotoConfig.label}</h3>
-                  <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, margin: 0 }}>{currentPhotoConfig.desc}</p>
+                  <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12, margin: 0 }}>{currentPhotoConfig.desc}</p>
                 </div>
-                <button onClick={() => { setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); setUploadingPhoto(false); setUploadError(''); setUploadProgress(''); }} style={{ background: 'rgba(255,255,255,0.3)', border: 'none', color: '#fff', fontSize: 22, width: 38, height: 38, borderRadius: 10, cursor: 'pointer' }}>✕</button>
+                <button onClick={() => { setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); setUploadingPhoto(false); setUploadProgress(''); }}
+                  style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 18, borderRadius: 8, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginLeft: 8 }}>x</button>
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
+                {PHOTO_STEPS.map(p => (
+                  <div key={p.step} style={{ flex: 1, height: 4, borderRadius: 4, background: photosData[p.key] ? '#fff' : p.step === photoStep ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)' }} />
+                ))}
               </div>
             </div>
-
-            <div style={{ padding: isMobile ? '20px 16px' : '24px', flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              {getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`]) ? (
-                <div style={{ position: 'relative', marginBottom: 20 }}>
-                  <img src={getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`])} alt={currentPhotoConfig.label} style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 12, border: '2px solid #10b981' }} onError={e => e.target.style.display = 'none'} />
-                  <span style={{ position: 'absolute', top: 12, right: 12, background: '#10b981', color: '#fff', fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 20 }}>✅ Guardada</span>
+            <div style={{ padding: isMobile ? '18px 16px' : '20px 24px', overflowY: 'auto', flex: 1, WebkitOverflowScrolling: 'touch' }}>
+              {getPhotoUrl(photosData[currentPhotoKey] || photoBooking['photo_' + currentPhotoKey]) ? (
+                <div style={{ position: 'relative', marginBottom: 14 }}>
+                  <img src={getPhotoUrl(photosData[currentPhotoKey] || photoBooking['photo_' + currentPhotoKey])} alt={currentPhotoConfig.label} style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 12 }} onError={e => { e.target.style.display = 'none'; }} />
+                  <span style={{ position: 'absolute', top: 10, right: 10, background: '#10b981', color: '#fff', fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 20 }}>Guardada</span>
                 </div>
               ) : (
-                <div style={{ height: 200, background: '#f8fafc', border: '3px dashed #cbd5e1', borderRadius: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
-                  <Camera size={56} color="#94a3b8" />
-                  <p style={{ marginTop: 16, color: '#64748b', fontSize: 15, fontWeight: 500 }}>Toca el botón para tomar la foto</p>
+                <div style={{ width: '100%', height: 160, background: '#f9fafb', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 14, border: '2px dashed #e5e7eb' }}>
+                  <Camera size={40} color="#d1d5db" />
+                  <span style={{ fontSize: 13, color: '#9ca3af', marginTop: 10 }}>Toma la foto ahora</span>
                 </div>
               )}
-
-              {uploadError && <div style={{ background: '#fee2e2', border: '1px solid #ef4444', color: '#b91c1c', padding: '14px 16px', borderRadius: 12, marginBottom: 16, fontSize: 14 }}>⚠️ {uploadError}</div>}
-
-              <label style={{ display: 'block', background: uploadingPhoto ? '#cbd5e1' : '#2563eb', color: uploadingPhoto ? '#64748b' : '#fff', padding: '18px 0', textAlign: 'center', borderRadius: 16, fontSize: 17, fontWeight: 700, cursor: uploadingPhoto ? 'not-allowed' : 'pointer', marginBottom: 16, boxShadow: '0 4px 12px rgba(37,99,235,0.3)' }}>
-                📸 {uploadingPhoto ? `Subiendo... ${uploadProgress || 0}%` : (photosData[currentPhotoKey] ? 'Cambiar foto' : 'Tomar foto con cámara')}
-                <input 
-                  key={`photo-input-${currentPhotoKey}-${Date.now()}`}
-                  type="file" 
-                  accept="image/*" 
-                  capture="environment" 
-                  style={{ display: 'none' }} 
-                  disabled={uploadingPhoto}
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    e.target.value = '';
-                    if (e.target) e.target.value = '';
-                    setTimeout(async () => {
-                      await handleNewPhotoUpload(file, photoBooking.id, currentPhotoKey);
-                    }, 10);
-                  }} 
-                />
+              {uploadingPhoto && (
+                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 18, height: 18, border: '3px solid #bfdbfe', borderTop: '3px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#1e40af' }}>{uploadProgress || 'Procesando...'}</span>
+                </div>
+              )}
+              {uploadError && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', marginBottom: 12 }}>
+                  <span style={{ fontSize: 13, color: '#dc2626', fontWeight: 600 }}>{uploadError}</span>
+                </div>
+              )}
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploadingPhoto ? '#f3f4f6' : '#3b82f6', color: uploadingPhoto ? '#9ca3af' : '#fff', fontSize: 15, fontWeight: 700, cursor: uploadingPhoto ? 'not-allowed' : 'pointer', pointerEvents: uploadingPhoto ? 'none' : 'auto', minHeight: 52, marginBottom: 10, flexShrink: 0 }}>
+                <Upload size={16} /> {photoBtnLabel}
+                <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                  onChange={e => { if (e.target.files[0]) handlePhotoUpload(e.target.files[0], photoBooking.id, currentPhotoKey); }} />
               </label>
-
-              <button onClick={handleNextPhotoStep} disabled={!canAdvancePhoto || uploadingPhoto} style={{ width: '100%', padding: '16px 0', borderRadius: 16, border: 'none', background: canAdvancePhoto && !uploadingPhoto ? (currentPhotoConfig.phase === 'before' ? '#f97316' : '#10b981') : '#94a3b8', color: '#fff', fontSize: 16, fontWeight: 700, cursor: (canAdvancePhoto && !uploadingPhoto) ? 'pointer' : 'not-allowed', minHeight: 56 }}>
-                {photoStep < 4 ? 'Siguiente foto →' : pendingFinalize ? 'Ir al Checklist' : 'Listo'}
+              <button onClick={handleNextPhotoStep} disabled={!canAdvancePhoto}
+                style={{ width: '100%', padding: '14px 0', borderRadius: 12, border: 'none', background: canAdvancePhoto ? (currentPhotoConfig.phase === 'before' ? '#f97316' : '#10b981') : '#e5e7eb', color: canAdvancePhoto ? '#fff' : '#9ca3af', fontSize: 15, fontWeight: 700, cursor: canAdvancePhoto ? 'pointer' : 'not-allowed', minHeight: 52, flexShrink: 0, marginBottom: isMobile ? 16 : 0 }}>
+                {photoStep < 2 ? 'Siguiente foto' : photoStep === 2 ? 'Fotos ANTES listas' : photoStep === 3 ? 'Siguiente foto' : pendingFinalize ? 'Continuar al Checklist' : 'Listo'}
               </button>
             </div>
           </div>
