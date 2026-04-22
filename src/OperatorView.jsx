@@ -20,45 +20,49 @@ function useIsMobile() {
 }
 
 async function compressForMobile(file) {
-  // Si el archivo es pequeño, no comprimir
-  if (!file || file.size < 300 * 1024) return file;
-  const MAX = 1200; const QUALITY = 0.80;
-  try {
-    return await new Promise((resolve) => {
-      // Timeout de seguridad — si falla, devuelve el original
-      const safe = setTimeout(() => resolve(file), 8000);
-      const reader = new FileReader();
-      reader.onerror = () => { clearTimeout(safe); resolve(file); };
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onerror = () => { clearTimeout(safe); resolve(file); };
-        img.onload = () => {
-          try {
-            let w = img.width, h = img.height;
-            if (w > MAX || h > MAX) {
-              if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
-              else       { w = Math.round(w * MAX / h); h = MAX; }
+  if (!file || file.size < 400 * 1024) return file;
+
+  const MAX_WIDTH = 1200;
+  const QUALITY = 0.82;
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(file), 7000);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let { width: w, height: h } = img;
+          if (w > MAX_WIDTH || h > MAX_WIDTH) {
+            if (w > h) { h = Math.round(h * MAX_WIDTH / w); w = MAX_WIDTH; }
+            else       { w = Math.round(w * MAX_WIDTH / h); h = MAX_WIDTH; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d', { alpha: false });
+          if (!ctx) { clearTimeout(timeout); resolve(file); return; }
+          ctx.drawImage(img, 0, 0, w, h);
+          canvas.toBlob((blob) => {
+            clearTimeout(timeout);
+            if (blob && blob.size > 0 && blob.size < file.size * 1.1) {
+              resolve(blob);
+            } else {
+              resolve(file);
             }
-            const canvas = document.createElement('canvas');
-            canvas.width = w; canvas.height = h;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) { clearTimeout(safe); resolve(file); return; }
-            ctx.drawImage(img, 0, 0, w, h);
-            let done = false;
-            canvas.toBlob((b) => {
-              if (done) return; done = true;
-              clearTimeout(safe);
-              resolve(b && b.size > 0 ? b : file);
-            }, 'image/jpeg', QUALITY);
-            // Timeout interno por si toBlob no responde
-            setTimeout(() => { if (!done) { done = true; clearTimeout(safe); resolve(file); } }, 6000);
-          } catch { clearTimeout(safe); resolve(file); }
-        };
-        img.src = e.target?.result;
+          }, 'image/jpeg', QUALITY);
+        } catch (err) {
+          clearTimeout(timeout);
+          resolve(file);
+        }
       };
-      reader.readAsDataURL(file);
-    });
-  } catch { return file; }
+      img.onerror = () => { clearTimeout(timeout); resolve(file); };
+      img.src = e.target.result;
+    };
+    reader.onerror = () => { clearTimeout(timeout); resolve(file); };
+    reader.readAsDataURL(file);
+  });
 }
 
 // ── Countdown hook: devuelve segundos restantes hasta expires_at ──────────────
@@ -593,74 +597,79 @@ const OperatorView = () => {
 
   const handlePhotoUpload = async (file, bookingId, type) => {
     if (!file || !bookingId || !type) return;
-    const TYPE_TO_COLUMN = { front_before: 'photo_front_before', side_before: 'photo_side_before', front_after: 'photo_front_after', interior_after: 'photo_interior_after' };
+
+    const TYPE_TO_COLUMN = {
+      front_before:   'photo_front_before',
+      side_before:    'photo_side_before',
+      front_after:    'photo_front_after',
+      interior_after: 'photo_interior_after'
+    };
+
     setUploadingPhoto(true);
     setUploadError('');
-    setUploadProgress('Comprimiendo...');
+    setUploadProgress('Comprimiendo foto...');
+
     try {
-      if (file.size > 20 * 1024 * 1024) throw new Error('La foto pesa mas de 20 MB.');
+      if (file.size > 25 * 1024 * 1024) {
+        throw new Error('La foto es demasiado grande (máx 25 MB)');
+      }
 
-      // Comprimir — si falla devuelve el original
-      let compressed = file;
-      try { compressed = await compressForMobile(file); } catch { compressed = file; }
+      const compressed = await compressForMobile(file);
 
-      setUploadProgress('Subiendo...');
+      setUploadProgress('Subiendo a servidor...');
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-      // Obtener token fresco
       let token = supabaseKey;
       try {
-        const { data: { session: freshSession } } = await supabase.auth.getSession();
-        if (freshSession?.access_token) token = freshSession.access_token;
-      } catch { /* usar anon key como fallback */ }
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) token = session.access_token;
+      } catch {}
 
-      const path = bookingId + '/' + type + '_' + Date.now() + '.jpg';
+      const path = `${bookingId}/${type}_${Date.now()}.jpg`;
 
-      // Upload via XHR con timeout de 45s
       await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', supabaseUrl + '/storage/v1/object/service-photos/' + path);
-        xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+        xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`);
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
         xhr.setRequestHeader('apikey', supabaseKey);
         xhr.setRequestHeader('Content-Type', 'image/jpeg');
         xhr.setRequestHeader('x-upsert', 'true');
         xhr.timeout = 45000;
         xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) setUploadProgress(Math.round(e.loaded / e.total * 100) + '%');
+          if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            setUploadProgress(`Subiendo... ${percent}%`);
+          }
         };
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) resolve();
-          else reject(new Error('Error HTTP ' + xhr.status));
-        };
-        xhr.onerror   = () => reject(new Error('Error de red al subir.'));
-        xhr.ontimeout = () => reject(new Error('Tiempo agotado. Intenta de nuevo.'));
+        xhr.onload    = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Error ${xhr.status} al subir`));
+        xhr.onerror   = () => reject(new Error('Error de red'));
+        xhr.ontimeout = () => reject(new Error('Tiempo de subida agotado'));
         xhr.send(compressed);
       });
 
-      setUploadProgress('Guardando...');
+      setUploadProgress('Guardando en base de datos...');
 
       const column = TYPE_TO_COLUMN[type] || type;
       const { error: dbErr } = await supabase
         .from('bookings')
         .update({ [column]: path, updated_at: new Date().toISOString() })
         .eq('id', bookingId);
-      if (dbErr) throw new Error(dbErr.message);
+      if (dbErr) throw dbErr;
 
-      // Actualizar estado local
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, [column]: path } : b));
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, [column]: path }));
       if (photoBooking?.id === bookingId)    setPhotoBooking(prev => ({ ...prev, [column]: path }));
       setPhotosData(prev => ({ ...prev, [type]: path }));
-      setUploadProgress('');
+      setUploadProgress('¡Foto guardada!');
+      setTimeout(() => setUploadProgress(''), 1200);
 
     } catch (err) {
-      console.error('[handlePhotoUpload] Error:', err);
-      setUploadError(err?.message || 'Error al subir la foto. Intenta de nuevo.');
+      console.error('handlePhotoUpload error:', err);
+      setUploadError(err?.message || 'Error desconocido al subir la foto. Intenta de nuevo.');
       setUploadProgress('');
     } finally {
-      // SIEMPRE liberar el estado de carga
       setUploadingPhoto(false);
     }
   };
