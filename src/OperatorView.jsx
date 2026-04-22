@@ -205,7 +205,13 @@ function PhotoUploadButton({ bookingId, photoKey, label, onSuccess, disabled }) 
     if (!file || disabled) return;
     setUploading(true); setLocalErr(''); setProgress(0);
     try {
-      const fileToUpload = await compressImage(file);
+      // Comprimir — si falla o devuelve vacío, usar archivo original
+      let fileToUpload = file;
+      try {
+        const compressed = await compressImage(file);
+        if (compressed && compressed.size > 0) fileToUpload = compressed;
+      } catch { fileToUpload = file; }
+
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
       const { data: { session } } = await supabase.auth.getSession();
@@ -217,7 +223,7 @@ function PhotoUploadButton({ bookingId, photoKey, label, onSuccess, disabled }) 
         xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`);
         xhr.setRequestHeader('Authorization', `Bearer ${token}`);
         xhr.setRequestHeader('apikey', supabaseKey);
-        xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg');
+        xhr.setRequestHeader('Content-Type', fileToUpload.type || 'image/jpeg');
         xhr.setRequestHeader('x-upsert', 'true');
         xhr.timeout = 180000;
         xhr.upload.onprogress = (e) => { if (e.lengthComputable) setProgress(Math.round(e.loaded / e.total * 100)); };
