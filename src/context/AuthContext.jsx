@@ -78,10 +78,13 @@ export function AuthProvider({ children }) {
         console.log('[AuthContext] Auth event:', event, '| session:', !!session)
 
         if (event === 'SIGNED_OUT') {
-          // En móvil, abrir la cámara puede disparar SIGNED_OUT momentáneamente
-          // Si el documento está oculto (cámara abierta), ignorar el evento
-          if (document.hidden) {
-            console.log('[AuthContext] SIGNED_OUT ignorado — documento oculto (cámara/fondo)')
+          // Esperar 1 segundo antes de cerrar sesión
+          // En móvil, la cámara puede disparar SIGNED_OUT momentáneamente
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          // Verificar si la sesión sigue activa antes de cerrar
+          const { data: { session: check } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
+          if (check) {
+            console.log('[AuthContext] SIGNED_OUT ignorado — sesión sigue activa')
             return
           }
           initDone.current         = false
