@@ -625,8 +625,14 @@ const OperatorView = () => {
     try {
       const column = TYPE_TO_COLUMN[type] || type;
 
-      // Exactamente igual al OnboardingView — compressImage + file.type como Content-Type
-      const fileToUpload = await compressImage(file);
+      // Compresión con timeout de seguridad — si falla en 5s usa el original
+      let fileToUpload = file;
+      try {
+        fileToUpload = await Promise.race([
+          compressImage(file),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+        ]);
+      } catch { fileToUpload = file; }
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
