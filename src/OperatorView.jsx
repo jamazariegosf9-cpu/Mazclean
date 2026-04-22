@@ -229,20 +229,30 @@ function PhotoModal({ isMobile, photoBooking, photoStep, photoPhase, photosData,
       const token = session?.access_token || supabaseKey;
       const path  = `${photoBooking.id}/${currentPhotoKey}_${Date.now()}.jpg`;
 
-      // Usar fetch en lugar de XHR — más compatible con móvil moderno
-      const response = await fetch(`${supabaseUrl}/storage/v1/object/service-photos/${path}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'apikey': supabaseKey,
-          'Content-Type': file.type || 'image/jpeg',
-          'x-upsert': 'true',
-        },
-        body: file,
-      });
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`HTTP ${response.status}: ${text.slice(0, 100)}`);
+      // fetch con timeout de 30 segundos
+      const controller = new AbortController();
+      const timeoutId  = setTimeout(() => controller.abort(), 30000);
+      try {
+        const response = await fetch(`${supabaseUrl}/storage/v1/object/service-photos/${path}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'apikey': supabaseKey,
+            'Content-Type': file.type || 'image/jpeg',
+            'x-upsert': 'true',
+          },
+          body: file,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+          const text = await response.text().catch(() => '');
+          throw new Error(`HTTP ${response.status}: ${text.slice(0, 100)}`);
+        }
+      } catch (fetchErr) {
+        clearTimeout(timeoutId);
+        if (fetchErr.name === 'AbortError') throw new Error('Tiempo agotado — intenta de nuevo');
+        throw fetchErr;
       }
       setProgress(100);
 
