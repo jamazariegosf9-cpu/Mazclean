@@ -499,11 +499,13 @@ const OperatorView = () => {
     setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModal(true);
   };
 
-  const handleFinalizeClick = (booking) => {
+  const handleFinalizeClick = async (booking) => {
     if (!booking.photo_front_before || !booking.photo_side_before) {
       alert('Debes subir las fotos ANTES del servicio primero.');
       return;
     }
+    // Refrescar sesión antes de abrir modal — igual que handleStartWashing
+    try { await supabase.auth.getSession(); } catch {}
     const existing = {};
     if (booking.photo_front_after)    existing.front_after    = booking.photo_front_after;
     if (booking.photo_interior_after) existing.interior_after = booking.photo_interior_after;
