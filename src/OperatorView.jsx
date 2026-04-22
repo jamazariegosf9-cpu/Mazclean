@@ -222,14 +222,28 @@ function PhotoModal({ isMobile, photoBooking, photoStep, photoPhase, photosData,
     if (!file) return;
     setUploading(true); setLocalErr(''); setProgress(0);
     try {
-      const column = TYPE_TO_COLUMN[currentPhotoKey] || currentPhotoKey;
-      const path   = await uploadFile({
-        file,
-        folder:     photoBooking.id,
-        userId:     currentPhotoKey,
-        onProgress: setProgress,
+      const column     = TYPE_TO_COLUMN[currentPhotoKey] || currentPhotoKey;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || supabaseKey;
+      const path  = `${photoBooking.id}/${currentPhotoKey}_${Date.now()}.jpg`;
+
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`);
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.setRequestHeader('apikey', supabaseKey);
+        xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg');
+        xhr.setRequestHeader('x-upsert', 'true');
+        xhr.timeout = 180000;
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) setProgress(Math.round(e.loaded / e.total * 100)); };
+        xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0,100)}`)); };
+        xhr.onerror   = () => reject(new Error('Error de red'));
+        xhr.ontimeout = () => reject(new Error('Tiempo agotado'));
+        xhr.send(file);
       });
-      // Guardar en DB
+
       const { error: dbErr } = await supabase
         .from('bookings')
         .update({ [column]: path, updated_at: new Date().toISOString() })
