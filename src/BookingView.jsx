@@ -307,7 +307,7 @@ export default function BookingView() {
           address_lng:         addressDetails.lng,
           address_notes:       notes || null,
           scheduled_date:      date,
-          scheduled_time:      timeFrom + ':00',
+          scheduled_time:      timeFrom + ':00',    // hora de inicio como referencia
           scheduled_time_from: timeFrom,
           scheduled_time_to:   timeTo,
           base_price:          price,
@@ -326,17 +326,11 @@ export default function BookingView() {
           assignment_mode:     'autonomo',
           created_at:          new Date().toISOString(),
           updated_at:          new Date().toISOString(),
-          })
+        })
         .select()
         .single()
 
-if (insertError) {
-  console.error('Error insertando booking:', insertError);
-  // Muestra el error real al usuario si quieres
-  throw insertError;
-}
-
-console.log('✅ Reserva creada:', newBooking);
+      if (insertError) throw insertError
 
       clearTimeout(timeoutId)
 
@@ -356,23 +350,7 @@ console.log('✅ Reserva creada:', newBooking);
         console.warn('Error lanzando proceso de asignación:', e.message)
       }
 
-      // 3. WhatsApp de confirmación al cliente
-      setTimeout(() => {
-        supabase.from('profiles').select('phone').eq('id', user.id).single()
-          .then(({ data: profileData }) => {
-            if (profileData?.phone) {
-              sendWhatsApp('booking_created', profileData.phone, {
-                booking_ref:         bookingRef,
-                service_name:        service.name,
-                scheduled_date:      date,
-                scheduled_time_from: timeFrom,
-                scheduled_time_to:   timeTo,
-                total_price:         price,
-              })
-            }
-          }).catch(() => {})
-      }, 0)
-
+      // El WhatsApp booking_created lo envía process-booking-request v3
       setLoading(false)
       setSuccess(true)
 
