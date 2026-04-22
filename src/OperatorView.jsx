@@ -289,6 +289,7 @@ function PhotoModal({ isMobile, photoBooking, photoStep, photoPhase, photosData,
 
         <div style={{ padding: isMobile ? '20px 16px' : '24px', flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <PhotoStep
+            key={currentPhotoKey}
             label={currentPhotoConfig.label}
             value={getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`])}
             bookingId={photoBooking.id}
