@@ -196,7 +196,7 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
 }
 
 // ── Componente autocontenido de subida de foto (igual al OnboardingView) ────
-function PhotoUploadButton({ bookingId, photoKey, label, onSuccess, disabled }) {
+function PhotoUploadButton({ bookingId, photoKey, label, onSuccess, disabled, sessionToken }) {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress]   = useState(0);
   const [localErr, setLocalErr]   = useState('');
@@ -215,7 +215,7 @@ function PhotoUploadButton({ bookingId, photoKey, label, onSuccess, disabled }) 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
       const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || supabaseKey;
+      const token = session?.access_token || sessionToken || supabaseKey;
       const path = `${bookingId}/${photoKey}_${Date.now()}.jpg`;
 
       await new Promise((resolve, reject) => {
@@ -1123,6 +1123,7 @@ const OperatorView = () => {
                 photoKey={currentPhotoKey}
                 label={photosData[currentPhotoKey] ? 'Cambiar foto' : 'Tomar foto con cámara'}
                 disabled={false}
+                sessionToken={sessionToken}
                 onSuccess={(path) => {
                   const TYPE_TO_COLUMN = { front_before: 'photo_front_before', side_before: 'photo_side_before', front_after: 'photo_front_after', interior_after: 'photo_interior_after' };
                   const column = TYPE_TO_COLUMN[currentPhotoKey] || currentPhotoKey;
