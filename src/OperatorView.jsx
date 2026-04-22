@@ -292,18 +292,7 @@ function PhotoModal({ isMobile, photoBooking, photoStep, photoPhase, photosData,
             disabled={false}
             onSuccess={(path) => {
               const column = TYPE_TO_COLUMN[currentPhotoKey] || currentPhotoKey;
-              supabase.from('bookings')
-                .update({ [column]: path, updated_at: new Date().toISOString() })
-                .eq('id', photoBooking.id)
-                .then(({ error }) => {
-                  if (!error) {
-                    onPhotoSaved(currentPhotoKey, path, column);
-                    // Limpiar caché después de cada foto para permitir siguiente upload
-                    if ('caches' in window) {
-                      caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
-                    }
-                  }
-                });
+              onPhotoSaved(currentPhotoKey, path, column);
             }}
           />
 
@@ -1115,6 +1104,13 @@ const OperatorView = () => {
           getPhotoUrl={getPhotoUrl}
           onClose={() => { setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); setUploadingPhoto(false); setUploadError(''); setUploadProgress(''); }}
           onPhotoSaved={(type, path, column) => {
+            // UPDATE a DB aquí donde auth funciona correctamente
+            supabase.from('bookings')
+              .update({ [column]: path, updated_at: new Date().toISOString() })
+              .eq('id', photoBooking.id)
+              .then(({ error }) => {
+                if (error) console.error('Error guardando foto en DB:', error);
+              });
             setBookings(prev => prev.map(b => b.id === photoBooking.id ? { ...b, [column]: path } : b));
             if (selectedBooking?.id === photoBooking.id) setSelectedBooking(prev => ({ ...prev, [column]: path }));
             setPhotoBooking(prev => ({ ...prev, [column]: path }));
