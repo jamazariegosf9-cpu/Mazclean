@@ -253,6 +253,7 @@ function PhotoModal({ isMobile, photoBooking, photoStep, photoPhase, photosData,
       if (dbErr) throw dbErr;
       onPhotoSaved(currentPhotoKey, path, column);
     } catch (e) {
+      alert('ERROR: ' + e.message);
       setLocalErr(e.message || 'Error al subir la foto. Intenta de nuevo.');
     } finally {
       setUploading(false);
