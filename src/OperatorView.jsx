@@ -53,27 +53,26 @@ async function compressImage(file) {
   } catch { return file; }
 }
 
-// uploadFile exacto del OnboardingView
+// uploadFile sin compresión — evita congelamiento en móvil
 async function uploadFile({ file, folder, userId, onProgress }) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token || supabaseKey;
   const path = `${folder}/${userId}_${Date.now()}.jpg`;
-  const fileToUpload = await compressImage(file);
   await new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.setRequestHeader('apikey', supabaseKey);
-    xhr.setRequestHeader('Content-Type', 'image/jpeg');
+    xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg');
     xhr.setRequestHeader('x-upsert', 'true');
     xhr.timeout = 180000;
-    xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100) + '%'); };
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100)); };
     xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0, 100)}`)); };
     xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexión'));
     xhr.ontimeout = () => reject(new Error('Tiempo agotado — señal débil, intenta de nuevo'));
-    xhr.send(fileToUpload);
+    xhr.send(file);
   });
   return path;
 }
@@ -709,50 +708,27 @@ const OperatorView = () => {
     try {
       const column = TYPE_TO_COLUMN[type] || type;
 
-      // Compresión con timeout de seguridad — si falla en 5s usa el original
-      let fileToUpload = file;
-      try {
-        fileToUpload = await Promise.race([
-          compressImage(file),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-        ]);
-      } catch { fileToUpload = file; }
-
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || supabaseKey;
-      const path = `${bookingId}/${type}_${Date.now()}.jpg`;
-
-      await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`);
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-        xhr.setRequestHeader('apikey', supabaseKey);
-        xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg');
-        xhr.setRequestHeader('x-upsert', 'true');
-        xhr.timeout = 180000;
-        xhr.upload.onprogress = (e) => { if (e.lengthComputable && setUploadProgress) setUploadProgress(Math.round(e.loaded / e.total * 100)) };
-        xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0, 100)}`)) };
-        xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexión'));
-        xhr.ontimeout = () => reject(new Error('Tiempo agotado — señal débil, intenta de nuevo'));
-        xhr.send(fileToUpload);
+      const uploadedPath = await uploadFile({
+        file,
+        folder: bookingId,
+        userId: type,
+        onProgress: (perc) => setUploadProgress(perc),
       });
 
       const { error: dbErr } = await supabase
         .from('bookings')
-        .update({ [column]: path, updated_at: new Date().toISOString() })
+        .update({ [column]: uploadedPath, updated_at: new Date().toISOString() })
         .eq('id', bookingId);
       if (dbErr) throw dbErr;
 
-      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, [column]: path } : b));
-      if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, [column]: path }));
-      if (photoBooking?.id === bookingId) setPhotoBooking(prev => ({ ...prev, [column]: path }));
-      setPhotosData(prev => ({ ...prev, [type]: path }));
-      setUploadProgress('');
+      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, [column]: uploadedPath } : b));
+      if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, [column]: uploadedPath }));
+      if (photoBooking?.id === bookingId) setPhotoBooking(prev => ({ ...prev, [column]: uploadedPath }));
+      setPhotosData(prev => ({ ...prev, [type]: uploadedPath }));
+      setUploadProgress(100);
 
     } catch (err) {
-      console.error('Error subida foto:', err);
+      console.error('Error en handleNewPhotoUpload:', err);
       setUploadError(err.message || 'Error al subir la foto. Intenta de nuevo.');
       setUploadProgress('');
     } finally {
