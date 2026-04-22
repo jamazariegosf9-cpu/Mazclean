@@ -504,7 +504,7 @@ const OperatorView = () => {
       alert('Debes subir las fotos ANTES del servicio primero.');
       return;
     }
-    // Replicar exactamente handleStartWashing — updateStatus refresca token
+    // Misma estructura que handleStartWashing — updateStatus antes de abrir modal
     await updateStatus(booking.id, 'en_proceso', 'washing', booking);
     const updated = { ...booking, status: 'en_proceso' };
     const existing = {};
