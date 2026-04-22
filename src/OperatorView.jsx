@@ -214,8 +214,18 @@ function PhotoUploadButton({ bookingId, photoKey, label, onSuccess, disabled, se
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || sessionToken || supabaseKey;
+
+      // Refrescar sesión explícitamente antes de subir
+      let token = sessionToken || supabaseKey;
+      try {
+        const { data: { session: freshSession } } = await supabase.auth.refreshSession();
+        if (freshSession?.access_token) token = freshSession.access_token;
+        else {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) token = session.access_token;
+        }
+      } catch { /* usar token existente */ }
+
       const path = `${bookingId}/${photoKey}_${Date.now()}.jpg`;
 
       // Verificar que el archivo tiene contenido antes de enviar
