@@ -205,21 +205,23 @@ function PhotoStep({ label, value, bookingId, photoKey, onSuccess, disabled }) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress]   = useState(0)
   const [localErr, setLocalErr]   = useState('')
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   const handleFile = async (file) => {
     if (!file || disabled) return
-    setUploading(true); setLocalErr(''); setProgress(0)
+    if (mountedRef.current) { setUploading(true); setLocalErr(''); setProgress(0) }
     try {
       if (file.size > 50 * 1024 * 1024) throw new Error('El archivo no debe pesar más de 50MB.')
-      const path = `service_fotos/${bookingId}/${photoKey}_${Date.now()}.jpg`
-      const { error } = await supabase.storage
-        .from('service-photos')
-        .upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' })
-      if (error) throw error
-      setProgress(100)
-      onSuccess(path)
-    } catch (e) { setLocalErr(e.message) }
-    finally { setUploading(false) }
+      const folder = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,'_').replace(/[^a-z_]/g,'').slice(0,30)
+      const path = await uploadFile({ file, folder, userId: bookingId, onProgress: (p) => { if (mountedRef.current) setProgress(p) } })
+      if (mountedRef.current) { setProgress(100); onSuccess(path) }
+    } catch (e) { if (mountedRef.current) setLocalErr(e.message) }
+    finally { if (mountedRef.current) setUploading(false) }
   }
 
   return (
