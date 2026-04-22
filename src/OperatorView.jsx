@@ -229,20 +229,22 @@ function PhotoModal({ isMobile, photoBooking, photoStep, photoPhase, photosData,
       const token = session?.access_token || supabaseKey;
       const path  = `${photoBooking.id}/${currentPhotoKey}_${Date.now()}.jpg`;
 
-      await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`);
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-        xhr.setRequestHeader('apikey', supabaseKey);
-        xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg');
-        xhr.setRequestHeader('x-upsert', 'true');
-        xhr.timeout = 180000;
-        xhr.upload.onprogress = (e) => { if (e.lengthComputable) setProgress(Math.round(e.loaded / e.total * 100)); };
-        xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0,100)}`)); };
-        xhr.onerror   = () => reject(new Error('Error de red'));
-        xhr.ontimeout = () => reject(new Error('Tiempo agotado'));
-        xhr.send(file);
+      // Usar fetch en lugar de XHR — más compatible con móvil moderno
+      const response = await fetch(`${supabaseUrl}/storage/v1/object/service-photos/${path}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'apikey': supabaseKey,
+          'Content-Type': file.type || 'image/jpeg',
+          'x-upsert': 'true',
+        },
+        body: file,
       });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`HTTP ${response.status}: ${text.slice(0, 100)}`);
+      }
+      setProgress(100);
 
       const { error: dbErr } = await supabase
         .from('bookings')
