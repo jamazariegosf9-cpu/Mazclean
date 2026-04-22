@@ -499,18 +499,15 @@ const OperatorView = () => {
     setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModal(true);
   };
 
-  const handleFinalizeClick = async (booking) => {
+  const handleFinalizeClick = (booking) => {
     if (!booking.photo_front_before || !booking.photo_side_before) {
       alert('Debes subir las fotos ANTES del servicio primero.');
       return;
     }
-    // Misma estructura que handleStartWashing — updateStatus antes de abrir modal
-    await updateStatus(booking.id, 'en_proceso', 'washing', booking);
-    const updated = { ...booking, status: 'en_proceso' };
     const existing = {};
-    if (updated.photo_front_after)    existing.front_after    = updated.photo_front_after;
-    if (updated.photo_interior_after) existing.interior_after = updated.photo_interior_after;
-    setPhotoBooking(updated); setPhotosData(existing); setPhotoStep(3); setPhotoPhase('after');
+    if (booking.photo_front_after)    existing.front_after    = booking.photo_front_after;
+    if (booking.photo_interior_after) existing.interior_after = booking.photo_interior_after;
+    setPhotoBooking(booking); setPhotosData(existing); setPhotoStep(3); setPhotoPhase('after');
     setPendingFinalize(booking.id); setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModal(true);
   };
 
