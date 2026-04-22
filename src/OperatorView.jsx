@@ -53,30 +53,33 @@ async function compressImage(file) {
   } catch { return file; }
 }
 
-// uploadFile — convierte a Blob antes de enviar (más compatible en móvil)
+// uploadFile — copia exacta del OnboardingView que funciona en móvil
 async function uploadFile({ file, folder, userId, onProgress }) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token || supabaseKey;
-  const path = `${folder}/${userId}_${Date.now()}.jpg`;
-  // Convertir File a Blob para mayor compatibilidad en móvil
-  const blob = file.slice(0, file.size, 'image/jpeg');
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token || supabaseKey
+  const isVideo = file.type.startsWith('video/')
+  const isPdf   = file.type === 'application/pdf'
+  const ext     = isVideo ? (file.name?.endsWith('.mov') ? 'mov' : 'mp4') : isPdf ? 'pdf' : 'jpg'
+  const path    = `${folder}/${userId}/${folder}_${Date.now()}.${ext}`
+  const fileToUpload = (!isVideo && !isPdf) ? await compressImage(file) : file
+
   await new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`);
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    xhr.setRequestHeader('apikey', supabaseKey);
-    xhr.setRequestHeader('Content-Type', 'image/jpeg');
-    xhr.setRequestHeader('x-upsert', 'true');
-    xhr.timeout = 180000;
-    xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100)); };
-    xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0, 100)}`)); };
-    xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexión'));
-    xhr.ontimeout = () => reject(new Error('Tiempo agotado — señal débil, intenta de nuevo'));
-    xhr.send(blob);
-  });
-  return path;
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`)
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.setRequestHeader('apikey', supabaseKey)
+    xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg')
+    xhr.setRequestHeader('x-upsert', 'true')
+    xhr.timeout = 180000
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100)) }
+    xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0, 100)}`)) }
+    xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexión'))
+    xhr.ontimeout = () => reject(new Error('Tiempo agotado — señal débil, intenta de nuevo'))
+    xhr.send(fileToUpload)
+  })
+  return path
 }
 
 // ── Countdown hook: devuelve segundos restantes hasta expires_at ──────────────
