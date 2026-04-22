@@ -11,7 +11,7 @@ export function AuthProvider({ children }) {
   const [authState, setAuthState] = useState({
     user:    null,
     profile: null,
-    loading: true,
+    loading: true, // true inicial — evita pantalla negra mientras se recupera sesión
   })
   const [sessionExpired, setSessionExpired] = useState(false)
   const initDone         = useRef(false)
@@ -152,18 +152,22 @@ export function AuthProvider({ children }) {
   // ── Listener: cuando la app vuelve al frente después de cámara/fondo ──────
   useEffect(() => {
     const handleVisibilityChange = async () => {
-      // Solo actuar cuando la app vuelve al frente
       if (document.hidden) return
-      // Si no hay usuario en estado, intentar recuperar sesión
+      // Si no hay usuario, mostrar loading y recuperar sesión
       if (!authState.user) {
+        setAuthState(prev => ({ ...prev, loading: true }))
         try {
           const { data: { session } } = await supabase.auth.getSession()
           if (session?.user) {
             console.log('[AuthContext] Sesión recuperada al volver al frente')
             const result = await loadProfileWithRetry(session.user)
             setAuthState({ ...result, loading: false })
+          } else {
+            setAuthState(prev => ({ ...prev, loading: false }))
           }
-        } catch { /* silencioso */ }
+        } catch {
+          setAuthState(prev => ({ ...prev, loading: false }))
+        }
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)

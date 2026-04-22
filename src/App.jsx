@@ -269,7 +269,13 @@ function AppInner() {
   }
 
   if (loading || (user && !profile)) {
-    return <div style={{ minHeight: '100vh', background: '#050A14' }} />
+    return (
+      <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
+        <div style={{ width: 48, height: 48, border: '4px solid rgba(0,200,255,0.2)', borderTop: '4px solid #00C8FF', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <p style={{ color: '#8CA0BF', fontSize: 14 }}>Cargando...</p>
+        <style>{'@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }'}</style>
+      </div>
+    )
   }
 
   if (profile?.role === 'operador') {
