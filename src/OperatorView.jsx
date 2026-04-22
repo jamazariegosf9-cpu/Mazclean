@@ -992,7 +992,7 @@ const OperatorView = () => {
         </div>
       )}
 
-      {/* MODAL FOTOS - Versión final que fuerza reset del input en móvil */}
+      {/* MODAL FOTOS - Versión ultra-agresiva para reset input móvil */}
       {photoModal && photoBooking && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
           <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 24, width: '100%', maxWidth: isMobile ? '100%' : 420, maxHeight: isMobile ? '92vh' : '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.3)' }}>
@@ -1003,14 +1003,32 @@ const OperatorView = () => {
                   <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 15, margin: '0 0 4px' }}>{currentPhotoConfig.label}</h3>
                   <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, margin: 0 }}>{currentPhotoConfig.desc}</p>
                 </div>
-                <button onClick={() => { setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); setUploadingPhoto(false); setUploadError(''); setUploadProgress(''); }} style={{ background: 'rgba(255,255,255,0.3)', border: 'none', color: '#fff', fontSize: 22, width: 38, height: 38, borderRadius: 10, cursor: 'pointer' }}>✕</button>
+                <button
+                  onClick={() => {
+                    setPhotoModal(false);
+                    setPhotosData({});
+                    setPhotoBooking(null);
+                    setPendingFinalize(null);
+                    setUploadingPhoto(false);
+                    setUploadError('');
+                    setUploadProgress('');
+                  }}
+                  style={{ background: 'rgba(255,255,255,0.3)', border: 'none', color: '#fff', fontSize: 22, width: 38, height: 38, borderRadius: 10, cursor: 'pointer' }}
+                >
+                  ✕
+                </button>
               </div>
             </div>
 
             <div style={{ padding: isMobile ? '20px 16px' : '24px', flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
               {getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`]) ? (
                 <div style={{ position: 'relative', marginBottom: 20 }}>
-                  <img src={getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`])} alt={currentPhotoConfig.label} style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 12, border: '2px solid #10b981' }} onError={e => e.target.style.display = 'none'} />
+                  <img
+                    src={getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`])}
+                    alt={currentPhotoConfig.label}
+                    style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 12, border: '2px solid #10b981' }}
+                    onError={e => e.target.style.display = 'none'}
+                  />
                   <span style={{ position: 'absolute', top: 12, right: 12, background: '#10b981', color: '#fff', fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 20 }}>✅ Guardada</span>
                 </div>
               ) : (
@@ -1020,12 +1038,30 @@ const OperatorView = () => {
                 </div>
               )}
 
-              {uploadError && <div style={{ background: '#fee2e2', border: '1px solid #ef4444', color: '#b91c1c', padding: '14px 16px', borderRadius: 12, marginBottom: 16, fontSize: 14 }}>⚠️ {uploadError}</div>}
+              {uploadError && (
+                <div style={{ background: '#fee2e2', border: '1px solid #ef4444', color: '#b91c1c', padding: '14px 16px', borderRadius: 12, marginBottom: 16, fontSize: 14 }}>
+                  ⚠️ {uploadError}
+                </div>
+              )}
 
-              <label style={{ display: 'block', background: uploadingPhoto ? '#cbd5e1' : '#2563eb', color: uploadingPhoto ? '#64748b' : '#fff', padding: '18px 0', textAlign: 'center', borderRadius: 16, fontSize: 17, fontWeight: 700, cursor: uploadingPhoto ? 'not-allowed' : 'pointer', marginBottom: 16, boxShadow: '0 4px 12px rgba(37,99,235,0.3)' }}>
+              <label
+                style={{
+                  display: 'block',
+                  background: uploadingPhoto ? '#cbd5e1' : '#2563eb',
+                  color: uploadingPhoto ? '#64748b' : '#fff',
+                  padding: '18px 0',
+                  textAlign: 'center',
+                  borderRadius: 16,
+                  fontSize: 17,
+                  fontWeight: 700,
+                  cursor: uploadingPhoto ? 'not-allowed' : 'pointer',
+                  marginBottom: 16,
+                  boxShadow: '0 4px 12px rgba(37,99,235,0.3)'
+                }}
+              >
                 📸 {uploadingPhoto ? `Subiendo... ${uploadProgress || 0}%` : (photosData[currentPhotoKey] ? 'Cambiar foto' : 'Tomar foto con cámara')}
                 <input
-                  key={`file-input-${currentPhotoKey}`}
+                  key={`photo-input-${currentPhotoKey}-${Date.now()}`}
                   type="file"
                   accept="image/*"
                   capture="environment"
@@ -1035,12 +1071,28 @@ const OperatorView = () => {
                     const file = e.target.files?.[0];
                     if (!file) return;
                     e.target.value = '';
+                    if (e.target) e.target.value = '';
                     await handleNewPhotoUpload(file, photoBooking.id, currentPhotoKey);
                   }}
                 />
               </label>
 
-              <button onClick={handleNextPhotoStep} disabled={!canAdvancePhoto || uploadingPhoto} style={{ width: '100%', padding: '16px 0', borderRadius: 16, border: 'none', background: canAdvancePhoto && !uploadingPhoto ? (currentPhotoConfig.phase === 'before' ? '#f97316' : '#10b981') : '#94a3b8', color: '#fff', fontSize: 16, fontWeight: 700, cursor: (canAdvancePhoto && !uploadingPhoto) ? 'pointer' : 'not-allowed', minHeight: 56 }}>
+              <button
+                onClick={handleNextPhotoStep}
+                disabled={!canAdvancePhoto || uploadingPhoto}
+                style={{
+                  width: '100%',
+                  padding: '16px 0',
+                  borderRadius: 16,
+                  border: 'none',
+                  background: canAdvancePhoto && !uploadingPhoto ? (currentPhotoConfig.phase === 'before' ? '#f97316' : '#10b981') : '#94a3b8',
+                  color: '#fff',
+                  fontSize: 16,
+                  fontWeight: 700,
+                  cursor: (canAdvancePhoto && !uploadingPhoto) ? 'pointer' : 'not-allowed',
+                  minHeight: 56
+                }}
+              >
                 {photoStep < 4 ? 'Siguiente foto →' : pendingFinalize ? 'Ir al Checklist' : 'Listo'}
               </button>
             </div>
