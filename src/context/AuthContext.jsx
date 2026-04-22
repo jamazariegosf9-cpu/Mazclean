@@ -149,31 +149,6 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  // ── Listener: cuando la app vuelve al frente después de cámara/fondo ──────
-  useEffect(() => {
-    const handleVisibilityChange = async () => {
-      if (document.hidden) return
-      // Si no hay usuario, mostrar loading y recuperar sesión
-      if (!authState.user) {
-        setAuthState(prev => ({ ...prev, loading: true }))
-        try {
-          const { data: { session } } = await supabase.auth.getSession()
-          if (session?.user) {
-            console.log('[AuthContext] Sesión recuperada al volver al frente')
-            const result = await loadProfileWithRetry(session.user)
-            setAuthState({ ...result, loading: false })
-          } else {
-            setAuthState(prev => ({ ...prev, loading: false }))
-          }
-        } catch {
-          setAuthState(prev => ({ ...prev, loading: false }))
-        }
-      }
-    }
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [authState.user])
-
   // ── Watcher: verificar sesión cada 60 segundos ──────────────────────────
   // Detecta expiración cuando la app lleva horas abierta sin actividad
   // Reintenta 2 veces antes de cerrar sesión para evitar falsos positivos
