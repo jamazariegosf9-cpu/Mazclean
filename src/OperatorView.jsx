@@ -504,12 +504,13 @@ const OperatorView = () => {
       alert('Debes subir las fotos ANTES del servicio primero.');
       return;
     }
-    // Refrescar sesión antes de abrir modal — igual que handleStartWashing
-    try { await supabase.auth.getSession(); } catch {}
+    // Replicar exactamente handleStartWashing — updateStatus refresca token
+    await updateStatus(booking.id, 'en_proceso', 'washing', booking);
+    const updated = { ...booking, status: 'en_proceso' };
     const existing = {};
-    if (booking.photo_front_after)    existing.front_after    = booking.photo_front_after;
-    if (booking.photo_interior_after) existing.interior_after = booking.photo_interior_after;
-    setPhotoBooking(booking); setPhotosData(existing); setPhotoStep(3); setPhotoPhase('after');
+    if (updated.photo_front_after)    existing.front_after    = updated.photo_front_after;
+    if (updated.photo_interior_after) existing.interior_after = updated.photo_interior_after;
+    setPhotoBooking(updated); setPhotosData(existing); setPhotoStep(3); setPhotoPhase('after');
     setPendingFinalize(booking.id); setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModal(true);
   };
 
