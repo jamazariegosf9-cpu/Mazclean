@@ -200,11 +200,64 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
 }
 
 
-// ── Componente PhotoModal autocontenido (mismo patrón que PhotoUpload del Onboarding) ─────
+// ── Componente PhotoStep — copia exacta del PhotoUpload del Onboarding ──────
+function PhotoStep({ label, value, bookingId, photoKey, onSuccess, disabled }) {
+  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress]   = useState(0)
+  const [localErr, setLocalErr]   = useState('')
+
+  const handleFile = async (file) => {
+    if (!file || disabled) return
+    setUploading(true); setLocalErr(''); setProgress(0)
+    try {
+      if (file.size > 50 * 1024 * 1024) throw new Error('El archivo no debe pesar más de 50MB.')
+      const folder = bookingId
+      const userId = photoKey
+      const path   = await uploadFile({ file, folder, userId, onProgress: setProgress })
+      onSuccess(path)
+    } catch (e) { setLocalErr(e.message) }
+    finally { setUploading(false) }
+  }
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      {value ? (
+        <div style={{ position: 'relative', marginBottom: 10 }}>
+          <img src={value} alt={label} style={{ width: '100%', height: 180, objectFit: 'cover', borderRadius: 12, border: '2px solid #bbf7d0' }} onError={e => { e.target.style.display = 'none' }} />
+          <span style={{ position: 'absolute', top: 8, right: 8, background: '#10b981', color: '#fff', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>✅ Guardada</span>
+        </div>
+      ) : (
+        <div style={{ width: '100%', height: 160, background: '#f9fafb', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 10, border: '2px dashed #e5e7eb' }}>
+          <Camera size={40} color="#d1d5db" />
+          <span style={{ fontSize: 12, color: '#9ca3af', marginTop: 6 }}>Sin foto aún</span>
+        </div>
+      )}
+      {uploading && (
+        <div style={{ background: '#eff6ff', borderRadius: 10, padding: '10px 14px', marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <div style={{ width: 16, height: 16, border: '2px solid #bfdbfe', borderTop: '2px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: '#1e40af', fontWeight: 600 }}>Subiendo... {progress}%</span>
+          </div>
+          <div style={{ height: 4, background: '#bfdbfe', borderRadius: 4 }}>
+            <div style={{ height: '100%', width: `${progress}%`, background: '#3b82f6', borderRadius: 4, transition: 'width 0.2s' }} />
+          </div>
+        </div>
+      )}
+      {localErr && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#dc2626', fontSize: 13 }}>⚠️ {localErr}</div>}
+      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: uploading ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', pointerEvents: uploading ? 'none' : 'auto', minHeight: 50, flexShrink: 0 }}>
+        📸 {value ? 'Cambiar foto' : 'Tomar foto'}
+        <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }} />
+      </label>
+    </div>
+  )
+}
+
+// ── Componente PhotoModal usa PhotoStep ───────────────────────────────────────
 function PhotoModal({ isMobile, photoBooking, photoStep, photoPhase, photosData, pendingFinalize, PHOTO_STEPS, getPhotoUrl, onClose, onPhotoSaved, onNext, canAdvance }) {
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress]   = useState(0);
-  const [localErr, setLocalErr]   = useState('');
+  const currentPhotoConfig = PHOTO_STEPS.find(p => p.step === photoStep) || PHOTO_STEPS[0];
+  const currentPhotoKey    = currentPhotoConfig.key;
+  const uploading          = false; // PhotoStep maneja su propio estado
+  const canAdvancePhoto    = canAdvance;
 
   const TYPE_TO_COLUMN = {
     front_before:   'photo_front_before',
@@ -213,62 +266,7 @@ function PhotoModal({ isMobile, photoBooking, photoStep, photoPhase, photosData,
     interior_after: 'photo_interior_after',
   };
 
-  const currentPhotoConfig = PHOTO_STEPS.find(p => p.step === photoStep) || PHOTO_STEPS[0];
-  const currentPhotoKey    = currentPhotoConfig.key;
-  const currentSaved       = !!photosData[currentPhotoKey];
-  const canAdvancePhoto    = canAdvance && !uploading;
-
-  const handleFile = async (file) => {
-    if (!file) return;
-    setUploading(true); setLocalErr(''); setProgress(0);
-    try {
-      const column     = TYPE_TO_COLUMN[currentPhotoKey] || currentPhotoKey;
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || supabaseKey;
-      const path  = `${photoBooking.id}/${currentPhotoKey}_${Date.now()}.jpg`;
-
-      // fetch con timeout de 30 segundos
-      const controller = new AbortController();
-      const timeoutId  = setTimeout(() => controller.abort(), 30000);
-      try {
-        const response = await fetch(`${supabaseUrl}/storage/v1/object/service-photos/${path}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'apikey': supabaseKey,
-            'Content-Type': file.type || 'image/jpeg',
-            'x-upsert': 'true',
-          },
-          body: file,
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        if (!response.ok) {
-          const text = await response.text().catch(() => '');
-          throw new Error(`HTTP ${response.status}: ${text.slice(0, 100)}`);
-        }
-      } catch (fetchErr) {
-        clearTimeout(timeoutId);
-        if (fetchErr.name === 'AbortError') throw new Error('Tiempo agotado — intenta de nuevo');
-        throw fetchErr;
-      }
-      setProgress(100);
-
-      const { error: dbErr } = await supabase
-        .from('bookings')
-        .update({ [column]: path, updated_at: new Date().toISOString() })
-        .eq('id', photoBooking.id);
-      if (dbErr) throw dbErr;
-      onPhotoSaved(currentPhotoKey, path, column);
-    } catch (e) {
-      alert('ERROR: ' + e.message);
-      setLocalErr(e.message || 'Error al subir la foto. Intenta de nuevo.');
-    } finally {
-      setUploading(false);
-    }
-  };
+  const handleFile = () => {}; // no usado — PhotoStep lo maneja
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
@@ -285,46 +283,22 @@ function PhotoModal({ isMobile, photoBooking, photoStep, photoPhase, photosData,
         </div>
 
         <div style={{ padding: isMobile ? '20px 16px' : '24px', flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          {getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`]) ? (
-            <div style={{ position: 'relative', marginBottom: 20 }}>
-              <img src={getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`])} alt={currentPhotoConfig.label} style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 12, border: '2px solid #10b981' }} onError={e => { e.target.style.display = 'none'; }} />
-              <span style={{ position: 'absolute', top: 12, right: 12, background: '#10b981', color: '#fff', fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 20 }}>✅ Guardada</span>
-            </div>
-          ) : (
-            <div style={{ height: 200, background: '#f8fafc', border: '3px dashed #cbd5e1', borderRadius: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
-              <Camera size={56} color="#94a3b8" />
-              <p style={{ marginTop: 16, color: '#64748b', fontSize: 15, fontWeight: 500 }}>Toca el botón para tomar la foto</p>
-            </div>
-          )}
-
-          {localErr && (
-            <div style={{ background: '#fee2e2', border: '1px solid #ef4444', color: '#b91c1c', padding: '14px 16px', borderRadius: 12, marginBottom: 16, fontSize: 14 }}>
-              ⚠️ {localErr}
-            </div>
-          )}
-
-          {uploading && (
-            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 18, height: 18, border: '3px solid #bfdbfe', borderTop: '3px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#1e40af' }}>Subiendo... {progress}%</span>
-            </div>
-          )}
-
-          <label style={{ display: 'block', background: uploading ? '#cbd5e1' : '#2563eb', color: uploading ? '#64748b' : '#fff', padding: '18px 0', textAlign: 'center', borderRadius: 16, fontSize: 17, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', marginBottom: 16, boxShadow: '0 4px 12px rgba(37,99,235,0.3)' }}>
-            📸 {uploading ? `Subiendo... ${progress}%` : (currentSaved ? 'Cambiar foto' : 'Tomar foto con cámara')}
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              style={{ display: 'none' }}
-              disabled={uploading}
-              onChange={(e) => {
-                const file = e.target.files && e.target.files[0];
-                e.target.value = '';
-                if (file) handleFile(file);
-              }}
-            />
-          </label>
+          <PhotoStep
+            label={currentPhotoConfig.label}
+            value={getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`])}
+            bookingId={photoBooking.id}
+            photoKey={currentPhotoKey}
+            disabled={false}
+            onSuccess={(path) => {
+              const column = TYPE_TO_COLUMN[currentPhotoKey] || currentPhotoKey;
+              supabase.from('bookings')
+                .update({ [column]: path, updated_at: new Date().toISOString() })
+                .eq('id', photoBooking.id)
+                .then(({ error }) => {
+                  if (!error) onPhotoSaved(currentPhotoKey, path, column);
+                });
+            }}
+          />
 
           <button onClick={onNext} disabled={!canAdvancePhoto} style={{ width: '100%', padding: '16px 0', borderRadius: 16, border: 'none', background: canAdvancePhoto ? (currentPhotoConfig.phase === 'before' ? '#f97316' : '#10b981') : '#94a3b8', color: '#fff', fontSize: 16, fontWeight: 700, cursor: canAdvancePhoto ? 'pointer' : 'not-allowed', minHeight: 56 }}>
             {photoStep < 4 ? 'Siguiente foto →' : pendingFinalize ? 'Ir al Checklist' : 'Listo'}
