@@ -111,7 +111,8 @@ export function AuthProvider({ children }) {
             return
           }
           if (!initDone.current) return
-          setAuthState(prev => ({ ...prev, loading: true }))
+          // No mostrar loading si ya hay usuario — evita pantalla negra al volver de cámara
+          setAuthState(prev => ({ ...prev, loading: prev.user ? false : true }))
           const result = await loadProfileWithRetry(session.user)
           setAuthState({ ...result, loading: false })
         }
