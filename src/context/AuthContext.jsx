@@ -11,7 +11,7 @@ export function AuthProvider({ children }) {
   const [authState, setAuthState] = useState({
     user:    null,
     profile: null,
-    loading: true,
+    loading: true, // true inicial — evita pantalla negra mientras se recupera sesión
   })
   const [sessionExpired, setSessionExpired] = useState(false)
   const initDone         = useRef(false)
@@ -78,6 +78,15 @@ export function AuthProvider({ children }) {
         console.log('[AuthContext] Auth event:', event, '| session:', !!session)
 
         if (event === 'SIGNED_OUT') {
+          // Esperar 1 segundo antes de cerrar sesión
+          // En móvil, la cámara puede disparar SIGNED_OUT momentáneamente
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          // Verificar si la sesión sigue activa antes de cerrar
+          const { data: { session: check } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
+          if (check) {
+            console.log('[AuthContext] SIGNED_OUT ignorado — sesión sigue activa')
+            return
+          }
           initDone.current         = false
           skipNextSignedIn.current = false
           setAuthState({ user: null, profile: null, loading: false })
@@ -102,7 +111,8 @@ export function AuthProvider({ children }) {
             return
           }
           if (!initDone.current) return
-          setAuthState(prev => ({ ...prev, loading: true }))
+          // No mostrar loading si ya hay usuario — evita pantalla negra al volver de cámara
+          setAuthState(prev => ({ ...prev, loading: prev.user ? false : true }))
           const result = await loadProfileWithRetry(session.user)
           setAuthState({ ...result, loading: false })
         }
