@@ -811,18 +811,21 @@ const OperatorView = () => {
                           <Play size={14} /> Empezar Lavado
                         </button>
                       )}
-                      {booking.status === 'en_proceso' && !booking.photo_front_before && (
+                      {booking.status === 'en_proceso' && !(booking.photo_front_before && booking.photo_side_before) && (
                         <button onClick={e => {
                           e.stopPropagation();
                           const existing = {};
-                          setPhotoBooking(booking); setPhotosData(existing); setPhotoStep(1); setPhotoPhase('before');
+                          if (booking.photo_front_before) existing.front_before = booking.photo_front_before;
+                          if (booking.photo_side_before)  existing.side_before  = booking.photo_side_before;
+                          const startStep = booking.photo_front_before ? 2 : 1;
+                          setPhotoBooking(booking); setPhotosData(existing); setPhotoStep(startStep); setPhotoPhase('before');
                           setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModal(true);
                         }} disabled={updatingId === booking.id}
                           style={{ flex: 1, background: '#f97316', color: '#fff', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
-                          <Camera size={14} /> Fotos ANTES
+                          <Camera size={14} /> {booking.photo_front_before ? 'Foto 2 ANTES' : 'Fotos ANTES'}
                         </button>
                       )}
-                      {booking.status === 'en_proceso' && booking.photo_front_before && (
+                      {booking.status === 'en_proceso' && booking.photo_front_before && booking.photo_side_before && (
                         <button onClick={e => { e.stopPropagation(); handleFinalizeClick(booking); }} disabled={updatingId === booking.id}
                           style={{ flex: 1, background: '#10b981', color: '#fff', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
                           <Check size={14} /> Finalizar
@@ -920,13 +923,17 @@ const OperatorView = () => {
                     style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 14, padding: '16px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, minHeight: 56, flexShrink: 0 }}>
                     <AlertTriangle size={18} />
                   </button>
-                  {!selectedBooking.photo_front_before ? (
+                  {!(selectedBooking.photo_front_before && selectedBooking.photo_side_before) ? (
                     <button onClick={() => {
-                      setPhotoBooking(selectedBooking); setPhotosData({}); setPhotoStep(1); setPhotoPhase('before');
+                      const existing = {};
+                      if (selectedBooking.photo_front_before) existing.front_before = selectedBooking.photo_front_before;
+                      if (selectedBooking.photo_side_before)  existing.side_before  = selectedBooking.photo_side_before;
+                      const startStep = selectedBooking.photo_front_before ? 2 : 1;
+                      setPhotoBooking(selectedBooking); setPhotosData(existing); setPhotoStep(startStep); setPhotoPhase('before');
                       setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModal(true);
                     }} disabled={updatingId === selectedBooking.id}
                       style={{ flex: 1, background: '#f97316', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 56 }}>
-                      <Camera size={18} /> SUBIR FOTOS ANTES
+                      <Camera size={18} /> {selectedBooking.photo_front_before ? 'FOTO 2 ANTES' : 'SUBIR FOTOS ANTES'}
                     </button>
                   ) : (
                     <button onClick={() => handleFinalizeClick(selectedBooking)} disabled={updatingId === selectedBooking.id}
