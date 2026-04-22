@@ -620,10 +620,14 @@ const OperatorView = () => {
 
     setUploadingPhoto(true);
     setUploadError('');
-    setUploadProgress('Subiendo...');
+    setUploadProgress(0);
 
     try {
       const column = TYPE_TO_COLUMN[type] || type;
+
+      // Exactamente igual al OnboardingView — compressImage + file.type como Content-Type
+      const fileToUpload = await compressImage(file);
+
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
       const { data: { session } } = await supabase.auth.getSession();
@@ -635,19 +639,16 @@ const OperatorView = () => {
         xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`);
         xhr.setRequestHeader('Authorization', `Bearer ${token}`);
         xhr.setRequestHeader('apikey', supabaseKey);
-        xhr.setRequestHeader('Content-Type', 'image/jpeg');
+        xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg');
         xhr.setRequestHeader('x-upsert', 'true');
         xhr.timeout = 180000;
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) setUploadProgress(Math.round(e.loaded / e.total * 100) + '%');
-        };
-        xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`HTTP ${xhr.status}`)); };
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable && setUploadProgress) setUploadProgress(Math.round(e.loaded / e.total * 100)) };
+        xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0, 100)}`)) };
         xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexión'));
-        xhr.ontimeout = () => reject(new Error('Tiempo agotado — intenta de nuevo'));
-        xhr.send(file);
+        xhr.ontimeout = () => reject(new Error('Tiempo agotado — señal débil, intenta de nuevo'));
+        xhr.send(fileToUpload);
       });
 
-      setUploadProgress('Guardando...');
       const { error: dbErr } = await supabase
         .from('bookings')
         .update({ [column]: path, updated_at: new Date().toISOString() })
