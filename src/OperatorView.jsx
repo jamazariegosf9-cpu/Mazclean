@@ -381,34 +381,23 @@ const OperatorView = () => {
     if (!user) return;
     setLoadingReqs(true);
     try {
-      // Paso 1: obtener booking_requests del operador
-      const { data: reqs, error } = await supabase
+      const { data, error } = await supabase
         .from('booking_requests')
-        .select('id, booking_id, ronda, status, notified_at, expires_at')
+        .select(`
+          id, booking_id, ronda, status, notified_at, expires_at,
+          booking:booking_id (
+            id, booking_ref, service_name, scheduled_date,
+            scheduled_time_from, scheduled_time_to,
+            address_line, total_price
+          )
+        `)
         .eq('operator_id', user.id)
         .eq('status', 'pendiente')
-        .gt('expires_at', new Date().toISOString())
+        .gt('expires_at', new Date().toISOString()) // solo no expiradas
         .order('expires_at', { ascending: true });
 
       if (error) throw error;
-      if (!reqs || reqs.length === 0) { setRequests([]); return; }
-
-      // Paso 2: obtener datos de cada booking por separado
-      // La política RLS ya permite ver bookings con request activo
-      const bookingIds = reqs.map(r => r.booking_id);
-      const { data: bookings } = await supabase
-        .from('bookings')
-        .select('id, booking_ref, service_name, scheduled_date, scheduled_time_from, scheduled_time_to, address_line, total_price')
-        .in('id', bookingIds);
-
-      // Combinar requests con datos del booking
-      const bookingsMap = Object.fromEntries((bookings || []).map(b => [b.id, b]));
-      const combined = reqs.map(r => ({
-        ...r,
-        booking: bookingsMap[r.booking_id] || null,
-      }));
-
-      setRequests(combined);
+      setRequests(data || []);
     } catch (err) {
       console.error('Error cargando solicitudes:', err);
     } finally {
@@ -446,13 +435,11 @@ const OperatorView = () => {
 
           if (clientProfile?.phone) {
             sendWhatsApp('operator_assigned', clientProfile.phone, {
-              booking_ref:         b.booking_ref,
-              service_name:        b.service_name,
-              scheduled_date:      b.scheduled_date,
-              scheduled_time_from: b.scheduled_time_from,
-              scheduled_time_to:   b.scheduled_time_to,
-              total_price:         b.total_price,
-              operator_name:       profile?.full_name || 'tu operador',
+              booking_ref:   b.booking_ref,
+              service_name:  b.service_name,
+              scheduled_date: b.scheduled_date,
+              scheduled_time: b.scheduled_time_from?.slice(0,5),
+              operator_name:  profile?.full_name || 'tu operador',
             });
           }
         } catch (e) { console.warn('No se pudo notificar al cliente:', e.message); }
