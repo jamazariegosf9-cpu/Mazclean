@@ -264,8 +264,12 @@ const OperatorView = () => {
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'booking_requests',
         filter: `operator_id=eq.${user.id}`,
-      }, () => {
+      }, (payload) => {
         fetchBookingRequests();
+        // Si se aceptó un request, refrescar bookings para ver el servicio confirmado
+        if (payload.new?.status === 'aceptado') {
+          setTimeout(() => fetchOperatorBookings(true), 500);
+        }
         // Cambiar al tab de solicitudes automáticamente si llega una nueva
         setActiveTab(prev => prev === 'solicitudes' ? prev : 'solicitudes');
       })
