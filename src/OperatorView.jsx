@@ -578,6 +578,37 @@ const OperatorView = () => {
     setPendingFinalize(null); setChecklist([]);
   };
 
+  // Guardar estado del modal en sessionStorage para restaurar si la cámara recarga la app
+  useEffect(() => {
+    if (photoModal && photoBooking) {
+      sessionStorage.setItem('photoModal', JSON.stringify({
+        bookingId: photoBooking.id,
+        photoStep,
+        photoPhase,
+        photosData,
+      }))
+    } else {
+      sessionStorage.removeItem('photoModal')
+    }
+  }, [photoModal, photoBooking, photoStep, photoPhase, photosData])
+
+  // Restaurar modal de fotos si la app se recargó mientras la cámara estaba abierta
+  useEffect(() => {
+    const saved = sessionStorage.getItem('photoModal')
+    if (!saved) return
+    try {
+      const { bookingId, photoStep: step, photoPhase: phase, photosData: data } = JSON.parse(saved)
+      const booking = bookings.find(b => b.id === bookingId)
+      if (!booking) return
+      setPhotoBooking(booking)
+      setPhotoStep(step)
+      setPhotoPhase(phase)
+      setPhotosData(data || {})
+      setPhotoModal(true)
+      if (phase === 'after') setPendingFinalize(bookingId)
+    } catch { sessionStorage.removeItem('photoModal') }
+  }, [bookings])
+
   const handlePhotoUpload = async (file, bookingId, type) => {
     if (!file) return;
     setUploadingPhoto(true); setUploadError(''); setUploadProgress('Comprimiendo...');
