@@ -200,127 +200,6 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
 }
 
 
-// ── Componente PhotoStep — copia exacta del PhotoUpload del Onboarding ──────
-function PhotoStep({ label, value, bookingId, photoKey, onSuccess, disabled }) {
-  const [uploading, setUploading] = useState(false)
-  const [progress, setProgress]   = useState(0)
-  const [localErr, setLocalErr]   = useState('')
-  const mountedRef = useRef(true)
-
-  useEffect(() => {
-    mountedRef.current = true
-    return () => { mountedRef.current = false }
-  }, [])
-
-  const handleFile = async (file) => {
-    if (!file || disabled) return
-    if (mountedRef.current) { setUploading(true); setLocalErr(''); setProgress(0) }
-    try {
-      if (file.size > 50 * 1024 * 1024) throw new Error('El archivo no debe pesar más de 50MB.')
-      const folder = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,'_').replace(/[^a-z_]/g,'').slice(0,30)
-      const path = await uploadFile({ file, folder, userId: bookingId, onProgress: (p) => { if (mountedRef.current) setProgress(p) } })
-      if (mountedRef.current) { setProgress(100); onSuccess(path) }
-    } catch (e) { if (mountedRef.current) setLocalErr(e.message) }
-    finally { if (mountedRef.current) setUploading(false) }
-  }
-
-  return (
-    <div style={{ marginBottom: 16 }}>
-      {value ? (
-        <div style={{ position: 'relative', marginBottom: 10 }}>
-          <img src={value} alt={label} style={{ width: '100%', height: 180, objectFit: 'cover', borderRadius: 12, border: '2px solid #bbf7d0' }} onError={e => { e.target.style.display = 'none' }} />
-          <span style={{ position: 'absolute', top: 8, right: 8, background: '#10b981', color: '#fff', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>✅ Guardada</span>
-        </div>
-      ) : (
-        <div style={{ width: '100%', height: 160, background: '#f9fafb', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 10, border: '2px dashed #e5e7eb' }}>
-          <Camera size={40} color="#d1d5db" />
-          <span style={{ fontSize: 12, color: '#9ca3af', marginTop: 6 }}>Sin foto aún</span>
-        </div>
-      )}
-      {uploading && (
-        <div style={{ background: '#eff6ff', borderRadius: 10, padding: '10px 14px', marginBottom: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-            <div style={{ width: 16, height: 16, border: '2px solid #bfdbfe', borderTop: '2px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-            <span style={{ fontSize: 13, color: '#1e40af', fontWeight: 600 }}>Subiendo... {progress}%</span>
-          </div>
-          <div style={{ height: 4, background: '#bfdbfe', borderRadius: 4 }}>
-            <div style={{ height: '100%', width: `${progress}%`, background: '#3b82f6', borderRadius: 4, transition: 'width 0.2s' }} />
-          </div>
-        </div>
-      )}
-      {localErr && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#dc2626', fontSize: 13 }}>⚠️ {localErr}</div>}
-      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: uploading ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', pointerEvents: uploading ? 'none' : 'auto', minHeight: 50, flexShrink: 0 }}>
-        📸 {value ? 'Cambiar foto' : 'Tomar foto'}
-        <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }} />
-      </label>
-    </div>
-  )
-}
-
-// ── Componente PhotoModal usa PhotoStep ───────────────────────────────────────
-function PhotoModal({ isMobile, photoBooking, photoStep, photoPhase, photosData, pendingFinalize, PHOTO_STEPS, getPhotoUrl, onClose, onPhotoSaved, onNext, canAdvance }) {
-  const currentPhotoConfig = PHOTO_STEPS.find(p => p.step === photoStep) || PHOTO_STEPS[0];
-  const currentPhotoKey    = currentPhotoConfig.key;
-  const uploading          = false; // PhotoStep maneja su propio estado
-  const canAdvancePhoto    = canAdvance;
-
-  const TYPE_TO_COLUMN = {
-    front_before:   'photo_front_before',
-    side_before:    'photo_side_before',
-    front_after:    'photo_front_after',
-    interior_after: 'photo_interior_after',
-  };
-
-  const handleFile = () => {}; // no usado — PhotoStep lo maneja
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
-      <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 24, width: '100%', maxWidth: isMobile ? '100%' : 420, maxHeight: isMobile ? '92vh' : '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.3)' }}>
-
-        <div style={{ background: currentPhotoConfig.phase === 'before' ? 'linear-gradient(135deg,#f97316,#fb923c)' : 'linear-gradient(135deg,#10b981,#34d399)', padding: '16px 20px', flexShrink: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 15, margin: '0 0 4px' }}>{currentPhotoConfig.label}</h3>
-              <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, margin: 0 }}>{currentPhotoConfig.desc}</p>
-            </div>
-            <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.3)', border: 'none', color: '#fff', fontSize: 22, width: 38, height: 38, borderRadius: 10, cursor: 'pointer' }}>✕</button>
-          </div>
-        </div>
-
-        <div style={{ padding: isMobile ? '20px 16px' : '24px', flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <PhotoStep
-            key={currentPhotoKey}
-            label={currentPhotoConfig.label}
-            value={getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`])}
-            bookingId={photoBooking.id}
-            photoKey={currentPhotoKey}
-            disabled={false}
-            onSuccess={(path) => {
-              const column = TYPE_TO_COLUMN[currentPhotoKey] || currentPhotoKey;
-              supabase.from('bookings')
-                .update({ [column]: path, updated_at: new Date().toISOString() })
-                .eq('id', photoBooking.id)
-                .then(({ error }) => {
-                  if (!error) {
-                    onPhotoSaved(currentPhotoKey, path, column);
-                    // Limpiar caché después de cada foto para permitir siguiente upload
-                    if ('caches' in window) {
-                      caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
-                    }
-                  }
-                });
-            }}
-          />
-
-          <button onClick={onNext} disabled={!canAdvancePhoto} style={{ width: '100%', padding: '16px 0', borderRadius: 16, border: 'none', background: canAdvancePhoto ? (currentPhotoConfig.phase === 'before' ? '#f97316' : '#10b981') : '#94a3b8', color: '#fff', fontSize: 16, fontWeight: 700, cursor: canAdvancePhoto ? 'pointer' : 'not-allowed', minHeight: 56 }}>
-            {photoStep < 4 ? 'Siguiente foto →' : pendingFinalize ? 'Ir al Checklist' : 'Listo'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Componente principal ──────────────────────────────────────────────────────
 const OperatorView = () => {
   const { user, profile, signOut } = useAuth();
@@ -1113,27 +992,60 @@ const OperatorView = () => {
         </div>
       )}
 
-      {/* MODAL FOTOS - Componente autocontenido */}
+      {/* MODAL FOTOS - Versión final que fuerza reset del input en móvil */}
       {photoModal && photoBooking && (
-        <PhotoModal
-          isMobile={isMobile}
-          photoBooking={photoBooking}
-          photoStep={photoStep}
-          photoPhase={photoPhase}
-          photosData={photosData}
-          pendingFinalize={pendingFinalize}
-          PHOTO_STEPS={PHOTO_STEPS}
-          getPhotoUrl={getPhotoUrl}
-          onClose={() => { setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); setUploadingPhoto(false); setUploadError(''); setUploadProgress(''); }}
-          onPhotoSaved={(type, path, column) => {
-            setBookings(prev => prev.map(b => b.id === photoBooking.id ? { ...b, [column]: path } : b));
-            if (selectedBooking?.id === photoBooking.id) setSelectedBooking(prev => ({ ...prev, [column]: path }));
-            setPhotoBooking(prev => ({ ...prev, [column]: path }));
-            setPhotosData(prev => ({ ...prev, [type]: path }));
-          }}
-          onNext={handleNextPhotoStep}
-          canAdvance={canAdvancePhoto}
-        />
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 24, width: '100%', maxWidth: isMobile ? '100%' : 420, maxHeight: isMobile ? '92vh' : '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.3)' }}>
+
+            <div style={{ background: currentPhotoConfig.phase === 'before' ? 'linear-gradient(135deg,#f97316,#fb923c)' : 'linear-gradient(135deg,#10b981,#34d399)', padding: '16px 20px', flexShrink: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 15, margin: '0 0 4px' }}>{currentPhotoConfig.label}</h3>
+                  <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, margin: 0 }}>{currentPhotoConfig.desc}</p>
+                </div>
+                <button onClick={() => { setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); setUploadingPhoto(false); setUploadError(''); setUploadProgress(''); }} style={{ background: 'rgba(255,255,255,0.3)', border: 'none', color: '#fff', fontSize: 22, width: 38, height: 38, borderRadius: 10, cursor: 'pointer' }}>✕</button>
+              </div>
+            </div>
+
+            <div style={{ padding: isMobile ? '20px 16px' : '24px', flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              {getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`]) ? (
+                <div style={{ position: 'relative', marginBottom: 20 }}>
+                  <img src={getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`])} alt={currentPhotoConfig.label} style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 12, border: '2px solid #10b981' }} onError={e => e.target.style.display = 'none'} />
+                  <span style={{ position: 'absolute', top: 12, right: 12, background: '#10b981', color: '#fff', fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 20 }}>✅ Guardada</span>
+                </div>
+              ) : (
+                <div style={{ height: 200, background: '#f8fafc', border: '3px dashed #cbd5e1', borderRadius: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+                  <Camera size={56} color="#94a3b8" />
+                  <p style={{ marginTop: 16, color: '#64748b', fontSize: 15, fontWeight: 500 }}>Toca el botón para tomar la foto</p>
+                </div>
+              )}
+
+              {uploadError && <div style={{ background: '#fee2e2', border: '1px solid #ef4444', color: '#b91c1c', padding: '14px 16px', borderRadius: 12, marginBottom: 16, fontSize: 14 }}>⚠️ {uploadError}</div>}
+
+              <label style={{ display: 'block', background: uploadingPhoto ? '#cbd5e1' : '#2563eb', color: uploadingPhoto ? '#64748b' : '#fff', padding: '18px 0', textAlign: 'center', borderRadius: 16, fontSize: 17, fontWeight: 700, cursor: uploadingPhoto ? 'not-allowed' : 'pointer', marginBottom: 16, boxShadow: '0 4px 12px rgba(37,99,235,0.3)' }}>
+                📸 {uploadingPhoto ? `Subiendo... ${uploadProgress || 0}%` : (photosData[currentPhotoKey] ? 'Cambiar foto' : 'Tomar foto con cámara')}
+                <input
+                  key={`file-input-${currentPhotoKey}`}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: 'none' }}
+                  disabled={uploadingPhoto}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    e.target.value = '';
+                    await handleNewPhotoUpload(file, photoBooking.id, currentPhotoKey);
+                  }}
+                />
+              </label>
+
+              <button onClick={handleNextPhotoStep} disabled={!canAdvancePhoto || uploadingPhoto} style={{ width: '100%', padding: '16px 0', borderRadius: 16, border: 'none', background: canAdvancePhoto && !uploadingPhoto ? (currentPhotoConfig.phase === 'before' ? '#f97316' : '#10b981') : '#94a3b8', color: '#fff', fontSize: 16, fontWeight: 700, cursor: (canAdvancePhoto && !uploadingPhoto) ? 'pointer' : 'not-allowed', minHeight: 56 }}>
+                {photoStep < 4 ? 'Siguiente foto →' : pendingFinalize ? 'Ir al Checklist' : 'Listo'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
             {/* MODAL CHECKLIST */}
