@@ -303,9 +303,10 @@ function PhotoModal({ isMobile, photoBooking, photoStep, photoPhase, photosData,
                 .then(({ error }) => {
                   if (!error) {
                     onPhotoSaved(currentPhotoKey, path, column);
-                    // Avanzar automáticamente al siguiente paso después de guardar
-                    // Esto desmonta y remonta PhotoStep limpiamente igual que el Onboarding
-                    setTimeout(() => onNext(), 800);
+                    // Limpiar caché después de cada foto para permitir siguiente upload
+                    if ('caches' in window) {
+                      caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+                    }
                   }
                 });
             }}
