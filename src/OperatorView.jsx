@@ -632,6 +632,7 @@ const OperatorView = () => {
 
   const closePhotoModal = async () => {
     const currentPending = pendingFinalize;
+    sessionStorage.removeItem('photoModal');
     setPhotoModal(false); setPhotosData({}); setPhotoBooking(null);
     if (currentPending) {
       const booking = bookings.find(b => b.id === currentPending);
