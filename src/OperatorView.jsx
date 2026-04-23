@@ -212,6 +212,9 @@ function PhotoStep({ label, value, bookingId, photoKey, onSuccess, disabled }) {
     setUploading(true); setLocalErr(''); setProgress(0)
     try {
       if (file.size > 50 * 1024 * 1024) throw new Error('El archivo no debe pesar más de 50MB.')
+      // Esperar 1.5s para que el navegador vuelva completamente de la cámara
+      // antes de iniciar el XHR — evita que se cancele durante la transición
+      await new Promise(resolve => setTimeout(resolve, 1500))
       const folder = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,'_').replace(/[^a-z_]/g,'').slice(0,30)
       const path = await uploadFile({ file, folder, userId: user.id, onProgress: setProgress })
       onSuccess(path)
