@@ -317,13 +317,6 @@ const OperatorView = () => {
   const [incidentNote, setIncidentNote]       = useState('');
   const [sendingIncident, setSendingIncident] = useState(false);
 
-  // ── Debug log visible en pantalla ────────────────────────────────────────
-  const [debugLogs, setDebugLogs] = useState([]);
-  const [showDebug, setShowDebug] = useState(false);
-  const addLog = (msg) => {
-    const time = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    setDebugLogs(prev => [`${time} ${msg}`, ...prev].slice(0, 30));
-  };
   const gpsWatcherRef                             = useRef(null);
   const [trackingBookingId, setTrackingBookingId] = useState(null);
   const [gpsError, setGpsError]                   = useState('');
@@ -1096,7 +1089,6 @@ const OperatorView = () => {
                   label={cfg.label}
                   value={currentValue}
                   capture="environment"
-                  onLog={addLog}
                   onChange={(path) => {
                     supabase.from('bookings')
                       .update({ [cfg.column]: path, updated_at: new Date().toISOString() })
@@ -1178,28 +1170,6 @@ const OperatorView = () => {
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Panel DEBUG — toca 5 veces el header para activar */}
-      <div
-        style={{ position: 'fixed', bottom: 80, right: 12, zIndex: 999 }}
-        onClick={() => setShowDebug(p => !p)}
-      >
-        <div style={{ background: '#1e40af', color: '#fff', fontSize: 10, fontWeight: 700, padding: '4px 8px', borderRadius: 8, opacity: 0.8 }}>
-          🐛 DEBUG {debugLogs.length}
-        </div>
-      </div>
-      {showDebug && (
-        <div style={{ position: 'fixed', bottom: 100, left: 8, right: 8, zIndex: 998, background: 'rgba(0,0,0,0.92)', borderRadius: 12, padding: 10, maxHeight: 280, overflowY: 'auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ color: '#60a5fa', fontSize: 11, fontWeight: 700 }}>Log de upload</span>
-            <button onClick={() => setDebugLogs([])} style={{ background: 'none', border: 'none', color: '#9ca3af', fontSize: 11, cursor: 'pointer' }}>limpiar</button>
-          </div>
-          {debugLogs.length === 0 && <div style={{ color: '#6b7280', fontSize: 11 }}>Sin eventos aún. Intenta subir una foto.</div>}
-          {debugLogs.map((log, i) => (
-            <div key={i} style={{ color: log.includes('❌') ? '#f87171' : log.includes('✅') ? '#4ade80' : '#e5e7eb', fontSize: 11, fontFamily: 'monospace', marginBottom: 3, lineHeight: 1.4 }}>{log}</div>
-          ))}
         </div>
       )}
 
