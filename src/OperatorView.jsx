@@ -630,14 +630,14 @@ const OperatorView = () => {
     setPendingFinalize(booking.id); setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModal(true);
   };
 
-  const closePhotoModal = async () => {
+  const closePhotoModal = async (bookingOverride = null) => {
     const currentPending = pendingFinalize;
+    const bookingForChecklist = bookingOverride || bookings.find(b => b.id === currentPending);
     sessionStorage.removeItem('photoModal');
     setPhotoModal(false); setPhotosData({}); setPhotoBooking(null);
     if (currentPending) {
-      const booking = bookings.find(b => b.id === currentPending);
-      if (!booking) { setPendingFinalize(null); return; }
-      const items = await loadChecklist(booking);
+      if (!bookingForChecklist) { setPendingFinalize(null); return; }
+      const items = await loadChecklist(bookingForChecklist);
       if (!items) { setPendingFinalize(null); await updateStatus(currentPending, 'finalizado', 'done'); return; }
       setChecklist(items); setChecklistModal(true);
     }
@@ -647,7 +647,7 @@ const OperatorView = () => {
     if (photoStep === 1 && photoPhase === 'before') { setPhotoStep(2); }
     else if (photoStep === 2 && photoPhase === 'before') { savePhotosMeta(photoBooking.id); setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); }
     else if (photoStep === 3 && photoPhase === 'after') { setPhotoStep(4); }
-    else if (photoStep === 4 && photoPhase === 'after') { savePhotosMeta(photoBooking.id); closePhotoModal(); }
+    else if (photoStep === 4 && photoPhase === 'after') { savePhotosMeta(photoBooking.id); closePhotoModal(photoBooking); }
   };
 
   const savePhotosMeta = (bookingId) => {
