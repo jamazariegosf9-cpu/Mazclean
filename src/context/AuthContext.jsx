@@ -7,17 +7,26 @@ import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
 
+// Lee el token directo de localStorage sin tocar supabase.auth (evita lock en móvil)
+function getTokenFromStorage() {
+  try {
+    const stored = localStorage.getItem('mazclean-auth')
+    if (!stored) return null
+    const parsed = JSON.parse(stored)
+    return parsed?.access_token || parsed?.session?.access_token || null
+  } catch { return null }
+}
+
 export function AuthProvider({ children }) {
   const [authState, setAuthState] = useState({
     user:    null,
     profile: null,
-    loading: true, // true inicial — evita pantalla negra mientras se recupera sesión
+    loading: true,
   })
   const [sessionExpired, setSessionExpired] = useState(false)
   const initDone         = useRef(false)
   const skipNextSignedIn = useRef(false)
 
-  // ── Cerrar sesión por expiración ────────────────────────────────────────
   const handleExpiredSession = async (reason = 'expirada') => {
     console.warn('[AuthContext] Sesión', reason, '— cerrando...')
     try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
@@ -25,7 +34,6 @@ export function AuthProvider({ children }) {
     setSessionExpired(true)
   }
 
-  // Carga profile desde Supabase - siempre fresco
   const loadProfile = async (user) => {
     try {
       const { data, error } = await supabase
@@ -35,7 +43,6 @@ export function AuthProvider({ children }) {
         .single()
 
       if (error) {
-        // JWT inválido = sesión expirada
         if (error.code === 'PGRST301' || error.message?.includes('JWT')) {
           await handleExpiredSession('inválida (JWT)')
           return { user: null, profile: null }
@@ -63,7 +70,7 @@ export function AuthProvider({ children }) {
     for (let i = 0; i < maxRetries; i++) {
       const result = await loadProfile(user)
       if (result.profile !== null) return result
-      if (result.user === null) return result // sesión expirada durante retry
+      if (result.user === null) return result
       if (i < maxRetries - 1) {
         console.log('[AuthContext] Profile null, reintentando en 600ms... (intento ' + (i + 1) + ')')
         await new Promise(resolve => setTimeout(resolve, 600))
@@ -78,13 +85,12 @@ export function AuthProvider({ children }) {
         console.log('[AuthContext] Auth event:', event, '| session:', !!session)
 
         if (event === 'SIGNED_OUT') {
-          // Esperar 1 segundo antes de cerrar sesión
-          // En móvil, la cámara puede disparar SIGNED_OUT momentáneamente
+          // En móvil, la cámara dispara SIGNED_OUT momentáneamente.
+          // Verificamos con localStorage SIN llamar getSession() para no romper el lock.
           await new Promise(resolve => setTimeout(resolve, 1000))
-          // Verificar si la sesión sigue activa antes de cerrar
-          const { data: { session: check } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
-          if (check) {
-            console.log('[AuthContext] SIGNED_OUT ignorado — sesión sigue activa')
+          const token = getTokenFromStorage()
+          if (token) {
+            console.log('[AuthContext] SIGNED_OUT ignorado — token sigue en localStorage')
             return
           }
           initDone.current         = false
@@ -93,13 +99,11 @@ export function AuthProvider({ children }) {
           return
         }
 
-        // Token refresh fallido = sesión expirada
         if (event === 'TOKEN_REFRESHED' && !session) {
           await handleExpiredSession('expirada (refresh fallido)')
           return
         }
 
-        // Token refresh exitoso — no recargar profile
         if (event === 'TOKEN_REFRESHED' && session) {
           console.log('[AuthContext] Token renovado correctamente')
           return
@@ -111,7 +115,6 @@ export function AuthProvider({ children }) {
             return
           }
           if (!initDone.current) return
-          // No mostrar loading si ya hay usuario — evita pantalla negra al volver de cámara
           setAuthState(prev => ({ ...prev, loading: prev.user ? false : true }))
           const result = await loadProfileWithRetry(session.user)
           setAuthState({ ...result, loading: false })
@@ -131,7 +134,6 @@ export function AuthProvider({ children }) {
           return
         }
 
-        // Verificar que el token no esté ya expirado al abrir la app
         const expiresAt = session.expires_at
         const nowSecs   = Math.floor(Date.now() / 1000)
         if (expiresAt && nowSecs > expiresAt) {
@@ -153,26 +155,23 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  // ── Watcher: verificar sesión cada 60 segundos ──────────────────────────
-  // Detecta expiración cuando la app lleva horas abierta sin actividad
-  // Reintenta 2 veces antes de cerrar sesión para evitar falsos positivos
-  // cuando el navegador pausa la red al cambiar de ventana/app
+  // Watcher: verificar sesión cada 60 segundos
+  // Usa localStorage para no romper el lock durante uploads
   useEffect(() => {
     const interval = setInterval(async () => {
       if (!authState.user) return
-      // No verificar si el documento está oculto (usuario cambió de ventana)
       if (document.hidden) return
       try {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) {
+        const token = getTokenFromStorage()
+        if (!token) {
           // Esperar 3 segundos y reintentar antes de cerrar sesión
           await new Promise(resolve => setTimeout(resolve, 3000))
-          if (!authState.user) return // ya se cerró sesión por otro medio
-          const { data: { session: retry } } = await supabase.auth.getSession()
-          if (!retry) await handleExpiredSession('expirada (watcher periódico)')
+          if (!authState.user) return
+          const tokenRetry = getTokenFromStorage()
+          if (!tokenRetry) await handleExpiredSession('expirada (watcher periódico)')
         }
       } catch {
-        // silencioso — no romper la app por error de red momentáneo
+        // silencioso
       }
     }, 60 * 1000)
 
@@ -278,7 +277,6 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={value}>
-      {/* Modal de sesión expirada — visible sobre cualquier pantalla */}
       {sessionExpired && !authState.user && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 9999,
