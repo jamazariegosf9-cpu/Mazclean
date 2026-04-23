@@ -205,10 +205,13 @@ function PhotoStep({ label, value, bookingId, photoKey, onSuccess, disabled }) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress]   = useState(0)
   const [localErr, setLocalErr]   = useState('')
+  const [inputKey, setInputKey]   = useState(0)  // fuerza recrear input
   const { user } = useAuth()
 
   const handleFile = async (file) => {
     if (!file || disabled) return
+    // Regenerar el input inmediatamente para limpiar caché del navegador
+    setInputKey(k => k + 1)
     setUploading(true); setLocalErr(''); setProgress(0)
     try {
       if (file.size > 50 * 1024 * 1024) throw new Error('El archivo no debe pesar más de 50MB.')
@@ -250,7 +253,7 @@ function PhotoStep({ label, value, bookingId, photoKey, onSuccess, disabled }) {
       {localErr && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#dc2626', fontSize: 13 }}>⚠️ {localErr}</div>}
       <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: uploading ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', pointerEvents: uploading ? 'none' : 'auto', minHeight: 50, flexShrink: 0 }}>
         📸 {value ? 'Cambiar foto' : 'Tomar foto'}
-        <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }} />
+        <input key={inputKey} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }} />
       </label>
     </div>
   )
