@@ -528,14 +528,16 @@ const OperatorView = () => {
       const b = request.booking;
       if (b) {
         try {
-          const { data: clientProfile } = await supabase
-            .from('profiles')
-            .select('phone')
-            .eq('id', (await supabase.from('bookings').select('client_id').eq('id', b.id).single()).data?.client_id)
+          const { data: bookingFull } = await supabase
+            .from('bookings')
+            .select('*, customer:client_id(phone, full_name)')
+            .eq('id', request.booking_id)
             .single();
 
-          if (clientProfile?.phone) {
-            sendWhatsApp('operator_assigned', clientProfile.phone, {
+          const phone = bookingFull?.customer?.phone;
+          if (phone) {
+            console.log(`[WA] operator_assigned → ${phone}`);
+            sendWhatsApp('operator_assigned', phone, {
               booking_ref:         b.booking_ref,
               service_name:        b.service_name,
               scheduled_date:      b.scheduled_date,
@@ -544,6 +546,8 @@ const OperatorView = () => {
               total_price:         b.total_price,
               operator_name:       profile?.full_name || 'tu operador',
             });
+          } else {
+            console.warn('[WA] operator_assigned: no se encontró teléfono del cliente');
           }
         } catch (e) { console.warn('No se pudo notificar al cliente:', e.message); }
       }
@@ -581,10 +585,13 @@ const OperatorView = () => {
       const booking = bookingData || bookings.find(b => b.id === bookingId);
       const phone = booking?.customer?.phone;
       if (phone) {
+        console.log(`[WA] ${eventName} → ${phone}`);
         sendWhatsApp(eventName, phone, {
           booking_ref: booking.booking_ref, service_name: booking.service_name,
           booking_id: bookingId, operator_name: profile?.full_name || user?.user_metadata?.full_name || 'tu operador',
         });
+      } else {
+        console.warn(`[WA] ${eventName}: no se encontró teléfono — customer:`, booking?.customer);
       }
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, status: newStatus }));
     } catch (err) {
