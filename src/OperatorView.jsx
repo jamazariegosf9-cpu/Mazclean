@@ -700,9 +700,14 @@ const OperatorView = () => {
 
   const confirmFinalize = async () => {
     if (!checklist.every(item => item.checked)) { alert('Por favor completa todos los items del checklist.'); return; }
+    const bookingToFinalize = pendingFinalize;
     setChecklistModal(false);
-    await updateStatus(pendingFinalize, 'finalizado', 'done');
-    setPendingFinalize(null); setChecklist([]);
+    setPendingFinalize(null);
+    setChecklist([]);
+    setPhotoModal(false);
+    setPhotosData({});
+    setPhotoBooking(null);
+    await updateStatus(bookingToFinalize, 'finalizado', 'done');
   };
 
 
