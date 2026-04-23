@@ -664,9 +664,36 @@ const OperatorView = () => {
   };
 
   const loadChecklist = async (booking) => {
-    const { data, error } = await supabase.from('service_checklist').select('*').eq('service_id', booking.service_id).order('sort_order', { ascending: true });
-    if (error || !data || data.length === 0) return null;
-    return data.map(item => ({ ...item, checked: false }));
+    try {
+      // Usar fetch directo para evitar el lock de Supabase en móvil
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      let token = supabaseKey
+      try {
+        const stored = localStorage.getItem('mazclean-auth')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          token = parsed?.access_token || parsed?.session?.access_token || supabaseKey
+        }
+      } catch {}
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/service_checklist?service_id=eq.${booking.service_id}&order=sort_order.asc`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'apikey': supabaseKey,
+            'Content-Type': 'application/json',
+          }
+        }
+      )
+      if (!res.ok) return null
+      const data = await res.json()
+      if (!data || data.length === 0) return null
+      return data.map(item => ({ ...item, checked: false }))
+    } catch (err) {
+      console.error('[CHECKLIST] Error loadChecklist:', err)
+      return null
+    }
   };
 
   const toggleCheckItem = (id) => { setChecklist(prev => prev.map(item => item.id === id ? { ...item, checked: !item.checked } : item)); };
