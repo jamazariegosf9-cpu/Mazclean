@@ -53,7 +53,7 @@ async function compressImage(file) {
   } catch { return file; }
 }
 
-// uploadFile â€” copia exacta del OnboardingView que funciona en mÃ³vil
+// uploadFile — copia exacta del OnboardingView que funciona en móvil
 async function uploadFile({ file, folder, userId, onProgress }) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -83,14 +83,14 @@ async function uploadFile({ file, folder, userId, onProgress }) {
     xhr.timeout = 180000
     xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100)) }
     xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0, 100)}`)) }
-    xhr.onerror   = () => reject(new Error('Error de red â€” verifica tu conexiÃ³n'))
-    xhr.ontimeout = () => reject(new Error('Tiempo agotado â€” seÃ±al dÃ©bil, intenta de nuevo'))
+    xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexión'))
+    xhr.ontimeout = () => reject(new Error('Tiempo agotado — señal débil, intenta de nuevo'))
     xhr.send(fileToUpload)
   })
   return path
 }
 
-// â”€â”€ Countdown hook: devuelve segundos restantes hasta expires_at â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Countdown hook: devuelve segundos restantes hasta expires_at ──────────────
 function useCountdown(expiresAt) {
   const [seconds, setSeconds] = useState(() => {
     if (!expiresAt) return 0;
@@ -109,7 +109,7 @@ function useCountdown(expiresAt) {
   return seconds;
 }
 
-// â”€â”€ Card individual de solicitud con su propio countdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Card individual de solicitud con su propio countdown ──────────────────────
 function RequestCard({ request, onAccept, accepting, isMobile }) {
   const secondsLeft = useCountdown(request.expires_at);
   const minutes     = Math.floor(secondsLeft / 60);
@@ -134,7 +134,7 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
       {/* Header: ref + countdown */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', background: '#eff6ff', padding: '3px 10px', borderRadius: 20 }}>
-          {b?.booking_ref ?? 'â€”'}
+          {b?.booking_ref ?? '—'}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: isUrgent ? '#fef2f2' : '#f0fdf4', borderRadius: 20, padding: '4px 12px' }}>
           <Clock size={12} color={isUrgent ? '#dc2626' : '#059669'} />
@@ -146,31 +146,31 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
 
       {/* Servicio */}
       <div style={{ fontWeight: 700, color: '#1f2937', fontSize: isMobile ? 16 : 18, marginBottom: 12 }}>
-        {b?.service_name ?? 'â€”'}
+        {b?.service_name ?? '—'}
       </div>
 
       {/* Info */}
       <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#374151' }}>
           <Clock size={14} color="#3b82f6" style={{ flexShrink: 0 }} />
-          <span>{b?.scheduled_date ?? 'â€”'}</span>
-          <span style={{ color: '#9ca3af' }}>Â·</span>
-          <span style={{ fontWeight: 600 }}>{timeFrom} â€” {timeTo} hrs</span>
+          <span>{b?.scheduled_date ?? '—'}</span>
+          <span style={{ color: '#9ca3af' }}>·</span>
+          <span style={{ fontWeight: 600 }}>{timeFrom} — {timeTo} hrs</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#6b7280' }}>
           <MapPin size={14} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
-          <span style={{ lineHeight: 1.4 }}>{b?.address_line ?? 'â€”'}</span>
+          <span style={{ lineHeight: 1.4 }}>{b?.address_line ?? '—'}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#059669', fontWeight: 700 }}>
-          <span>ðŸ’°</span>
-          <span>${b?.total_price ?? 'â€”'} MXN</span>
+          <span>💰</span>
+          <span>${b?.total_price ?? '—'} MXN</span>
         </div>
       </div>
 
       {/* Aviso urgente */}
       {isUrgent && !isExpired && (
         <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#dc2626', fontWeight: 600, textAlign: 'center' }}>
-          âš¡ Â¡Menos de 1 minuto! Acepta ahora o pasarÃ¡ al siguiente operador.
+          ⚡ ¡Menos de 1 minuto! Acepta ahora o pasará al siguiente operador.
         </div>
       )}
 
@@ -200,7 +200,7 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
             boxShadow: '0 4px 12px rgba(16,185,129,0.3)',
             flexShrink: 0,
           }}>
-          {accepting === request.id ? 'â³ Aceptando...' : <><Check size={18} /> Aceptar servicio</>}
+          {accepting === request.id ? '⏳ Aceptando...' : <><Check size={18} /> Aceptar servicio</>}
         </button>
       )}
     </div>
@@ -208,7 +208,7 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
 }
 
 
-// â”€â”€ PhotoUploadServicio â€” copia exacta de PhotoUpload del Onboarding â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── PhotoUploadServicio — copia exacta de PhotoUpload del Onboarding ─────────
 function PhotoUploadServicio({ label, value, onChange, capture = 'environment' }) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress]   = useState(0)
@@ -219,8 +219,8 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment' }
     if (!file) return
     setUploading(true); setLocalErr(''); setProgress(0)
     try {
-      if (file.size > 50 * 1024 * 1024) throw new Error('El archivo no debe pesar mÃ¡s de 50MB.')
-      const folder = label.toLowerCase().normalize('NFD').replace(/[Ì€-Í¯]/g,'').replace(/\s+/g,'_').replace(/[^a-z_]/g,'').slice(0,30)
+      if (file.size > 50 * 1024 * 1024) throw new Error('El archivo no debe pesar más de 50MB.')
+      const folder = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,'_').replace(/[^a-z_]/g,'').slice(0,30)
       const path = await uploadFile({ file, folder, userId: user.id, onProgress: setProgress })
       onChange(path)
     } catch (e) { setLocalErr(e.message) }
@@ -232,12 +232,12 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment' }
       {value ? (
         <div style={{ position: 'relative', marginBottom: 10 }}>
           <img src={value.startsWith('http') ? value : `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/service-photos/${value}`} alt={label} style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 12, border: '2px solid #bbf7d0' }} onError={e => { e.target.style.display = 'none' }} />
-          <span style={{ position: 'absolute', top: 8, right: 8, background: '#10b981', color: '#fff', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>âœ… Guardada</span>
+          <span style={{ position: 'absolute', top: 8, right: 8, background: '#10b981', color: '#fff', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>✅ Guardada</span>
         </div>
       ) : (
         <div style={{ width: '100%', height: 160, background: '#f9fafb', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 10, border: '2px dashed #e5e7eb' }}>
           <Camera size={40} color="#d1d5db" />
-          <span style={{ fontSize: 12, color: '#9ca3af', marginTop: 6 }}>Sin foto aÃºn</span>
+          <span style={{ fontSize: 12, color: '#9ca3af', marginTop: 6 }}>Sin foto aún</span>
         </div>
       )}
       {uploading && (
@@ -251,21 +251,21 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment' }
           </div>
         </div>
       )}
-      {localErr && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#dc2626', fontSize: 13 }}>âš ï¸ {localErr}</div>}
+      {localErr && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#dc2626', fontSize: 13 }}>⚠️ {localErr}</div>}
       <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: uploading ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', pointerEvents: uploading ? 'none' : 'auto', minHeight: 50, flexShrink: 0 }}>
-        ðŸ“¸ {value ? 'Cambiar foto' : 'Tomar foto'}
+        📸 {value ? 'Cambiar foto' : 'Tomar foto'}
         <input type="file" accept="image/*" capture={capture} style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }} />
       </label>
     </div>
   )
 }
 
-// â”€â”€ Componente principal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Componente principal ──────────────────────────────────────────────────────
 const OperatorView = () => {
   const { user, profile, signOut } = useAuth();
   const isMobile = useIsMobile();
 
-  // â”€â”€ Estado general â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Estado general ────────────────────────────────────────────────────────
   const [bookings, setBookings]               = useState([]);
   const [loading, setLoading]                 = useState(false);
   const [fetchError, setFetchError]           = useState('');
@@ -275,13 +275,13 @@ const OperatorView = () => {
   const fetchingRef                           = useRef(false);
   const bookingsCache                         = useRef([]);
 
-  // â”€â”€ Estado solicitudes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Estado solicitudes ────────────────────────────────────────────────────
   const [requests, setRequests]       = useState([]);
   const [loadingReqs, setLoadingReqs] = useState(false);
-  const [accepting, setAccepting]     = useState(null); // id del request que se estÃ¡ aceptando
+  const [accepting, setAccepting]     = useState(null); // id del request que se está aceptando
   const [acceptError, setAcceptError] = useState('');
 
-  // â”€â”€ Estado fotos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Estado fotos ──────────────────────────────────────────────────────────
   const [checklist, setChecklist]             = useState([]);
   const [checklistModal, setChecklistModal]   = useState(false);
   const [pendingFinalize, setPendingFinalize] = useState(null);
@@ -294,19 +294,19 @@ const OperatorView = () => {
   const [uploadProgress, setUploadProgress]   = useState('');
   const [photoPhase, setPhotoPhase]           = useState('before');
 
-  // â”€â”€ Estado incidencias â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Estado incidencias ────────────────────────────────────────────────────
   const [incidentModal, setIncidentModal]     = useState(false);
   const [incidentBooking, setIncidentBooking] = useState(null);
   const [incidentNote, setIncidentNote]       = useState('');
   const [sendingIncident, setSendingIncident] = useState(false);
 
-  // â”€â”€ GPS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── GPS ───────────────────────────────────────────────────────────────────
   const gpsWatcherRef                             = useRef(null);
   const [trackingBookingId, setTrackingBookingId] = useState(null);
   const [gpsError, setGpsError]                   = useState('');
   const [sessionToken, setSessionToken]           = useState(null);
 
-  // â”€â”€ Carga inicial y realtime â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Carga inicial y realtime ──────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
 
@@ -330,11 +330,11 @@ const OperatorView = () => {
         filter: `operator_id=eq.${user.id}`,
       }, (payload) => {
         fetchBookingRequests();
-        // Si se aceptÃ³ un request, refrescar bookings para ver el servicio confirmado
+        // Si se aceptó un request, refrescar bookings para ver el servicio confirmado
         if (payload.new?.status === 'aceptado') {
           setTimeout(() => fetchOperatorBookings(true), 500);
         }
-        // Cambiar al tab de solicitudes automÃ¡ticamente si llega una nueva
+        // Cambiar al tab de solicitudes automáticamente si llega una nueva
         setActiveTab(prev => prev === 'solicitudes' ? prev : 'solicitudes');
       })
       .subscribe();
@@ -383,13 +383,13 @@ const OperatorView = () => {
     return () => { if (gpsWatcherRef.current !== null) navigator.geolocation.clearWatch(gpsWatcherRef.current); };
   }, [bookings, user]);
 
-  // â”€â”€ GUARDS (despuÃ©s de todos los hooks) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── GUARDS (después de todos los hooks) ───────────────────────────────────
   if (profile?.role !== 'admin' && (!profile || !profile.onboarding_done)) {
     const step = profile?.onboarding_step || 1;
     return (
       <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ background: 'rgba(59,130,246,0.08)', border: '1.5px solid rgba(59,130,246,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
-          <div style={{ fontSize: 56, marginBottom: 16 }}>ðŸ“‹</div>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>📋</div>
           <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F0F6FF', marginBottom: 12 }}>Completa tu registro</h2>
           <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 8, lineHeight: 1.6 }}>Para acceder al panel necesitas completar tu proceso de alta como operador.</p>
           {step > 1 && <p style={{ color: '#60a5fa', fontSize: 13, marginBottom: 24 }}>Continuaras desde el paso {step} de 5</p>}
@@ -407,7 +407,7 @@ const OperatorView = () => {
     return (
       <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ background: 'rgba(59,130,246,0.08)', border: '1.5px solid rgba(59,130,246,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
-          <div style={{ fontSize: 56, marginBottom: 16 }}>â³</div>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>⏳</div>
           <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F0F6FF', marginBottom: 12 }}>Perfil en revision</h2>
           <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 24, lineHeight: 1.6 }}>Tu registro esta siendo revisado por el administrador. Te notificaremos cuando sea aprobado.</p>
           <button onClick={() => signOut()} style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: '#8CA0BF', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>Cerrar sesion</button>
@@ -416,7 +416,7 @@ const OperatorView = () => {
     );
   }
 
-  // â”€â”€ Fetch bookings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Fetch bookings ────────────────────────────────────────────────────────
   const fetchOperatorBookings = async (silent = false) => {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
@@ -425,7 +425,7 @@ const OperatorView = () => {
     let timedOut = false;
     const timeoutId = setTimeout(() => {
       timedOut = true; fetchingRef.current = false; setLoading(false);
-      if (bookingsCache.current.length > 0) { setBookings(bookingsCache.current); setFetchError('Sin conexion â€” mostrando datos anteriores.'); }
+      if (bookingsCache.current.length > 0) { setBookings(bookingsCache.current); setFetchError('Sin conexion — mostrando datos anteriores.'); }
       else { setFetchError('Sin conexion. Verifica tu red e intenta de nuevo.'); }
     }, 8000);
     try {
@@ -439,12 +439,12 @@ const OperatorView = () => {
       bookingsCache.current = result; setBookings(result); setFetchError('');
     } catch (err) {
       clearTimeout(timeoutId); if (timedOut) return;
-      if (bookingsCache.current.length > 0) { setBookings(bookingsCache.current); setFetchError('Error de red â€” mostrando datos anteriores.'); }
+      if (bookingsCache.current.length > 0) { setBookings(bookingsCache.current); setFetchError('Error de red — mostrando datos anteriores.'); }
       else { setFetchError('No se pudieron cargar los servicios. Verifica tu conexion.'); }
     } finally { if (!timedOut) { fetchingRef.current = false; setLoading(false); } }
   };
 
-  // â”€â”€ Fetch solicitudes pendientes del operador â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Fetch solicitudes pendientes del operador ─────────────────────────────
   const fetchBookingRequests = async () => {
     if (!user) return;
     setLoadingReqs(true);
@@ -462,7 +462,7 @@ const OperatorView = () => {
       if (!reqs || reqs.length === 0) { setRequests([]); return; }
 
       // Paso 2: obtener datos de cada booking por separado
-      // La polÃ­tica RLS ya permite ver bookings con request activo
+      // La política RLS ya permite ver bookings con request activo
       const bookingIds = reqs.map(r => r.booking_id);
       const { data: bookings } = await supabase
         .from('bookings')
@@ -484,7 +484,7 @@ const OperatorView = () => {
     }
   };
 
-  // â”€â”€ Aceptar solicitud â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Aceptar solicitud ─────────────────────────────────────────────────────
   const handleAcceptRequest = async (request) => {
     setAccepting(request.id);
     setAcceptError('');
@@ -493,12 +493,12 @@ const OperatorView = () => {
       // El trigger en DB se encarga de:
       //   1. Asignar operator_id al booking
       //   2. Cambiar status del booking a 'confirmado'
-      //   3. Cancelar las demÃ¡s solicitudes del mismo booking
+      //   3. Cancelar las demás solicitudes del mismo booking
       const { error } = await supabase
         .from('booking_requests')
         .update({ status: 'aceptado', responded_at: new Date().toISOString() })
         .eq('id', request.id)
-        .eq('status', 'pendiente'); // evitar doble aceptaciÃ³n
+        .eq('status', 'pendiente'); // evitar doble aceptación
 
       if (error) throw error;
 
@@ -540,7 +540,7 @@ const OperatorView = () => {
     }
   };
 
-  // â”€â”€ updateStatus â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── updateStatus ──────────────────────────────────────────────────────────
   const updateStatus = async (bookingId, newStatus, eventName, bookingData = null) => {
     if (newStatus === 'en_camino' && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -571,12 +571,12 @@ const OperatorView = () => {
     } finally { setUpdatingId(null); }
   };
 
-  // â”€â”€ Fotos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Fotos ─────────────────────────────────────────────────────────────────
   const PHOTO_STEPS = [
-    { step: 1, key: 'front_before',   phase: 'before', label: 'Foto 1 de 4 â€” Frontal ANTES',    desc: 'Captura el frente del auto con la placa visible', color: '#f97316' },
-    { step: 2, key: 'side_before',    phase: 'before', label: 'Foto 2 de 4 â€” Lateral ANTES',    desc: 'Captura el lado mas expuesto del auto',           color: '#f97316' },
-    { step: 3, key: 'front_after',    phase: 'after',  label: 'Foto 3 de 4 â€” Frontal DESPUES',  desc: 'Captura el frente del auto ya lavado',            color: '#10b981' },
-    { step: 4, key: 'interior_after', phase: 'after',  label: 'Foto 4 de 4 â€” Interior DESPUES', desc: 'Captura el interior o cajuela segun el servicio', color: '#10b981' },
+    { step: 1, key: 'front_before',   phase: 'before', label: 'Foto 1 de 4 — Frontal ANTES',    desc: 'Captura el frente del auto con la placa visible', color: '#f97316' },
+    { step: 2, key: 'side_before',    phase: 'before', label: 'Foto 2 de 4 — Lateral ANTES',    desc: 'Captura el lado mas expuesto del auto',           color: '#f97316' },
+    { step: 3, key: 'front_after',    phase: 'after',  label: 'Foto 3 de 4 — Frontal DESPUES',  desc: 'Captura el frente del auto ya lavado',            color: '#10b981' },
+    { step: 4, key: 'interior_after', phase: 'after',  label: 'Foto 4 de 4 — Interior DESPUES', desc: 'Captura el interior o cajuela segun el servicio', color: '#10b981' },
   ];
 
   const handleStartWashing = async (booking) => {
@@ -642,7 +642,7 @@ const OperatorView = () => {
     setPendingFinalize(null); setChecklist([]);
   };
 
-  // Guardar estado del modal en sessionStorage para restaurar si la cÃ¡mara recarga la app
+  // Guardar estado del modal en sessionStorage para restaurar si la cámara recarga la app
   useEffect(() => {
     if (photoModal && photoBooking) {
       sessionStorage.setItem('photoModal', JSON.stringify({
@@ -656,7 +656,7 @@ const OperatorView = () => {
     }
   }, [photoModal, photoBooking, photoStep, photoPhase, photosData])
 
-  // Restaurar modal de fotos si la app se recargÃ³ mientras la cÃ¡mara estaba abierta
+  // Restaurar modal de fotos si la app se recargó mientras la cámara estaba abierta
   useEffect(() => {
     const saved = sessionStorage.getItem('photoModal')
     if (!saved) return
@@ -739,7 +739,7 @@ const OperatorView = () => {
   const openInMaps = (address) => { if (!address) return; window.open('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(address), '_blank'); };
   const getPhotoUrl = (path) => { if (!path) return null; return path.startsWith('http') ? path : SUPABASE_URL + '/storage/v1/object/public/service-photos/' + path; };
 
-  // â”€â”€ Listas filtradas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Listas filtradas ──────────────────────────────────────────────────────
   const pendingServices   = bookings.filter(b => b.status === 'confirmado');
   const activeServices    = bookings.filter(b => ['en_camino', 'en_proceso'].includes(b.status));
   const completedServices = bookings.filter(b => b.status === 'finalizado');
@@ -766,15 +766,15 @@ const OperatorView = () => {
   const photoBtnLabel      = uploadingPhoto ? (uploadProgress || 'Subiendo...') : currentPhotoSaved ? 'Cambiar foto' : 'Tomar foto';
   const canAdvancePhoto    = currentPhotoSaved && !uploadingPhoto;
 
-  // â”€â”€ Tabs con el nuevo "Solicitudes" primero â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Tabs con el nuevo "Solicitudes" primero ───────────────────────────────
   const tabs = [
-    { id: 'solicitudes',  label: 'Solicitudes', icon: 'ðŸ””', count: pendingRequests.length },
-    { id: 'pendientes',   label: 'Pendientes',  icon: 'ðŸ“‹', count: pendingServices.length },
-    { id: 'activos',      label: 'Activos',     icon: 'âš¡', count: activeServices.length },
-    { id: 'completados',  label: 'Historial',   icon: 'ðŸ“–', count: completedServices.length },
+    { id: 'solicitudes',  label: 'Solicitudes', icon: '🔔', count: pendingRequests.length },
+    { id: 'pendientes',   label: 'Pendientes',  icon: '📋', count: pendingServices.length },
+    { id: 'activos',      label: 'Activos',     icon: '⚡', count: activeServices.length },
+    { id: 'completados',  label: 'Historial',   icon: '📖', count: completedServices.length },
   ];
 
-  // â”€â”€ RENDER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6', paddingBottom: isMobile ? 72 : 80 }}>
 
@@ -782,7 +782,7 @@ const OperatorView = () => {
       <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: isMobile ? '20px 16px 16px' : '32px 24px 28px', borderRadius: '0 0 24px 24px', boxShadow: '0 4px 24px rgba(30,64,175,0.3)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: isMobile ? 0 : 20 }}>
           <div>
-            <h1 style={{ color: '#fff', fontSize: isMobile ? 18 : 22, fontWeight: 700, margin: '0 0 4px' }}>ðŸš— Mis Servicios</h1>
+            <h1 style={{ color: '#fff', fontSize: isMobile ? 18 : 22, fontWeight: 700, margin: '0 0 4px' }}>🚗 Mis Servicios</h1>
             <p style={{ color: '#bfdbfe', fontSize: 13, margin: 0 }}>Hola, {user?.user_metadata?.full_name || profile?.full_name || 'Operador'}</p>
           </div>
           <button onClick={() => signOut()} style={{ background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 10, padding: '10px 12px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', minHeight: 44 }}>
@@ -822,19 +822,19 @@ const OperatorView = () => {
           </div>
         )}
 
-        {/* â”€â”€ TAB SOLICITUDES â”€â”€ */}
+        {/* ── TAB SOLICITUDES ── */}
         {activeTab === 'solicitudes' && (
           <div style={{ display: 'grid', gap: 12 }}>
             {loadingReqs ? (
               <div style={{ background: '#fff', borderRadius: 16, padding: 48, textAlign: 'center' }}>
-                <div style={{ fontSize: 32, marginBottom: 12 }}>â³</div>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
                 <p style={{ color: '#9ca3af' }}>Cargando solicitudes...</p>
               </div>
             ) : pendingRequests.length === 0 ? (
               <div style={{ background: '#fff', borderRadius: 16, padding: 48, textAlign: 'center' }}>
-                <div style={{ fontSize: 48, marginBottom: 12 }}>ðŸ””</div>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>🔔</div>
                 <p style={{ color: '#1f2937', fontWeight: 700, fontSize: 16, margin: '0 0 8px' }}>Sin solicitudes pendientes</p>
-                <p style={{ color: '#9ca3af', fontSize: 14, margin: 0 }}>Cuando un cliente solicite un servicio en tu zona y horario, aparecerÃ¡ aquÃ­.</p>
+                <p style={{ color: '#9ca3af', fontSize: 14, margin: 0 }}>Cuando un cliente solicite un servicio en tu zona y horario, aparecerá aquí.</p>
               </div>
             ) : (
               <>
@@ -843,10 +843,10 @@ const OperatorView = () => {
                   <p style={{ fontSize: 13, color: '#92400e', margin: 0, lineHeight: 1.4 }}>
                     Tienes <strong>{pendingRequests.length}</strong> solicitud{pendingRequests.length > 1 ? 'es' : ''} pendiente{pendingRequests.length > 1 ? 's' : ''}. El primero en aceptar se queda con el servicio.
                   </p>
-                  <button onClick={fetchBookingRequests} style={{ background: 'none', border: 'none', color: '#f59e0b', cursor: 'pointer', fontSize: 18, flexShrink: 0 }}>â†»</button>
+                  <button onClick={fetchBookingRequests} style={{ background: 'none', border: 'none', color: '#f59e0b', cursor: 'pointer', fontSize: 18, flexShrink: 0 }}>↻</button>
                 </div>
                 {acceptError && (
-                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#dc2626' }}>âš ï¸ {acceptError}</div>
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#dc2626' }}>⚠️ {acceptError}</div>
                 )}
                 {pendingRequests.map(req => (
                   <RequestCard
@@ -862,16 +862,16 @@ const OperatorView = () => {
           </div>
         )}
 
-        {/* â”€â”€ TABS DE SERVICIOS â”€â”€ */}
+        {/* ── TABS DE SERVICIOS ── */}
         {activeTab !== 'solicitudes' && (
           loading ? (
             <div style={{ background: '#fff', borderRadius: 16, padding: 48, textAlign: 'center' }}>
-              <div style={{ fontSize: 32, marginBottom: 12 }}>â³</div>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
               <p style={{ color: '#9ca3af' }}>Cargando tus servicios...</p>
             </div>
           ) : currentList.length === 0 ? (
             <div style={{ background: '#fff', borderRadius: 16, padding: 48, textAlign: 'center' }}>
-              <div style={{ fontSize: 40, marginBottom: 12 }}>ðŸ“­</div>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
               <p style={{ color: '#9ca3af' }}>No tienes servicios en esta seccion</p>
             </div>
           ) : (
@@ -892,9 +892,9 @@ const OperatorView = () => {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#374151' }}>
                         <Clock size={14} color="#3b82f6" />
                         <span style={{ fontWeight: 600 }}>
-                          {timeFrom && timeTo ? `${timeFrom} â€” ${timeTo}` : booking.scheduled_time?.slice(0,5) ?? 'â€”'}
+                          {timeFrom && timeTo ? `${timeFrom} — ${timeTo}` : booking.scheduled_time?.slice(0,5) ?? '—'}
                         </span>
-                        <span style={{ color: '#9ca3af' }}>Â·</span>
+                        <span style={{ color: '#9ca3af' }}>·</span>
                         <span style={{ color: '#6b7280' }}>{booking.scheduled_date}</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#6b7280' }}>
@@ -950,7 +950,7 @@ const OperatorView = () => {
         )}
       </div>
 
-      {/* Nav bar mÃ³vil */}
+      {/* Nav bar móvil */}
       {isMobile && (
         <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100, background: '#fff', borderTop: '1px solid #e5e7eb', display: 'flex', boxShadow: '0 -4px 16px rgba(0,0,0,0.08)' }}>
           {tabs.map(tab => (
@@ -971,7 +971,7 @@ const OperatorView = () => {
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: '#f3f4f6', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <div style={{ maxWidth: 600, margin: '0 auto', padding: isMobile ? 12 : 20, paddingBottom: isMobile ? 160 : 120 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <button onClick={() => setSelectedBooking(null)} style={{ background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 44 }}>â† Cerrar</button>
+              <button onClick={() => setSelectedBooking(null)} style={{ background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: 10, padding: '10px 16px', fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 44 }}>← Cerrar</button>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 }}>Detalle del Servicio</div>
                 <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 13 }}>{selectedBooking.booking_ref}</div>
@@ -980,13 +980,13 @@ const OperatorView = () => {
             </div>
             <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', borderRadius: 20, padding: isMobile ? 16 : '20px 22px', color: '#fff', marginBottom: 16 }}>
               <h2 style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, margin: '0 0 4px' }}>{selectedBooking.service_name}</h2>
-              <p style={{ color: '#bfdbfe', fontSize: 13, margin: '0 0 16px' }}>{selectedBooking.vehicle_brand} {selectedBooking.vehicle_model} Â· {selectedBooking.vehicle_color}</p>
+              <p style={{ color: '#bfdbfe', fontSize: 13, margin: '0 0 16px' }}>{selectedBooking.vehicle_brand} {selectedBooking.vehicle_model} · {selectedBooking.vehicle_color}</p>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>
-                  ðŸ• {selectedBooking.scheduled_time_from?.slice(0,5) ?? selectedBooking.scheduled_time?.slice(0,5)}
-                  {selectedBooking.scheduled_time_to ? ` â€” ${selectedBooking.scheduled_time_to.slice(0,5)}` : ''} hrs
+                  🕐 {selectedBooking.scheduled_time_from?.slice(0,5) ?? selectedBooking.scheduled_time?.slice(0,5)}
+                  {selectedBooking.scheduled_time_to ? ` — ${selectedBooking.scheduled_time_to.slice(0,5)}` : ''} hrs
                 </span>
-                <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>ðŸ’° ${selectedBooking.total_price || selectedBooking.service_price}</span>
+                <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>💰 ${selectedBooking.total_price || selectedBooking.service_price}</span>
               </div>
             </div>
             <div style={{ background: '#fff', borderRadius: 16, padding: '16px 18px', marginBottom: 12 }}>
@@ -1056,9 +1056,9 @@ const OperatorView = () => {
       {photoModal && photoBooking && (() => {
         const FOTO_CONFIG = [
           { step: 1, key: 'front_before',   column: 'photo_front_before',   label: 'Foto Frontal ANTES',    desc: 'Frente del auto con placa visible', color: '#f97316' },
-          { step: 2, key: 'side_before',    column: 'photo_side_before',    label: 'Foto Lateral ANTES',    desc: 'Lado mÃ¡s expuesto del auto',        color: '#f97316' },
-          { step: 3, key: 'front_after',    column: 'photo_front_after',    label: 'Foto Frontal DESPUÃ‰S',  desc: 'Frente del auto ya lavado',         color: '#10b981' },
-          { step: 4, key: 'interior_after', column: 'photo_interior_after', label: 'Foto Interior DESPUÃ‰S', desc: 'Interior o cajuela del auto',        color: '#10b981' },
+          { step: 2, key: 'side_before',    column: 'photo_side_before',    label: 'Foto Lateral ANTES',    desc: 'Lado más expuesto del auto',        color: '#f97316' },
+          { step: 3, key: 'front_after',    column: 'photo_front_after',    label: 'Foto Frontal DESPUÉS',  desc: 'Frente del auto ya lavado',         color: '#10b981' },
+          { step: 4, key: 'interior_after', column: 'photo_interior_after', label: 'Foto Interior DESPUÉS', desc: 'Interior o cajuela del auto',        color: '#10b981' },
         ]
         const cfg = FOTO_CONFIG.find(f => f.step === photoStep) || FOTO_CONFIG[0]
         const isLast = photoStep === (photoPhase === 'before' ? 2 : 4)
@@ -1073,7 +1073,7 @@ const OperatorView = () => {
               <div style={{ background: `linear-gradient(135deg,${cfg.color},${cfg.color}dd)`, borderRadius: 16, padding: '20px', marginBottom: 20, color: '#fff' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.8 }}>Foto {photoStep} de {photoPhase === 'before' ? 2 : 4}</span>
-                  <button onClick={() => { setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', fontSize: 20, width: 36, height: 36, borderRadius: 8, cursor: 'pointer' }}>âœ•</button>
+                  <button onClick={() => { setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', fontSize: 20, width: 36, height: 36, borderRadius: 8, cursor: 'pointer' }}>✕</button>
                 </div>
                 <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 4px' }}>{cfg.label}</h2>
                 <p style={{ fontSize: 13, opacity: 0.9, margin: 0 }}>{cfg.desc}</p>
@@ -1085,7 +1085,7 @@ const OperatorView = () => {
                 </div>
               </div>
 
-              {/* PhotoUploadServicio â€” mismo componente que Onboarding */}
+              {/* PhotoUploadServicio — mismo componente que Onboarding */}
               <div style={{ background: '#fff', borderRadius: 16, padding: '20px', marginBottom: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
                 <PhotoUploadServicio
                   label={cfg.label}
@@ -1104,13 +1104,13 @@ const OperatorView = () => {
                 />
               </div>
 
-              {/* BotÃ³n siguiente */}
+              {/* Botón siguiente */}
               <button
                 onClick={handleNextPhotoStep}
                 disabled={!canGoNext}
                 style={{ width: '100%', padding: '16px 0', background: canGoNext ? cfg.color : '#94a3b8', color: '#fff', border: 'none', borderRadius: 16, fontSize: 16, fontWeight: 700, cursor: canGoNext ? 'pointer' : 'not-allowed', minHeight: 56 }}
               >
-                {isLast ? (pendingFinalize ? 'Ir al Checklist' : 'Listo') : 'Siguiente foto â†’'}
+                {isLast ? (pendingFinalize ? 'Ir al Checklist' : 'Listo') : 'Siguiente foto →'}
               </button>
             </div>
           </div>
@@ -1157,7 +1157,7 @@ const OperatorView = () => {
             </div>
             <div style={{ padding: isMobile ? '16px 14px' : 20, overflowY: 'auto', flex: 1, WebkitOverflowScrolling: 'touch' }}>
               <div style={{ background: '#fef2f2', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 14, color: '#991b1b' }}>
-                Servicio: <strong>{incidentBooking.booking_ref}</strong> â€” {incidentBooking.service_name}
+                Servicio: <strong>{incidentBooking.booking_ref}</strong> — {incidentBooking.service_name}
               </div>
               <label style={{ fontSize: 14, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Describe el problema *</label>
               <textarea value={incidentNote} onChange={e => setIncidentNote(e.target.value)}
