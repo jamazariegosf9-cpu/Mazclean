@@ -63,7 +63,7 @@ async function uploadFile({ file, folder, userId, onProgress }) {
   const isPdf   = file.type === 'application/pdf'
   const ext     = isVideo ? (file.name?.endsWith('.mov') ? 'mov' : 'mp4') : isPdf ? 'pdf' : 'jpg'
   const path    = `${folder}/${userId}/${folder}_${Date.now()}.${ext}`
-  const fileToUpload = file  // Sin compresión — prueba definitiva
+  const fileToUpload = (!isVideo && !isPdf) ? await compressImage(file) : file
 
   await new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
@@ -210,17 +210,19 @@ function PhotoStep({ label, value, bookingId, photoKey, onSuccess, disabled }) {
 
   const handleFile = async (file) => {
     if (!file || disabled) return
-    // Regenerar el input inmediatamente para limpiar caché del navegador
     setInputKey(k => k + 1)
     setUploading(true); setLocalErr(''); setProgress(0)
     try {
       if (file.size > 50 * 1024 * 1024) throw new Error('El archivo no debe pesar más de 50MB.')
-      const path = `${photoKey}/${user.id}/${photoKey}_${Date.now()}.jpg`
-      const { error } = await supabase.storage
-        .from('service-photos')
-        .upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' })
-      if (error) throw error
-      setProgress(100)
+      // Carpeta dedicada por tipo de foto — igual que el Onboarding
+      const FOLDERS = {
+        front_before:   'foto_frontal_antes',
+        side_before:    'foto_lateral_antes',
+        front_after:    'foto_frontal_despues',
+        interior_after: 'foto_interior_despues',
+      }
+      const folder = FOLDERS[photoKey] || photoKey
+      const path = await uploadFile({ file, folder, userId: user.id, onProgress: setProgress })
       onSuccess(path)
     } catch (e) { setLocalErr(e.message) }
     finally { setUploading(false) }
