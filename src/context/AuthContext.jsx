@@ -226,6 +226,8 @@ export function AuthProvider({ children }) {
   }
 
   const signOut = async () => {
+    // Limpiar sesión manualmente — supabase.auth.signOut puede fallar con noopLock
+    try { localStorage.removeItem('mazclean-auth') } catch {}
     try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
     setSessionExpired(false)
     setAuthState({ user: null, profile: null, loading: false })
