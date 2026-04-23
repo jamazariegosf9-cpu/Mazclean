@@ -200,30 +200,21 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
 }
 
 
-// ── Componente PhotoStep — copia exacta del PhotoUpload del Onboarding ──────
-function PhotoStep({ label, value, bookingId, photoKey, onSuccess, disabled }) {
+// ── PhotoUploadServicio — copia exacta de PhotoUpload del Onboarding ─────────
+function PhotoUploadServicio({ label, value, onChange, capture = 'environment' }) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress]   = useState(0)
   const [localErr, setLocalErr]   = useState('')
-  const [inputKey, setInputKey]   = useState(0)  // fuerza recrear input
   const { user } = useAuth()
 
   const handleFile = async (file) => {
-    if (!file || disabled) return
-    setInputKey(k => k + 1)
+    if (!file) return
     setUploading(true); setLocalErr(''); setProgress(0)
     try {
       if (file.size > 50 * 1024 * 1024) throw new Error('El archivo no debe pesar más de 50MB.')
-      // Carpeta dedicada por tipo de foto — igual que el Onboarding
-      const FOLDERS = {
-        front_before:   'foto_frontal_antes',
-        side_before:    'foto_lateral_antes',
-        front_after:    'foto_frontal_despues',
-        interior_after: 'foto_interior_despues',
-      }
-      const folder = FOLDERS[photoKey] || photoKey
+      const folder = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,'_').replace(/[^a-z_]/g,'').slice(0,30)
       const path = await uploadFile({ file, folder, userId: user.id, onProgress: setProgress })
-      onSuccess(path)
+      onChange(path)
     } catch (e) { setLocalErr(e.message) }
     finally { setUploading(false) }
   }
@@ -232,7 +223,7 @@ function PhotoStep({ label, value, bookingId, photoKey, onSuccess, disabled }) {
     <div style={{ marginBottom: 16 }}>
       {value ? (
         <div style={{ position: 'relative', marginBottom: 10 }}>
-          <img src={value} alt={label} style={{ width: '100%', height: 180, objectFit: 'cover', borderRadius: 12, border: '2px solid #bbf7d0' }} onError={e => { e.target.style.display = 'none' }} />
+          <img src={value.startsWith('http') ? value : `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/service-photos/${value}`} alt={label} style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 12, border: '2px solid #bbf7d0' }} onError={e => { e.target.style.display = 'none' }} />
           <span style={{ position: 'absolute', top: 8, right: 8, background: '#10b981', color: '#fff', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>✅ Guardada</span>
         </div>
       ) : (
@@ -255,63 +246,10 @@ function PhotoStep({ label, value, bookingId, photoKey, onSuccess, disabled }) {
       {localErr && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#dc2626', fontSize: 13 }}>⚠️ {localErr}</div>}
       <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: uploading ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', pointerEvents: uploading ? 'none' : 'auto', minHeight: 50, flexShrink: 0 }}>
         📸 {value ? 'Cambiar foto' : 'Tomar foto'}
-        <input key={inputKey} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }} />
+        <input type="file" accept="image/*" capture={capture} style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }} />
       </label>
     </div>
   )
-}
-
-// ── Componente PhotoModal usa PhotoStep ───────────────────────────────────────
-function PhotoModal({ isMobile, photoBooking, photoStep, photoPhase, photosData, pendingFinalize, PHOTO_STEPS, getPhotoUrl, onClose, onPhotoSaved, onNext, canAdvance }) {
-  const currentPhotoConfig = PHOTO_STEPS.find(p => p.step === photoStep) || PHOTO_STEPS[0];
-  const currentPhotoKey    = currentPhotoConfig.key;
-  const uploading          = false; // PhotoStep maneja su propio estado
-  const canAdvancePhoto    = canAdvance;
-
-  const TYPE_TO_COLUMN = {
-    front_before:   'photo_front_before',
-    side_before:    'photo_side_before',
-    front_after:    'photo_front_after',
-    interior_after: 'photo_interior_after',
-  };
-
-  const handleFile = () => {}; // no usado — PhotoStep lo maneja
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
-      <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 24, width: '100%', maxWidth: isMobile ? '100%' : 420, maxHeight: isMobile ? '92vh' : '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.3)' }}>
-
-        <div style={{ background: currentPhotoConfig.phase === 'before' ? 'linear-gradient(135deg,#f97316,#fb923c)' : 'linear-gradient(135deg,#10b981,#34d399)', padding: '16px 20px', flexShrink: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 15, margin: '0 0 4px' }}>{currentPhotoConfig.label}</h3>
-              <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, margin: 0 }}>{currentPhotoConfig.desc}</p>
-            </div>
-            <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.3)', border: 'none', color: '#fff', fontSize: 22, width: 38, height: 38, borderRadius: 10, cursor: 'pointer' }}>✕</button>
-          </div>
-        </div>
-
-        <div style={{ padding: isMobile ? '20px 16px' : '24px', flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <PhotoStep
-            key={`${currentPhotoKey}-${Object.keys(photosData).length}`}
-            label={currentPhotoConfig.label}
-            value={getPhotoUrl(photosData[currentPhotoKey] || photoBooking[`photo_${currentPhotoKey}`])}
-            bookingId={photoBooking.id}
-            photoKey={currentPhotoKey}
-            disabled={false}
-            onSuccess={(path) => {
-              const column = TYPE_TO_COLUMN[currentPhotoKey] || currentPhotoKey;
-              onPhotoSaved(currentPhotoKey, path, column);
-            }}
-          />
-
-          <button onClick={onNext} disabled={!canAdvancePhoto} style={{ width: '100%', padding: '16px 0', borderRadius: 16, border: 'none', background: canAdvancePhoto ? (currentPhotoConfig.phase === 'before' ? '#f97316' : '#10b981') : '#94a3b8', color: '#fff', fontSize: 16, fontWeight: 700, cursor: canAdvancePhoto ? 'pointer' : 'not-allowed', minHeight: 56 }}>
-            {photoStep < 4 ? 'Siguiente foto →' : pendingFinalize ? 'Ir al Checklist' : 'Listo'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ── Componente principal ──────────────────────────────────────────────────────
@@ -744,12 +682,18 @@ const OperatorView = () => {
     try {
       const column = TYPE_TO_COLUMN[type] || type;
 
-      // Exactamente igual al Onboarding: folder=type, userId=user.id
+      // Token fresco
+      let token = sessionToken;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) token = session.access_token;
+      } catch {}
+
       const uploadedPath = await uploadFile({
         file,
-        folder: type,
-        userId: user.id,
-        onProgress: setUploadProgress,
+        folder: bookingId,
+        userId: type,
+        onProgress: (perc) => setUploadProgress(perc),
       });
 
       const { error: dbErr } = await supabase
@@ -1100,35 +1044,70 @@ const OperatorView = () => {
         </div>
       )}
 
-      {/* MODAL FOTOS - Componente autocontenido */}
-      {photoModal && photoBooking && (
-        <PhotoModal
-          isMobile={isMobile}
-          photoBooking={photoBooking}
-          photoStep={photoStep}
-          photoPhase={photoPhase}
-          photosData={photosData}
-          pendingFinalize={pendingFinalize}
-          PHOTO_STEPS={PHOTO_STEPS}
-          getPhotoUrl={getPhotoUrl}
-          onClose={() => { setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); setUploadingPhoto(false); setUploadError(''); setUploadProgress(''); }}
-          onPhotoSaved={(type, path, column) => {
-            // UPDATE a DB aquí donde auth funciona correctamente
-            supabase.from('bookings')
-              .update({ [column]: path, updated_at: new Date().toISOString() })
-              .eq('id', photoBooking.id)
-              .then(({ error }) => {
-                if (error) console.error('Error guardando foto en DB:', error);
-              });
-            setBookings(prev => prev.map(b => b.id === photoBooking.id ? { ...b, [column]: path } : b));
-            if (selectedBooking?.id === photoBooking.id) setSelectedBooking(prev => ({ ...prev, [column]: path }));
-            setPhotoBooking(prev => ({ ...prev, [column]: path }));
-            setPhotosData(prev => ({ ...prev, [type]: path }));
-          }}
-          onNext={handleNextPhotoStep}
-          canAdvance={canAdvancePhoto}
-        />
-      )}
+      {/* MODAL FOTOS - Una pantalla por foto igual que el Onboarding */}
+      {photoModal && photoBooking && (() => {
+        const FOTO_CONFIG = [
+          { step: 1, key: 'front_before',   column: 'photo_front_before',   label: 'Foto Frontal ANTES',    desc: 'Frente del auto con placa visible', color: '#f97316' },
+          { step: 2, key: 'side_before',    column: 'photo_side_before',    label: 'Foto Lateral ANTES',    desc: 'Lado más expuesto del auto',        color: '#f97316' },
+          { step: 3, key: 'front_after',    column: 'photo_front_after',    label: 'Foto Frontal DESPUÉS',  desc: 'Frente del auto ya lavado',         color: '#10b981' },
+          { step: 4, key: 'interior_after', column: 'photo_interior_after', label: 'Foto Interior DESPUÉS', desc: 'Interior o cajuela del auto',        color: '#10b981' },
+        ]
+        const cfg = FOTO_CONFIG.find(f => f.step === photoStep) || FOTO_CONFIG[0]
+        const isLast = photoStep === (photoPhase === 'before' ? 2 : 4)
+        const currentValue = photosData[cfg.key] || photoBooking[`photo_${cfg.key}`]
+        const canGoNext = !!photosData[cfg.key]
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 110, background: '#f3f4f6', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ maxWidth: 520, margin: '0 auto', padding: isMobile ? '16px 12px 80px' : '32px 16px' }}>
+
+              {/* Header */}
+              <div style={{ background: `linear-gradient(135deg,${cfg.color},${cfg.color}dd)`, borderRadius: 16, padding: '20px', marginBottom: 20, color: '#fff' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.8 }}>Foto {photoStep} de {photoPhase === 'before' ? 2 : 4}</span>
+                  <button onClick={() => { setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', fontSize: 20, width: 36, height: 36, borderRadius: 8, cursor: 'pointer' }}>✕</button>
+                </div>
+                <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 4px' }}>{cfg.label}</h2>
+                <p style={{ fontSize: 13, opacity: 0.9, margin: 0 }}>{cfg.desc}</p>
+                {/* Barra de progreso */}
+                <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
+                  {FOTO_CONFIG.filter(f => photoPhase === 'before' ? f.step <= 2 : f.step >= 3).map(f => (
+                    <div key={f.step} style={{ flex: 1, height: 4, borderRadius: 4, background: photosData[f.key] ? '#fff' : f.step === photoStep ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)' }} />
+                  ))}
+                </div>
+              </div>
+
+              {/* PhotoUploadServicio — mismo componente que Onboarding */}
+              <div style={{ background: '#fff', borderRadius: 16, padding: '20px', marginBottom: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+                <PhotoUploadServicio
+                  label={cfg.label}
+                  value={currentValue}
+                  capture="environment"
+                  onChange={(path) => {
+                    supabase.from('bookings')
+                      .update({ [cfg.column]: path, updated_at: new Date().toISOString() })
+                      .eq('id', photoBooking.id)
+                      .then(({ error }) => { if (error) console.error('Error DB:', error) })
+                    setBookings(prev => prev.map(b => b.id === photoBooking.id ? { ...b, [cfg.column]: path } : b))
+                    if (selectedBooking?.id === photoBooking.id) setSelectedBooking(prev => ({ ...prev, [cfg.column]: path }))
+                    setPhotoBooking(prev => ({ ...prev, [cfg.column]: path }))
+                    setPhotosData(prev => ({ ...prev, [cfg.key]: path }))
+                  }}
+                />
+              </div>
+
+              {/* Botón siguiente */}
+              <button
+                onClick={handleNextPhotoStep}
+                disabled={!canGoNext}
+                style={{ width: '100%', padding: '16px 0', background: canGoNext ? cfg.color : '#94a3b8', color: '#fff', border: 'none', borderRadius: 16, fontSize: 16, fontWeight: 700, cursor: canGoNext ? 'pointer' : 'not-allowed', minHeight: 56 }}
+              >
+                {isLast ? (pendingFinalize ? 'Ir al Checklist' : 'Listo') : 'Siguiente foto →'}
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
             {/* MODAL CHECKLIST */}
       {checklistModal && (
