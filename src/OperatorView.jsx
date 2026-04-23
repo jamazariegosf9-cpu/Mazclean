@@ -57,16 +57,8 @@ async function compressImage(file) {
 async function uploadFile({ file, folder, userId, onProgress }) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-  // Leer token directo de localStorage para evitar el lock de Supabase en móvil
-  // (supabase.auth.getSession() corrompe el lock cuando la pestaña se suspende al abrir la cámara)
-  let token = supabaseKey
-  try {
-    const stored = localStorage.getItem('mazclean-auth')
-    if (stored) {
-      const parsed = JSON.parse(stored)
-      token = parsed?.access_token || parsed?.session?.access_token || supabaseKey
-    }
-  } catch { token = supabaseKey }
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token || supabaseKey
   const isVideo = file.type.startsWith('video/')
   const isPdf   = file.type === 'application/pdf'
   const ext     = isVideo ? (file.name?.endsWith('.mov') ? 'mov' : 'mp4') : isPdf ? 'pdf' : 'jpg'
@@ -209,7 +201,7 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
 
 
 // ── PhotoUploadServicio — copia exacta de PhotoUpload del Onboarding ─────────
-function PhotoUploadServicio({ label, value, onChange, capture = 'environment' }) {
+function PhotoUploadServicio({ label, value, onChange, capture = 'environment', onLog }) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress]   = useState(0)
   const [localErr, setLocalErr]   = useState('')
@@ -218,12 +210,20 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment' }
   const handleFile = async (file) => {
     if (!file) return
     setUploading(true); setLocalErr(''); setProgress(0)
+    onLog?.(`📁 Archivo: ${file.name} ${Math.round(file.size/1024)}KB tipo:${file.type}`)
     try {
       if (file.size > 50 * 1024 * 1024) throw new Error('El archivo no debe pesar más de 50MB.')
       const folder = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,'_').replace(/[^a-z_]/g,'').slice(0,30)
+      onLog?.(`🚀 Iniciando upload folder:${folder}`)
+      const stored = localStorage.getItem('mazclean-auth')
+      onLog?.(`🔑 Token en storage: ${stored ? 'SÍ' : 'NO'}`)
       const path = await uploadFile({ file, folder, userId: user.id, onProgress: setProgress })
+      onLog?.(`✅ Upload OK: ${path}`)
       onChange(path)
-    } catch (e) { setLocalErr(e.message) }
+    } catch (e) {
+      onLog?.(`❌ Error: ${e.message}`)
+      setLocalErr(e.message)
+    }
     finally { setUploading(false) }
   }
 
@@ -300,7 +300,13 @@ const OperatorView = () => {
   const [incidentNote, setIncidentNote]       = useState('');
   const [sendingIncident, setSendingIncident] = useState(false);
 
-  // ── GPS ───────────────────────────────────────────────────────────────────
+  // ── Debug log visible en pantalla ────────────────────────────────────────
+  const [debugLogs, setDebugLogs] = useState([]);
+  const [showDebug, setShowDebug] = useState(false);
+  const addLog = (msg) => {
+    const time = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setDebugLogs(prev => [`${time} ${msg}`, ...prev].slice(0, 30));
+  };
   const gpsWatcherRef                             = useRef(null);
   const [trackingBookingId, setTrackingBookingId] = useState(null);
   const [gpsError, setGpsError]                   = useState('');
@@ -346,9 +352,15 @@ const OperatorView = () => {
   }, [user]);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.access_token) setSessionToken(session.access_token);
-    });
+    // Leer token de localStorage sin llamar getSession() para no romper el lock en móvil
+    try {
+      const stored = localStorage.getItem('mazclean-auth')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        const t = parsed?.access_token || parsed?.session?.access_token
+        if (t) setSessionToken(t)
+      }
+    } catch {}
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       if (session?.access_token) setSessionToken(session.access_token);
     });
@@ -690,11 +702,14 @@ const OperatorView = () => {
     try {
       const column = TYPE_TO_COLUMN[type] || type;
 
-      // Token fresco
+      // Token fresco desde localStorage sin llamar getSession() para no romper el lock
       let token = sessionToken;
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) token = session.access_token;
+        const stored = localStorage.getItem('mazclean-auth')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          token = parsed?.access_token || parsed?.session?.access_token || sessionToken
+        }
       } catch {}
 
       const uploadedPath = await uploadFile({
@@ -1091,6 +1106,7 @@ const OperatorView = () => {
                   label={cfg.label}
                   value={currentValue}
                   capture="environment"
+                  onLog={addLog}
                   onChange={(path) => {
                     supabase.from('bookings')
                       .update({ [cfg.column]: path, updated_at: new Date().toISOString() })
@@ -1172,6 +1188,28 @@ const OperatorView = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Panel DEBUG — toca 5 veces el header para activar */}
+      <div
+        style={{ position: 'fixed', bottom: 80, right: 12, zIndex: 999 }}
+        onClick={() => setShowDebug(p => !p)}
+      >
+        <div style={{ background: '#1e40af', color: '#fff', fontSize: 10, fontWeight: 700, padding: '4px 8px', borderRadius: 8, opacity: 0.8 }}>
+          🐛 DEBUG {debugLogs.length}
+        </div>
+      </div>
+      {showDebug && (
+        <div style={{ position: 'fixed', bottom: 100, left: 8, right: 8, zIndex: 998, background: 'rgba(0,0,0,0.92)', borderRadius: 12, padding: 10, maxHeight: 280, overflowY: 'auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ color: '#60a5fa', fontSize: 11, fontWeight: 700 }}>Log de upload</span>
+            <button onClick={() => setDebugLogs([])} style={{ background: 'none', border: 'none', color: '#9ca3af', fontSize: 11, cursor: 'pointer' }}>limpiar</button>
+          </div>
+          {debugLogs.length === 0 && <div style={{ color: '#6b7280', fontSize: 11 }}>Sin eventos aún. Intenta subir una foto.</div>}
+          {debugLogs.map((log, i) => (
+            <div key={i} style={{ color: log.includes('❌') ? '#f87171' : log.includes('✅') ? '#4ade80' : '#e5e7eb', fontSize: 11, fontFamily: 'monospace', marginBottom: 3, lineHeight: 1.4 }}>{log}</div>
+          ))}
         </div>
       )}
 
