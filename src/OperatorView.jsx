@@ -335,7 +335,10 @@ const OperatorView = () => {
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'bookings',
         filter: `operator_id=eq.${user.id}`,
-      }, () => fetchOperatorBookings(true))
+      }, () => {
+        // No refrescar mientras el modal de fotos está abierto — evita que se reabra
+        if (!photoModal) fetchOperatorBookings(true);
+      })
       .subscribe();
 
     // Realtime: nuevas solicitudes para este operador
@@ -633,11 +636,14 @@ const OperatorView = () => {
   const closePhotoModal = async (bookingOverride = null) => {
     const currentPending = pendingFinalize;
     const bookingForChecklist = bookingOverride || bookings.find(b => b.id === currentPending);
+    console.log('[CHECKLIST] currentPending:', currentPending);
+    console.log('[CHECKLIST] bookingForChecklist:', bookingForChecklist?.id, 'service_id:', bookingForChecklist?.service_id);
     sessionStorage.removeItem('photoModal');
     setPhotoModal(false); setPhotosData({}); setPhotoBooking(null);
     if (currentPending) {
-      if (!bookingForChecklist) { setPendingFinalize(null); return; }
+      if (!bookingForChecklist) { console.log('[CHECKLIST] No se encontró booking'); setPendingFinalize(null); return; }
       const items = await loadChecklist(bookingForChecklist);
+      console.log('[CHECKLIST] items:', items);
       if (!items) { setPendingFinalize(null); await updateStatus(currentPending, 'finalizado', 'done'); return; }
       setChecklist(items); setChecklistModal(true);
     }
