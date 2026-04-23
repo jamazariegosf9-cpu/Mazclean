@@ -614,15 +614,40 @@ const OperatorView = () => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: newStatus } : b));
       const booking = bookingData || bookings.find(b => b.id === bookingId);
-      const phone = booking?.customer?.phone;
+      let phone = booking?.customer?.phone;
+
+      // Si no tiene teléfono, obtenerlo via fetch directo (evita lock en móvil)
+      if (!phone) {
+        try {
+          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+          const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+          let token = supabaseKey
+          try {
+            const stored = localStorage.getItem('mazclean-auth')
+            if (stored) {
+              const parsed = JSON.parse(stored)
+              token = parsed?.access_token || parsed?.session?.access_token || supabaseKey
+            }
+          } catch {}
+          const r = await fetch(
+            `${supabaseUrl}/rest/v1/bookings?id=eq.${bookingId}&select=booking_ref,service_name,customer:client_id(phone,full_name)`,
+            { headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey } }
+          )
+          if (r.ok) {
+            const d = await r.json()
+            phone = d?.[0]?.customer?.phone
+          }
+        } catch {}
+      }
+
       if (phone) {
         console.log(`[WA] ${eventName} → ${phone}`);
         sendWhatsApp(eventName, phone, {
-          booking_ref: booking.booking_ref, service_name: booking.service_name,
+          booking_ref: booking?.booking_ref, service_name: booking?.service_name,
           booking_id: bookingId, operator_name: profile?.full_name || user?.user_metadata?.full_name || 'tu operador',
         });
       } else {
-        console.warn(`[WA] ${eventName}: no se encontró teléfono — customer:`, booking?.customer);
+        console.warn(`[WA] ${eventName}: no se encontró teléfono`);
       }
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, status: newStatus }));
     } catch (err) {
