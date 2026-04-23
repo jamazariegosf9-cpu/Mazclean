@@ -302,7 +302,12 @@ const OperatorView = () => {
   const [checklist, setChecklist]             = useState([]);
   const [checklistModal, setChecklistModal]   = useState(false);
   const [pendingFinalize, setPendingFinalize] = useState(null);
-  const [photoModal, setPhotoModal]           = useState(false);
+  const [photoModal, setPhotoModal] = useState(false);
+  const photoModalRef = useRef(false);
+  const setPhotoModalSafe = (val) => {
+    photoModalRef.current = val;
+    setPhotoModal(val);
+  };
   const [photoBooking, setPhotoBooking]       = useState(null);
   const [photoStep, setPhotoStep]             = useState(1);
   const [photosData, setPhotosData]           = useState({});
@@ -337,7 +342,7 @@ const OperatorView = () => {
         filter: `operator_id=eq.${user.id}`,
       }, () => {
         // No refrescar mientras el modal de fotos está abierto — evita que se reabra
-        if (!photoModal) fetchOperatorBookings(true);
+        if (!photoModalRef.current) fetchOperatorBookings(true);
       })
       .subscribe();
 
@@ -581,9 +586,32 @@ const OperatorView = () => {
     setUpdatingId(bookingId);
     const timeoutId = setTimeout(() => { setUpdatingId(null); alert('La operacion tardo demasiado. Verifica tu conexion.'); }, 12000);
     try {
-      const { error } = await supabase.from('bookings').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', bookingId);
+      // Usar fetch directo para evitar el lock de Supabase en móvil
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      let token = supabaseKey
+      try {
+        const stored = localStorage.getItem('mazclean-auth')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          token = parsed?.access_token || parsed?.session?.access_token || supabaseKey
+        }
+      } catch {}
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/bookings?id=eq.${bookingId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'apikey': supabaseKey,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify({ status: newStatus, updated_at: new Date().toISOString() }),
+        }
+      )
       clearTimeout(timeoutId);
-      if (error) throw error;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: newStatus } : b));
       const booking = bookingData || bookings.find(b => b.id === bookingId);
       const phone = booking?.customer?.phone;
@@ -618,7 +646,7 @@ const OperatorView = () => {
     if (updated.photo_front_before) existing.front_before = updated.photo_front_before;
     if (updated.photo_side_before)  existing.side_before  = updated.photo_side_before;
     setPhotoBooking(updated); setPhotosData(existing); setPhotoStep(1); setPhotoPhase('before');
-    setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModal(true);
+    setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModalSafe(true);
   };
 
   const handleFinalizeClick = (booking) => {
@@ -630,7 +658,7 @@ const OperatorView = () => {
     if (booking.photo_front_after)    existing.front_after    = booking.photo_front_after;
     if (booking.photo_interior_after) existing.interior_after = booking.photo_interior_after;
     setPhotoBooking(booking); setPhotosData(existing); setPhotoStep(3); setPhotoPhase('after');
-    setPendingFinalize(booking.id); setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModal(true);
+    setPendingFinalize(booking.id); setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModalSafe(true);
   };
 
   const closePhotoModal = async (bookingOverride = null) => {
@@ -639,7 +667,7 @@ const OperatorView = () => {
     console.log('[CHECKLIST] currentPending:', currentPending);
     console.log('[CHECKLIST] bookingForChecklist:', bookingForChecklist?.id, 'service_id:', bookingForChecklist?.service_id);
     sessionStorage.removeItem('photoModal');
-    setPhotoModal(false); setPhotosData({}); setPhotoBooking(null);
+    setPhotoModalSafe(false); setPhotosData({}); setPhotoBooking(null);
     if (currentPending) {
       if (!bookingForChecklist) { console.log('[CHECKLIST] No se encontró booking'); setPendingFinalize(null); return; }
       const items = await loadChecklist(bookingForChecklist);
@@ -651,7 +679,7 @@ const OperatorView = () => {
 
   const handleNextPhotoStep = () => {
     if (photoStep === 1 && photoPhase === 'before') { setPhotoStep(2); }
-    else if (photoStep === 2 && photoPhase === 'before') { savePhotosMeta(photoBooking.id); setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); }
+    else if (photoStep === 2 && photoPhase === 'before') { savePhotosMeta(photoBooking.id); setPhotoModalSafe(false); setPhotosData({}); setPhotoBooking(null); }
     else if (photoStep === 3 && photoPhase === 'after') { setPhotoStep(4); }
     else if (photoStep === 4 && photoPhase === 'after') { savePhotosMeta(photoBooking.id); closePhotoModal(photoBooking); }
   };
@@ -704,7 +732,7 @@ const OperatorView = () => {
     setChecklistModal(false);
     setPendingFinalize(null);
     setChecklist([]);
-    setPhotoModal(false);
+    setPhotoModalSafe(false);
     setPhotosData({});
     setPhotoBooking(null);
     await updateStatus(bookingToFinalize, 'finalizado', 'done');
@@ -966,7 +994,7 @@ const OperatorView = () => {
                           if (booking.photo_side_before)  existing.side_before  = booking.photo_side_before;
                           const startStep = booking.photo_front_before ? 2 : 1;
                           setPhotoBooking(booking); setPhotosData(existing); setPhotoStep(startStep); setPhotoPhase('before');
-                          setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModal(true);
+                          setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModalSafe(true);
                         }} disabled={updatingId === booking.id}
                           style={{ flex: 1, background: '#f97316', color: '#fff', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48 }}>
                           <Camera size={14} /> {booking.photo_front_before ? 'Foto 2 ANTES' : 'Fotos ANTES'}
@@ -1077,7 +1105,7 @@ const OperatorView = () => {
                       if (selectedBooking.photo_side_before)  existing.side_before  = selectedBooking.photo_side_before;
                       const startStep = selectedBooking.photo_front_before ? 2 : 1;
                       setPhotoBooking(selectedBooking); setPhotosData(existing); setPhotoStep(startStep); setPhotoPhase('before');
-                      setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModal(true);
+                      setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModalSafe(true);
                     }} disabled={updatingId === selectedBooking.id}
                       style={{ flex: 1, background: '#f97316', color: '#fff', border: 'none', borderRadius: 16, padding: '18px 0', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 56 }}>
                       <Camera size={18} /> {selectedBooking.photo_front_before ? 'FOTO 2 ANTES' : 'SUBIR FOTOS ANTES'}
@@ -1116,7 +1144,7 @@ const OperatorView = () => {
               <div style={{ background: `linear-gradient(135deg,${cfg.color},${cfg.color}dd)`, borderRadius: 16, padding: '20px', marginBottom: 20, color: '#fff' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.8 }}>Foto {photoStep} de {photoPhase === 'before' ? 2 : 4}</span>
-                  <button onClick={() => { setPhotoModal(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', fontSize: 20, width: 36, height: 36, borderRadius: 8, cursor: 'pointer' }}>✕</button>
+                  <button onClick={() => { setPhotoModalSafe(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', fontSize: 20, width: 36, height: 36, borderRadius: 8, cursor: 'pointer' }}>✕</button>
                 </div>
                 <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 4px' }}>{cfg.label}</h2>
                 <p style={{ fontSize: 13, opacity: 0.9, margin: 0 }}>{cfg.desc}</p>
