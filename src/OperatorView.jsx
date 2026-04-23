@@ -54,16 +54,27 @@ async function compressImage(file) {
 }
 
 // uploadFile — copia exacta del OnboardingView que funciona en móvil
-async function uploadFile({ file, folder, userId, onProgress }) {
+async function uploadFile({ file, folder, userId, onProgress, onLog }) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token || supabaseKey
+
+  // Token desde localStorage — sin getSession() para no romper el lock en móvil
+  let token = supabaseKey
+  try {
+    const stored = localStorage.getItem('mazclean-auth')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      token = parsed?.access_token || parsed?.session?.access_token || supabaseKey
+    }
+  } catch { token = supabaseKey }
+
   const isVideo = file.type.startsWith('video/')
   const isPdf   = file.type === 'application/pdf'
   const ext     = isVideo ? (file.name?.endsWith('.mov') ? 'mov' : 'mp4') : isPdf ? 'pdf' : 'jpg'
   const path    = `${folder}/${userId}/${folder}_${Date.now()}.${ext}`
-  const fileToUpload = (!isVideo && !isPdf) ? await compressImage(file) : file
+
+  // Sin compresión — evita que el canvas se congele en móvil
+  onLog?.(`📦 Enviando sin comprimir ${Math.round(file.size/1024)}KB`)
 
   await new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
@@ -73,11 +84,17 @@ async function uploadFile({ file, folder, userId, onProgress }) {
     xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg')
     xhr.setRequestHeader('x-upsert', 'true')
     xhr.timeout = 180000
-    xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100)) }
-    xhr.onload    = () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0, 100)}`)) }
-    xhr.onerror   = () => reject(new Error('Error de red — verifica tu conexión'))
-    xhr.ontimeout = () => reject(new Error('Tiempo agotado — señal débil, intenta de nuevo'))
-    xhr.send(fileToUpload)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100))
+    }
+    xhr.onload = () => {
+      onLog?.(`📡 XHR status: ${xhr.status}`)
+      if (xhr.status >= 200 && xhr.status < 300) resolve()
+      else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.slice(0, 150)}`))
+    }
+    xhr.onerror   = () => { onLog?.('📡 XHR onerror'); reject(new Error('Error de red — verifica tu conexión')) }
+    xhr.ontimeout = () => { onLog?.('📡 XHR timeout'); reject(new Error('Tiempo agotado — señal débil, intenta de nuevo')) }
+    xhr.send(file)
   })
   return path
 }
@@ -217,7 +234,7 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
       onLog?.(`🚀 Iniciando upload folder:${folder}`)
       const stored = localStorage.getItem('mazclean-auth')
       onLog?.(`🔑 Token en storage: ${stored ? 'SÍ' : 'NO'}`)
-      const path = await uploadFile({ file, folder, userId: user.id, onProgress: setProgress })
+      const path = await uploadFile({ file, folder, userId: user.id, onProgress: setProgress, onLog })
       onLog?.(`✅ Upload OK: ${path}`)
       onChange(path)
     } catch (e) {
