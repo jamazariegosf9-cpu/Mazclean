@@ -63,7 +63,7 @@ async function uploadFile({ file, folder, userId, onProgress }) {
   const isPdf   = file.type === 'application/pdf'
   const ext     = isVideo ? (file.name?.endsWith('.mov') ? 'mov' : 'mp4') : isPdf ? 'pdf' : 'jpg'
   const path    = `${folder}/${userId}/${folder}_${Date.now()}.${ext}`
-  const fileToUpload = (!isVideo && !isPdf) ? await compressImage(file) : file
+  const fileToUpload = file  // Sin compresión — prueba definitiva
 
   await new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
