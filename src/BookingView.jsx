@@ -126,10 +126,10 @@ export default function BookingView() {
   }, [])
 
   useEffect(() => {
-    if (step !== 2 || !mapsLoaded) return
+    if (!mapsLoaded) return
     const t = setTimeout(() => { initMap(); initAutocomplete() }, 100)
     return () => clearTimeout(t)
-  }, [step, mapsLoaded])
+  }, [mapsLoaded])
 
   useEffect(() => { setNoCoverage(false) }, [addressDetails])
 
@@ -556,9 +556,8 @@ export default function BookingView() {
           </div>
         )}
 
-        {/* STEP 2 */}
-        {step === 2 && (
-          <div style={{ padding: isMobile ? '16px 12px' : 24 }}>
+        {/* STEP 2 — siempre montado para preservar el mapa de Google */}
+        <div style={{ display: step === 2 ? 'block' : 'none', padding: isMobile ? '16px 12px' : 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Dónde está tu vehículo?</h3>
             <div style={{ position: 'relative', marginBottom: 12 }}>
               <input ref={inputRef} style={{ padding: '12px 12px 12px 40px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 }} placeholder="Busca tu dirección..." defaultValue={address} onChange={e => { if (!e.target.value) { setAddress(''); setAddressDetails(null) } }} />
@@ -568,7 +567,7 @@ export default function BookingView() {
             {mapError && <p style={{ color: '#dc2626', fontSize: 14, marginBottom: 8 }}>{mapError}</p>}
             {!mapsLoaded
               ? <div style={{ width: '100%', height: isMobile ? 220 : 280, borderRadius: 12, background: '#f9fafb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 14, border: '1.5px solid #e5e7eb', marginBottom: 12 }}>Cargando mapa...</div>
-              : <div key={mapKey} ref={mapRef} style={{ width: '100%', height: isMobile ? 220 : 280, borderRadius: 12, border: '1.5px solid #e5e7eb', overflow: 'hidden', marginBottom: 12 }} />
+              : <div ref={mapRef} style={{ width: '100%', height: isMobile ? 220 : 280, borderRadius: 12, border: '1.5px solid #e5e7eb', overflow: 'hidden', marginBottom: 12 }} />
             }
             {addressDetails && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#166534', marginBottom: 8 }}>✅ <strong>Dirección:</strong> {addressDetails.formatted}</div>}
             <p style={{ fontSize: 12, color: '#9ca3af', margin: '4px 0 0' }}>💡 Arrastra el pin o haz clic en el mapa para ajustar la ubicación exacta.</p>
@@ -581,7 +580,6 @@ export default function BookingView() {
               </div>
             )}
           </div>
-        )}
 
         {/* STEP 3 */}
         {step === 3 && (
