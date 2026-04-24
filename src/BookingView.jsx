@@ -22,15 +22,14 @@ const VEHICLE_TYPES = [
   { id: 'van',    name: 'Van / Minivan',    icon: '🚐', priceKey: 'van'    },
 ]
 
-// Bloques de horario disponibles — de 7am a 7pm en pasos de 30 min
-const TIME_BLOCKS = []
-for (let h = 7; h <= 19; h++) {
-  for (let m = 0; m < 60; m += 30) {
-    if (h === 19 && m > 0) break
-    const hh  = String(h).padStart(2, '0')
-    const mm  = String(m).padStart(2, '0')
-    TIME_BLOCKS.push(`${hh}:${mm}`)
-  }
+function timeToMin(t) {
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
+
+function isValidRange(from, to, durationMin) {
+  if (!from || !to) return false
+  return timeToMin(to) - timeToMin(from) >= durationMin
 }
 
 function loadGoogleMapsScript(apiKey) {
@@ -55,24 +54,8 @@ function haversineKm(lat1, lng1, lat2, lng2) {
   const R = 6371
   const dLat = (lat2 - lat1) * Math.PI / 180
   const dLng = (lng2 - lng1) * Math.PI / 180
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2)
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-}
-
-// Convierte "08:30" a minutos desde medianoche
-function timeToMin(t) {
-  const [h, m] = t.split(':').map(Number)
-  return h * 60 + m
-}
-
-// Valida que el rango sea suficiente para la duración del servicio
-function isValidRange(from, to, durationMin) {
-  if (!from || !to) return false
-  const diff = timeToMin(to) - timeToMin(from)
-  return diff >= durationMin
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
 }
 
 function useIsMobile() {
@@ -100,7 +83,7 @@ export default function BookingView() {
   const [vehicleBrand, setVehicleBrand]       = useState('')
   const [vehicleColor, setVehicleColor]       = useState('')
 
-  // Step 2 — ubicación
+  // Step 2
   const [address, setAddress]               = useState('')
   const [addressDetails, setAddressDetails] = useState(null)
   const [mapError, setMapError]             = useState('')
@@ -112,12 +95,17 @@ export default function BookingView() {
   const autocompleteRef = useRef(null)
   const inputRef        = useRef(null)
 
-  // Step 3 — fecha y RANGO de horario (obligatorio)
+  // Step 3
   const [date, setDate]         = useState('')
-  const [timeFrom, setTimeFrom] = useState('') // scheduled_time_from
-  const [timeTo, setTimeTo]     = useState('') // scheduled_time_to
+  const [timeFrom, setTimeFrom] = useState('')
+  const [timeTo, setTimeTo]     = useState('')
   const [notes, setNotes]       = useState('')
   const [rangeError, setRangeError] = useState('')
+
+  // Disponibilidad de slots
+  const [availableSlots, setAvailableSlots]     = useState([])
+  const [loadingSlots, setLoadingSlots]         = useState(false)
+  const [noSlotsAvailable, setNoSlotsAvailable] = useState(false)
 
   const getPrice = useCallback(() => {
     if (!selectedService || !vehicleType) return null
@@ -142,7 +130,13 @@ export default function BookingView() {
 
   useEffect(() => { setNoCoverage(false) }, [addressDetails])
 
-  // Validar rango cuando cambian timeFrom o timeTo
+  // Cargar slots disponibles cuando cambia fecha
+  useEffect(() => {
+    if (!date || !addressDetails || !selectedService || !vehicleType) return
+    loadAvailableSlots()
+  }, [date, addressDetails, selectedService, vehicleType])
+
+  // Validar rango
   useEffect(() => {
     if (!timeFrom || !timeTo) { setRangeError(''); return }
     const svc = getService()
@@ -158,20 +152,68 @@ export default function BookingView() {
     setRangeError('')
   }, [timeFrom, timeTo, selectedService])
 
-  // Auto-calcular timeTo mínimo cuando el usuario elige timeFrom
+  // Auto-calcular timeTo mínimo
   useEffect(() => {
     if (!timeFrom) return
     const svc = getService()
     if (!svc) return
     const minToMin = timeToMin(timeFrom) + svc.durationMin
-    const h   = String(Math.floor(minToMin / 60)).padStart(2, '0')
-    const m   = String(minToMin % 60).padStart(2, '0')
+    const h = String(Math.floor(minToMin / 60)).padStart(2, '0')
+    const m = String(minToMin % 60).padStart(2, '0')
     const minTo = `${h}:${m}`
-    // Solo auto-llenar si timeTo está vacío o es inválido
-    if (!timeTo || timeToMin(timeTo) < minToMin) {
-      setTimeTo(minTo)
-    }
+    if (!timeTo || timeToMin(timeTo) < minToMin) setTimeTo(minTo)
   }, [timeFrom])
+
+  // Consultar slots disponibles via Edge Function
+  const loadAvailableSlots = async () => {
+    setLoadingSlots(true)
+    setNoSlotsAvailable(false)
+    setTimeFrom('')
+    setTimeTo('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/get-available-slots`, {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'apikey':        SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          lat:          addressDetails.lat,
+          lng:          addressDetails.lng,
+          fecha:        date,
+          service_id:   selectedService,
+          vehicle_type: vehicleType,
+        }),
+      })
+      const data = await res.json()
+      const slots = (data.slots || []).filter(s => s.available)
+      setAvailableSlots(slots)
+      if (slots.length === 0) setNoSlotsAvailable(true)
+    } catch (err) {
+      console.error('Error cargando slots:', err)
+      setAvailableSlots([])
+      setNoSlotsAvailable(true)
+    } finally {
+      setLoadingSlots(false)
+    }
+  }
+
+  // Generar opciones de timeTo válidas basadas en slots disponibles y timeFrom
+  const getValidTimeTo = () => {
+    if (!timeFrom || !selectedService) return []
+    const svc = getService()
+    if (!svc) return []
+    const minEnd = timeToMin(timeFrom) + svc.durationMin
+    // Generar opciones cada 30 min desde minEnd hasta 19:00
+    const options = []
+    for (let m = minEnd; m <= 19 * 60; m += 30) {
+      const h = String(Math.floor(m / 60)).padStart(2, '0')
+      const min = String(m % 60).padStart(2, '0')
+      options.push(`${h}:${min}`)
+    }
+    return options
+  }
 
   const checkCoverageAndAdvance = async () => {
     if (!addressDetails) return
@@ -268,7 +310,7 @@ export default function BookingView() {
     if (step === 2) return addressDetails !== null
     if (step === 3) {
       const svc = getService()
-      return date && timeFrom && timeTo && !rangeError && svc && isValidRange(timeFrom, timeTo, svc.durationMin)
+      return date && timeFrom && timeTo && !rangeError && svc && isValidRange(timeFrom, timeTo, svc.durationMin) && !noSlotsAvailable && !loadingSlots
     }
     return true
   }
@@ -295,7 +337,6 @@ export default function BookingView() {
       const price      = getPrice()
       const bookingRef = generateRef()
 
-      // 1. Insertar booking con rango de horario
       const { data: newBooking, error: insertError } = await supabase
         .from('bookings')
         .insert({
@@ -307,7 +348,7 @@ export default function BookingView() {
           address_lng:         addressDetails.lng,
           address_notes:       notes || null,
           scheduled_date:      date,
-          scheduled_time:      timeFrom + ':00',    // hora de inicio como referencia
+          scheduled_time:      timeFrom + ':00',
           scheduled_time_from: timeFrom,
           scheduled_time_to:   timeTo,
           base_price:          price,
@@ -331,10 +372,8 @@ export default function BookingView() {
         .single()
 
       if (insertError) throw insertError
-
       clearTimeout(timeoutId)
 
-      // 2. Lanzar proceso de asignación automática (ronda 1)
       try {
         await fetch(`${SUPABASE_URL}/functions/v1/process-booking-request`, {
           method:  'POST',
@@ -346,11 +385,9 @@ export default function BookingView() {
           body: JSON.stringify({ booking_id: newBooking.id, ronda: 1 }),
         })
       } catch (e) {
-        // No bloquear al cliente si falla el proceso de asignación
         console.warn('Error lanzando proceso de asignación:', e.message)
       }
 
-      // El WhatsApp booking_created lo envía process-booking-request v3
       setLoading(false)
       setSuccess(true)
 
@@ -366,7 +403,7 @@ export default function BookingView() {
     setSelectedService(null); setVehicleType(''); setVehicleBrand(''); setVehicleColor('')
     setAddress(''); setAddressDetails(null)
     setDate(''); setTimeFrom(''); setTimeTo(''); setNotes(''); setRangeError('')
-    setNoCoverage(false)
+    setNoCoverage(false); setAvailableSlots([]); setNoSlotsAvailable(false)
     mapInstanceRef.current = null; markerRef.current = null; autocompleteRef.current = null
     if (inputRef.current) inputRef.current.value = ''
   }
@@ -375,39 +412,29 @@ export default function BookingView() {
   const service = getService()
   const vehicle = VEHICLE_TYPES.find(v => v.id === vehicleType)
 
-  // ── Pantalla de éxito ────────────────────────────────────────────────────────
   if (success) {
     return (
       <div style={{ minHeight: '100vh', background: '#f3f4f6', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: isMobile ? '16px 12px' : '24px 16px' }}>
         <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? 28 : 40, maxWidth: 480, width: '100%', textAlign: 'center', boxShadow: '0 4px 24px rgba(0,0,0,0.10)' }}>
           <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
           <h2 style={{ fontSize: isMobile ? 20 : 24, fontWeight: 700, color: '#065f46', margin: '0 0 12px' }}>¡Reservación confirmada!</h2>
-          <p style={{ fontSize: 16, color: '#374151', margin: '0 0 8px' }}>
-            Tu lavado está agendado para el <strong>{date}</strong>.
-          </p>
+          <p style={{ fontSize: 16, color: '#374151', margin: '0 0 8px' }}>Tu lavado está agendado para el <strong>{date}</strong>.</p>
           <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 16px', margin: '0 0 12px' }}>
-            <p style={{ fontSize: 14, color: '#166534', margin: 0 }}>
-              🕐 Horario solicitado: <strong>{timeFrom} — {timeTo} hrs</strong>
-            </p>
+            <p style={{ fontSize: 14, color: '#166534', margin: 0 }}>🕐 Horario solicitado: <strong>{timeFrom} — {timeTo} hrs</strong></p>
           </div>
           <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 8px' }}>📍 {addressDetails?.formatted}</p>
-          <p style={{ fontSize: 14, color: '#9ca3af', margin: '0 0 24px', lineHeight: 1.6 }}>
-            Estamos buscando el mejor operador para ti. Te notificaremos cuando sea asignado.
-          </p>
-          <button onClick={resetForm} style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 16, fontWeight: 600, width: '100%', minHeight: 48 }}>
-            Nueva reservación
-          </button>
+          <p style={{ fontSize: 14, color: '#9ca3af', margin: '0 0 24px', lineHeight: 1.6 }}>Estamos buscando el mejor operador para ti. Te notificaremos cuando sea asignado.</p>
+          <button onClick={resetForm} style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 16, fontWeight: 600, width: '100%', minHeight: 48 }}>Nueva reservación</button>
         </div>
       </div>
     )
   }
 
-  // ── Formulario principal ─────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: isMobile ? '12px 8px 80px' : '24px 16px' }}>
       <div style={{ background: '#fff', borderRadius: isMobile ? 12 : 16, boxShadow: '0 4px 24px rgba(0,0,0,0.10)', width: '100%', maxWidth: 680, overflow: 'hidden' }}>
 
-        {/* Header con stepper */}
+        {/* Header stepper */}
         <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: isMobile ? '20px 16px' : '24px', textAlign: 'center' }}>
           <h1 style={{ color: '#fff', fontSize: isMobile ? 18 : 22, fontWeight: 700, margin: '0 0 16px' }}>🚗 Reservar Lavado</h1>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -425,7 +452,7 @@ export default function BookingView() {
           </div>
         </div>
 
-        {/* ── STEP 1: Servicio y vehículo ── */}
+        {/* STEP 1 */}
         {step === 1 && (
           <div style={{ padding: isMobile ? '16px 12px' : 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Qué servicio necesitas?</h3>
@@ -477,7 +504,7 @@ export default function BookingView() {
           </div>
         )}
 
-        {/* ── STEP 2: Ubicación ── */}
+        {/* STEP 2 */}
         {step === 2 && (
           <div style={{ padding: isMobile ? '16px 12px' : 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Dónde está tu vehículo?</h3>
@@ -497,20 +524,18 @@ export default function BookingView() {
               <div style={{ marginTop: 16, background: '#faf5ff', border: '1.5px solid #d8b4fe', borderRadius: 12, padding: '20px 18px', textAlign: 'center' }}>
                 <div style={{ fontSize: 36, marginBottom: 10 }}>🗺️</div>
                 <p style={{ fontSize: 15, fontWeight: 700, color: '#6d28d9', margin: '0 0 8px' }}>Aún no llegamos a tu zona</p>
-                <p style={{ fontSize: 14, color: '#7c3aed', margin: '0 0 12px', lineHeight: 1.6 }}>Por el momento no contamos con operadores disponibles en tu área, pero estamos creciendo rápidamente. Te avisaremos en cuanto podamos atenderte.</p>
+                <p style={{ fontSize: 14, color: '#7c3aed', margin: '0 0 12px', lineHeight: 1.6 }}>Por el momento no contamos con operadores disponibles en tu área, pero estamos creciendo rápidamente.</p>
                 <p style={{ fontSize: 12, color: '#a78bfa', margin: 0 }}>✅ Registramos tu ubicación para priorizar la expansión hacia tu zona.</p>
               </div>
             )}
           </div>
         )}
 
-        {/* ── STEP 3: Fecha y RANGO de horario ── */}
+        {/* STEP 3 */}
         {step === 3 && (
           <div style={{ padding: isMobile ? '16px 12px' : 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 4, marginTop: 0 }}>¿Cuándo lo necesitas?</h3>
-            <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>
-              Indícanos en qué horario puedes recibir el servicio. El operador te confirmará la hora exacta.
-            </p>
+            <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Selecciona la fecha y te mostraremos los horarios disponibles.</p>
 
             {/* Fecha */}
             <div style={{ marginBottom: 16 }}>
@@ -519,62 +544,91 @@ export default function BookingView() {
                 style={{ padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 }}
                 value={date}
                 min={new Date().toISOString().split('T')[0]}
-                onChange={e => setDate(e.target.value)} />
+                onChange={e => { setDate(e.target.value); setTimeFrom(''); setTimeTo(''); setAvailableSlots([]); setNoSlotsAvailable(false) }} />
             </div>
 
-            {/* Rango de horario */}
+            {/* Slots disponibles */}
             {date && (
               <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 14, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
-                  🕐 Horario disponible *
-                  {service && <span style={{ fontSize: 12, fontWeight: 400, color: '#6b7280', marginLeft: 6 }}>(el servicio dura {service.duration})</span>}
+                  🕐 Horarios disponibles *
+                  {service && <span style={{ fontSize: 12, fontWeight: 400, color: '#6b7280', marginLeft: 6 }}>(servicio: {service.duration})</span>}
                 </label>
 
-                <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '14px 16px', marginBottom: 12 }}>
-                  <p style={{ fontSize: 13, color: '#0369a1', margin: 0, lineHeight: 1.5 }}>
-                    💡 Dinos <strong>desde qué hora</strong> y <strong>hasta qué hora</strong> puedes recibir el servicio. Te asignaremos el operador que mejor se ajuste a tu ventana de tiempo.
-                  </p>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Desde *</label>
-                    <select
-                      value={timeFrom}
-                      onChange={e => setTimeFrom(e.target.value)}
-                      style={{ padding: '12px', borderRadius: 8, border: `1.5px solid ${rangeError && timeFrom ? '#fca5a5' : '#e5e7eb'}`, fontSize: 15, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: timeFrom ? '#1f2937' : '#9ca3af', minHeight: 48, background: '#fff', cursor: 'pointer' }}>
-                      <option value="">Selecciona</option>
-                      {TIME_BLOCKS.filter(t => t < '19:00').map(t => (
-                        <option key={t} value={t}>{t} hrs</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Hasta *</label>
-                    <select
-                      value={timeTo}
-                      onChange={e => setTimeTo(e.target.value)}
-                      style={{ padding: '12px', borderRadius: 8, border: `1.5px solid ${rangeError && timeTo ? '#fca5a5' : '#e5e7eb'}`, fontSize: 15, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: timeTo ? '#1f2937' : '#9ca3af', minHeight: 48, background: '#fff', cursor: 'pointer' }}>
-                      <option value="">Selecciona</option>
-                      {TIME_BLOCKS.filter(t => !timeFrom || t > timeFrom).map(t => (
-                        <option key={t} value={t}>{t} hrs</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Error de rango */}
-                {rangeError && (
-                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 12px', marginTop: 10, fontSize: 13, color: '#dc2626' }}>
-                    ⚠️ {rangeError}
+                {/* Cargando slots */}
+                {loadingSlots && (
+                  <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '16px', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                      <div style={{ width: 18, height: 18, border: '2px solid #bfdbfe', borderTop: '2px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                      <span style={{ fontSize: 14, color: '#0369a1' }}>Verificando disponibilidad...</span>
+                    </div>
                   </div>
                 )}
 
-                {/* Confirmación si el rango es válido */}
-                {timeFrom && timeTo && !rangeError && (
-                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px', marginTop: 10, fontSize: 13, color: '#166534', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span>✅</span>
-                    <span>Ventana de <strong>{timeToMin(timeTo) - timeToMin(timeFrom)} minutos</strong> — suficiente para el servicio.</span>
+                {/* Sin horarios disponibles */}
+                {!loadingSlots && noSlotsAvailable && (
+                  <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '20px 18px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 36, marginBottom: 10 }}>😔</div>
+                    <p style={{ fontSize: 15, fontWeight: 700, color: '#991b1b', margin: '0 0 8px' }}>No hay horarios disponibles</p>
+                    <p style={{ fontSize: 14, color: '#7f1d1d', margin: '0 0 12px', lineHeight: 1.6 }}>
+                      No tenemos operadores disponibles para el <strong>{date}</strong> en tu zona. Prueba con otra fecha.
+                    </p>
+                    <button onClick={() => { setDate(''); setNoSlotsAvailable(false) }}
+                      style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', cursor: 'pointer', fontSize: 14, fontWeight: 600, minHeight: 44 }}>
+                      📅 Elegir otra fecha
+                    </button>
+                  </div>
+                )}
+
+                {/* Horarios disponibles */}
+                {!loadingSlots && !noSlotsAvailable && availableSlots.length > 0 && (
+                  <div>
+                    <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
+                      <p style={{ fontSize: 13, color: '#0369a1', margin: 0 }}>
+                        ✅ <strong>{availableSlots.length} horario{availableSlots.length > 1 ? 's' : ''} disponible{availableSlots.length > 1 ? 's' : ''}</strong> para esta fecha. Selecciona tu ventana preferida.
+                      </p>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div>
+                        <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Desde *</label>
+                        <select value={timeFrom} onChange={e => setTimeFrom(e.target.value)}
+                          style={{ padding: '12px', borderRadius: 8, border: `1.5px solid ${rangeError && timeFrom ? '#fca5a5' : '#e5e7eb'}`, fontSize: 15, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: timeFrom ? '#1f2937' : '#9ca3af', minHeight: 48, background: '#fff', cursor: 'pointer' }}>
+                          <option value="">Selecciona</option>
+                          {availableSlots.map(s => (
+                            <option key={s.time} value={s.time}>
+                              {s.time} hrs{s.suggested ? ' ⭐' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        {availableSlots.some(s => s.suggested) && (
+                          <p style={{ fontSize: 11, color: '#6b7280', margin: '4px 0 0' }}>⭐ Horario recomendado</p>
+                        )}
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Hasta *</label>
+                        <select value={timeTo} onChange={e => setTimeTo(e.target.value)}
+                          style={{ padding: '12px', borderRadius: 8, border: `1.5px solid ${rangeError && timeTo ? '#fca5a5' : '#e5e7eb'}`, fontSize: 15, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: timeTo ? '#1f2937' : '#9ca3af', minHeight: 48, background: '#fff', cursor: 'pointer' }}>
+                          <option value="">Selecciona</option>
+                          {getValidTimeTo().map(t => (
+                            <option key={t} value={t}>{t} hrs</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {rangeError && (
+                      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 12px', marginTop: 10, fontSize: 13, color: '#dc2626' }}>
+                        ⚠️ {rangeError}
+                      </div>
+                    )}
+
+                    {timeFrom && timeTo && !rangeError && (
+                      <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px', marginTop: 10, fontSize: 13, color: '#166534', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span>✅</span>
+                        <span>Ventana de <strong>{timeToMin(timeTo) - timeToMin(timeFrom)} minutos</strong> — suficiente para el servicio.</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -583,15 +637,14 @@ export default function BookingView() {
             {/* Notas */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
               <label style={{ fontSize: 14, fontWeight: 500, color: '#374151' }}>Notas adicionales (opcional)</label>
-              <textarea
-                style={{ padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', height: 80, resize: 'vertical' }}
+              <textarea style={{ padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', height: 80, resize: 'vertical' }}
                 placeholder="Ej: El coche está en la cochera, tocar el timbre..."
                 value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
           </div>
         )}
 
-        {/* ── STEP 4: Resumen ── */}
+        {/* STEP 4 */}
         {step === 4 && (
           <div style={{ padding: isMobile ? '16px 12px' : 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>Resumen de tu reservación</h3>
@@ -623,41 +676,35 @@ export default function BookingView() {
           </div>
         )}
 
-        {/* Footer con navegación */}
+        {/* Footer navegación */}
         <div style={{ padding: isMobile ? '12px' : '16px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
           {step > 1 && (
-            <button
-              onClick={() => { setStep(s => s-1); setNoCoverage(false) }}
+            <button onClick={() => { setStep(s => s-1); setNoCoverage(false) }}
               style={{ background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 10, padding: '14px 20px', cursor: 'pointer', fontSize: 15, fontWeight: 500, minHeight: 52 }}>
               ← Atrás
             </button>
           )}
           {step < 4 ? (
             step === 2 ? (
-              <button
-                onClick={handleNext}
-                disabled={!canGoNext() || checkingCoverage || noCoverage}
+              <button onClick={handleNext} disabled={!canGoNext() || checkingCoverage || noCoverage}
                 style={{ background: checkingCoverage ? '#9ca3af' : noCoverage ? '#e5e7eb' : '#3b82f6', color: noCoverage ? '#9ca3af' : '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: !canGoNext() || checkingCoverage || noCoverage ? 'not-allowed' : 'pointer', fontSize: 15, fontWeight: 600, flex: 1, opacity: !canGoNext() ? 0.5 : 1, minHeight: 52 }}>
                 {checkingCoverage ? '🔍 Verificando zona...' : noCoverage ? 'Sin cobertura en tu zona' : 'Siguiente →'}
               </button>
             ) : (
-              <button
-                onClick={() => setStep(s => s+1)}
-                disabled={!canGoNext()}
+              <button onClick={() => setStep(s => s+1)} disabled={!canGoNext()}
                 style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: canGoNext() ? 'pointer' : 'not-allowed', fontSize: 15, fontWeight: 600, flex: 1, opacity: canGoNext() ? 1 : 0.5, minHeight: 52 }}>
                 Siguiente →
               </button>
             )
           ) : (
-            <button
-              onClick={handleSubmit}
-              disabled={loading}
+            <button onClick={handleSubmit} disabled={loading}
               style={{ background: loading ? '#9ca3af' : '#10b981', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 15, fontWeight: 600, flex: 1, minHeight: 52 }}>
               {loading ? '⏳ Buscando operador...' : '✅ Confirmar reservación'}
             </button>
           )}
         </div>
       </div>
+      <style>{'@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }'}</style>
     </div>
   )
 }
