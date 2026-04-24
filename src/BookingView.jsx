@@ -91,6 +91,7 @@ export default function BookingView() {
   const [noCoverage, setNoCoverage]             = useState(false)
   const addressDetailsRef = useRef(null)
   useEffect(() => { addressDetailsRef.current = addressDetails }, [addressDetails])
+  const mapRef          = useRef(null)
   const mapInstanceRef  = useRef(null)
   const markerRef       = useRef(null)
   const autocompleteRef = useRef(null)
