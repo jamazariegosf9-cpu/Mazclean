@@ -89,8 +89,6 @@ export default function BookingView() {
   const [mapError, setMapError]             = useState('')
   const [checkingCoverage, setCheckingCoverage] = useState(false)
   const [noCoverage, setNoCoverage]             = useState(false)
-  const addressDetailsRef = useRef(null)
-  useEffect(() => { addressDetailsRef.current = addressDetails }, [addressDetails])
   const mapRef          = useRef(null)
   const mapInstanceRef  = useRef(null)
   const markerRef       = useRef(null)
@@ -104,8 +102,7 @@ export default function BookingView() {
   const [notes, setNotes]       = useState('')
   const [rangeError, setRangeError] = useState('')
 
-  // mapKey se incrementa cada vez que se resetea el form, forzando remontaje del mapa
-  const [mapKey, setMapKey] = useState(0)
+  // Disponibilidad de slots
   const [availableSlots, setAvailableSlots]     = useState([])
   const [loadingSlots, setLoadingSlots]         = useState(false)
   const [noSlotsAvailable, setNoSlotsAvailable] = useState(false)
@@ -286,7 +283,7 @@ export default function BookingView() {
     // Fix: geocodificar cuando el cliente escribe manualmente y pierde el foco sin seleccionar del dropdown
     inputRef.current.addEventListener('blur', async () => {
       const val = inputRef.current?.value?.trim()
-      if (!val || addressDetailsRef.current) return // ya tiene dirección válida
+      if (!val || addressDetails) return // ya tiene dirección válida
       try {
         const result = await new window.google.maps.Geocoder().geocode({
           address: val,
@@ -306,7 +303,7 @@ export default function BookingView() {
         }
       } catch { setMapError('Error al buscar la dirección. Intenta de nuevo.') }
     })
-  }, [])
+  }, [addressDetails])
 
   const reverseGeocode = async (lat, lng) => {
     try {
@@ -431,8 +428,9 @@ export default function BookingView() {
     setDate(''); setTimeFrom(''); setTimeTo(''); setNotes(''); setRangeError('')
     setNoCoverage(false); setAvailableSlots([]); setNoSlotsAvailable(false)
     mapInstanceRef.current = null; markerRef.current = null; autocompleteRef.current = null
+    // Limpiar el div del mapa para forzar reinicialización completa en la próxima reservación
+    if (mapRef.current) mapRef.current.innerHTML = ''
     if (inputRef.current) inputRef.current.value = ''
-    setMapKey(k => k + 1) // Fuerza remontaje completo del mapa
   }
 
   const price   = getPrice()
@@ -543,7 +541,7 @@ export default function BookingView() {
             {mapError && <p style={{ color: '#dc2626', fontSize: 14, marginBottom: 8 }}>{mapError}</p>}
             {!mapsLoaded
               ? <div style={{ width: '100%', height: isMobile ? 220 : 280, borderRadius: 12, background: '#f9fafb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 14, border: '1.5px solid #e5e7eb', marginBottom: 12 }}>Cargando mapa...</div>
-              : <div key={mapKey} ref={mapRef} style={{ width: '100%', height: isMobile ? 220 : 280, borderRadius: 12, border: '1.5px solid #e5e7eb', overflow: 'hidden', marginBottom: 12 }} />
+              : <div ref={mapRef} style={{ width: '100%', height: isMobile ? 220 : 280, borderRadius: 12, border: '1.5px solid #e5e7eb', overflow: 'hidden', marginBottom: 12 }} />
             }
             {addressDetails && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#166534', marginBottom: 8 }}>✅ <strong>Dirección:</strong> {addressDetails.formatted}</div>}
             <p style={{ fontSize: 12, color: '#9ca3af', margin: '4px 0 0' }}>💡 Arrastra el pin o haz clic en el mapa para ajustar la ubicación exacta.</p>
