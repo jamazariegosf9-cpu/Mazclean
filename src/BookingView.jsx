@@ -280,7 +280,30 @@ export default function BookingView() {
         mapInstanceRef.current.setCenter({ lat, lng }); mapInstanceRef.current.setZoom(16); markerRef.current.setPosition({ lat, lng })
       }
     })
-  }, [])
+    // Fix: geocodificar cuando el cliente escribe manualmente y pierde el foco sin seleccionar del dropdown
+    inputRef.current.addEventListener('blur', async () => {
+      const val = inputRef.current?.value?.trim()
+      if (!val || addressDetails) return // ya tiene dirección válida
+      try {
+        const result = await new window.google.maps.Geocoder().geocode({
+          address: val,
+          componentRestrictions: { country: 'mx' }
+        })
+        if (result.results[0]) {
+          const lat = result.results[0].geometry.location.lat()
+          const lng = result.results[0].geometry.location.lng()
+          const formatted = result.results[0].formatted_address
+          setAddress(formatted); setAddressDetails({ lat, lng, formatted }); setMapError('')
+          if (inputRef.current) inputRef.current.value = formatted
+          if (mapInstanceRef.current && markerRef.current) {
+            mapInstanceRef.current.setCenter({ lat, lng }); mapInstanceRef.current.setZoom(16); markerRef.current.setPosition({ lat, lng })
+          }
+        } else {
+          setMapError('No encontramos esa dirección. Selecciona una opción del listado.')
+        }
+      } catch { setMapError('Error al buscar la dirección. Intenta de nuevo.') }
+    })
+  }, [addressDetails])
 
   const reverseGeocode = async (lat, lng) => {
     try {
@@ -405,6 +428,8 @@ export default function BookingView() {
     setDate(''); setTimeFrom(''); setTimeTo(''); setNotes(''); setRangeError('')
     setNoCoverage(false); setAvailableSlots([]); setNoSlotsAvailable(false)
     mapInstanceRef.current = null; markerRef.current = null; autocompleteRef.current = null
+    // Limpiar el div del mapa para forzar reinicialización completa en la próxima reservación
+    if (mapRef.current) mapRef.current.innerHTML = ''
     if (inputRef.current) inputRef.current.value = ''
   }
 
