@@ -89,6 +89,8 @@ export default function BookingView() {
   const [mapError, setMapError]             = useState('')
   const [checkingCoverage, setCheckingCoverage] = useState(false)
   const [noCoverage, setNoCoverage]             = useState(false)
+  const addressDetailsRef = useRef(null)
+  useEffect(() => { addressDetailsRef.current = addressDetails }, [addressDetails])
   const mapRef          = useRef(null)
   const mapInstanceRef  = useRef(null)
   const markerRef       = useRef(null)
@@ -102,7 +104,8 @@ export default function BookingView() {
   const [notes, setNotes]       = useState('')
   const [rangeError, setRangeError] = useState('')
 
-  // Disponibilidad de slots
+  // mapKey se incrementa cada vez que se resetea el form, forzando remontaje del mapa
+  const [mapKey, setMapKey] = useState(0)
   const [availableSlots, setAvailableSlots]     = useState([])
   const [loadingSlots, setLoadingSlots]         = useState(false)
   const [noSlotsAvailable, setNoSlotsAvailable] = useState(false)
@@ -219,16 +222,22 @@ export default function BookingView() {
     if (!addressDetails) return
     setCheckingCoverage(true); setNoCoverage(false)
     try {
-      const { data: operators, error: opError } = await supabase
-        .from('profiles')
-        .select('id, base_lat, base_lng, coverage_radius, operator_status, status')
-        .eq('role', 'operador')
-        .eq('operator_status', 'aprobado')
-        .eq('status', 'activo')
-        .not('base_lat', 'is', null)
-        .not('base_lng', 'is', null)
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      let token = supabaseKey
+      try {
+        const stored = localStorage.getItem('mazclean-auth')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          token = parsed?.access_token || parsed?.session?.access_token || supabaseKey
+        }
+      } catch {}
 
-      if (opError) throw opError
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/profiles?role=eq.operador&operator_status=eq.aprobado&status=eq.activo&base_lat=not.is.null&base_lng=not.is.null&select=id,base_lat,base_lng,coverage_radius`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey } }
+      )
+      const operators = res.ok ? await res.json() : []
 
       const hasCoverage = (operators || []).some(op =>
         haversineKm(Number(op.base_lat), Number(op.base_lng), addressDetails.lat, addressDetails.lng)
@@ -240,11 +249,10 @@ export default function BookingView() {
       } else {
         setNoCoverage(true)
         try {
-          await supabase.from('coverage_requests').insert({
-            client_id: user?.id || null,
-            address:   addressDetails.formatted,
-            lat:       addressDetails.lat,
-            lng:       addressDetails.lng,
+          await fetch(`${supabaseUrl}/rest/v1/coverage_requests`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ client_id: user?.id || null, address: addressDetails.formatted, lat: addressDetails.lat, lng: addressDetails.lng }),
           })
         } catch (e) { console.warn('coverage_request:', e.message) }
       }
@@ -283,7 +291,7 @@ export default function BookingView() {
     // Fix: geocodificar cuando el cliente escribe manualmente y pierde el foco sin seleccionar del dropdown
     inputRef.current.addEventListener('blur', async () => {
       const val = inputRef.current?.value?.trim()
-      if (!val || addressDetails) return // ya tiene dirección válida
+      if (!val || addressDetailsRef.current) return // ya tiene dirección válida
       try {
         const result = await new window.google.maps.Geocoder().geocode({
           address: val,
@@ -303,7 +311,7 @@ export default function BookingView() {
         }
       } catch { setMapError('Error al buscar la dirección. Intenta de nuevo.') }
     })
-  }, [addressDetails])
+  }, [])
 
   const reverseGeocode = async (lat, lng) => {
     try {
@@ -360,9 +368,26 @@ export default function BookingView() {
       const price      = getPrice()
       const bookingRef = generateRef()
 
-      const { data: newBooking, error: insertError } = await supabase
-        .from('bookings')
-        .insert({
+      // Usar fetch directo para evitar el lock de Supabase en móvil
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      let token = supabaseKey
+      try {
+        const stored = localStorage.getItem('mazclean-auth')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          token = parsed?.access_token || parsed?.session?.access_token || supabaseKey
+        }
+      } catch {}
+
+      const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/bookings`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'apikey': supabaseKey,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation',
+        },
+        body: JSON.stringify({
           booking_ref:         bookingRef,
           client_id:           user.id,
           service_id:          service.id,
@@ -390,11 +415,14 @@ export default function BookingView() {
           assignment_mode:     'autonomo',
           created_at:          new Date().toISOString(),
           updated_at:          new Date().toISOString(),
-        })
-        .select()
-        .single()
+        }),
+      })
 
-      if (insertError) throw insertError
+      if (!insertRes.ok) throw new Error(`HTTP ${insertRes.status}`)
+      const insertData = await insertRes.json()
+      const newBooking = Array.isArray(insertData) ? insertData[0] : insertData
+      if (!newBooking?.id) throw new Error('No se obtuvo ID del booking')
+
       clearTimeout(timeoutId)
 
       try {
@@ -428,9 +456,8 @@ export default function BookingView() {
     setDate(''); setTimeFrom(''); setTimeTo(''); setNotes(''); setRangeError('')
     setNoCoverage(false); setAvailableSlots([]); setNoSlotsAvailable(false)
     mapInstanceRef.current = null; markerRef.current = null; autocompleteRef.current = null
-    // Limpiar el div del mapa para forzar reinicialización completa en la próxima reservación
-    if (mapRef.current) mapRef.current.innerHTML = ''
     if (inputRef.current) inputRef.current.value = ''
+    setMapKey(k => k + 1) // Fuerza remontaje completo del mapa
   }
 
   const price   = getPrice()
@@ -541,7 +568,7 @@ export default function BookingView() {
             {mapError && <p style={{ color: '#dc2626', fontSize: 14, marginBottom: 8 }}>{mapError}</p>}
             {!mapsLoaded
               ? <div style={{ width: '100%', height: isMobile ? 220 : 280, borderRadius: 12, background: '#f9fafb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 14, border: '1.5px solid #e5e7eb', marginBottom: 12 }}>Cargando mapa...</div>
-              : <div ref={mapRef} style={{ width: '100%', height: isMobile ? 220 : 280, borderRadius: 12, border: '1.5px solid #e5e7eb', overflow: 'hidden', marginBottom: 12 }} />
+              : <div key={mapKey} ref={mapRef} style={{ width: '100%', height: isMobile ? 220 : 280, borderRadius: 12, border: '1.5px solid #e5e7eb', overflow: 'hidden', marginBottom: 12 }} />
             }
             {addressDetails && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#166534', marginBottom: 8 }}>✅ <strong>Dirección:</strong> {addressDetails.formatted}</div>}
             <p style={{ fontSize: 12, color: '#9ca3af', margin: '4px 0 0' }}>💡 Arrastra el pin o haz clic en el mapa para ajustar la ubicación exacta.</p>
