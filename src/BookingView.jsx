@@ -106,6 +106,7 @@ export default function BookingView() {
 
   // mapKey se incrementa cada vez que se resetea el form, forzando remontaje del mapa
   const [mapKey, setMapKey] = useState(0)
+  const [availableSlots, setAvailableSlots]     = useState([])
   const [loadingSlots, setLoadingSlots]         = useState(false)
   const [noSlotsAvailable, setNoSlotsAvailable] = useState(false)
 
