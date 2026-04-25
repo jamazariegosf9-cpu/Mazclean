@@ -166,11 +166,31 @@ const AdminViewA = ({
     if (!confirm(`¿Rechazar la reservación ${booking.booking_ref}? Se notificará al cliente y quedará registrada para análisis de cobertura.`)) return;
     setRejectingBooking(booking.id);
     try {
-      const { error } = await supabase
-        .from('bookings')
-        .update({ status: 'rechazado', updated_at: new Date().toISOString() })
-        .eq('id', booking.id);
-      if (error) throw error;
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const supaUrl = import.meta.env.VITE_SUPABASE_URL;
+      let token = anonKey;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          token = parsed?.access_token || parsed?.session?.access_token || anonKey;
+        }
+      } catch {}
+
+      const res = await fetch(`${supaUrl}/rest/v1/bookings?id=eq.${booking.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'apikey': anonKey,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({ status: 'rechazado', updated_at: new Date().toISOString() }),
+      });
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errBody}`);
+      }
 
       if (booking.customer?.phone) {
         try { await sendWhatsApp('booking_cancelled', booking.customer.phone, { booking_ref: booking.booking_ref, service_name: booking.service_name }); }
