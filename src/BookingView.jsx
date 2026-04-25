@@ -68,7 +68,7 @@ function useIsMobile() {
   return isMobile
 }
 
-export default function BookingView({ onNavigate }) {
+export default function BookingView() {
   const { user } = useAuth()
   const isMobile = useIsMobile()
   const [step, setStep]       = useState(1)
@@ -476,7 +476,7 @@ export default function BookingView({ onNavigate }) {
           </div>
           <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 8px' }}>📍 {addressDetails?.formatted}</p>
           <p style={{ fontSize: 14, color: '#9ca3af', margin: '0 0 24px', lineHeight: 1.6 }}>Estamos buscando el mejor operador para ti. Te notificaremos cuando sea asignado.</p>
-          <button onClick={() => { resetForm(); if (onNavigate) onNavigate('home') }} style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 16, fontWeight: 600, width: '100%', minHeight: 48 }}>Volver al inicio</button>
+          <button onClick={resetForm} style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 16, fontWeight: 600, width: '100%', minHeight: 48 }}>Nueva reservación</button>
         </div>
       </div>
     )
