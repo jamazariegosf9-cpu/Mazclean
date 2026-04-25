@@ -89,6 +89,8 @@ export default function BookingView({ onNavigate }) {
   const [mapError, setMapError]             = useState('')
   const [checkingCoverage, setCheckingCoverage] = useState(false)
   const [noCoverage, setNoCoverage]             = useState(false)
+  const addressDetailsRef = useRef(null)
+  useEffect(() => { addressDetailsRef.current = addressDetails }, [addressDetails])
   const mapRef          = useRef(null)
   const mapInstanceRef  = useRef(null)
   const markerRef       = useRef(null)
@@ -102,7 +104,8 @@ export default function BookingView({ onNavigate }) {
   const [notes, setNotes]       = useState('')
   const [rangeError, setRangeError] = useState('')
 
-  // Disponibilidad de slots
+  // mapKey se incrementa cada vez que se resetea el form, forzando remontaje del mapa
+  const [mapKey, setMapKey] = useState(0)
   const [availableSlots, setAvailableSlots]     = useState([])
   const [loadingSlots, setLoadingSlots]         = useState(false)
   const [noSlotsAvailable, setNoSlotsAvailable] = useState(false)
@@ -123,10 +126,10 @@ export default function BookingView({ onNavigate }) {
   }, [])
 
   useEffect(() => {
-    if (step !== 2 || !mapsLoaded) return
+    if (!mapsLoaded) return
     const t = setTimeout(() => { initMap(); initAutocomplete() }, 100)
     return () => clearTimeout(t)
-  }, [step, mapsLoaded])
+  }, [mapsLoaded])
 
   useEffect(() => { setNoCoverage(false) }, [addressDetails])
 
@@ -219,16 +222,22 @@ export default function BookingView({ onNavigate }) {
     if (!addressDetails) return
     setCheckingCoverage(true); setNoCoverage(false)
     try {
-      const { data: operators, error: opError } = await supabase
-        .from('profiles')
-        .select('id, base_lat, base_lng, coverage_radius, operator_status, status')
-        .eq('role', 'operador')
-        .eq('operator_status', 'aprobado')
-        .eq('status', 'activo')
-        .not('base_lat', 'is', null)
-        .not('base_lng', 'is', null)
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      let token = supabaseKey
+      try {
+        const stored = localStorage.getItem('mazclean-auth')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          token = parsed?.access_token || parsed?.session?.access_token || supabaseKey
+        }
+      } catch {}
 
-      if (opError) throw opError
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/profiles?role=eq.operador&operator_status=eq.aprobado&status=eq.activo&base_lat=not.is.null&base_lng=not.is.null&select=id,base_lat,base_lng,coverage_radius`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey } }
+      )
+      const operators = res.ok ? await res.json() : []
 
       const hasCoverage = (operators || []).some(op =>
         haversineKm(Number(op.base_lat), Number(op.base_lng), addressDetails.lat, addressDetails.lng)
@@ -240,11 +249,10 @@ export default function BookingView({ onNavigate }) {
       } else {
         setNoCoverage(true)
         try {
-          await supabase.from('coverage_requests').insert({
-            client_id: user?.id || null,
-            address:   addressDetails.formatted,
-            lat:       addressDetails.lat,
-            lng:       addressDetails.lng,
+          await fetch(`${supabaseUrl}/rest/v1/coverage_requests`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ client_id: user?.id || null, address: addressDetails.formatted, lat: addressDetails.lat, lng: addressDetails.lng }),
           })
         } catch (e) { console.warn('coverage_request:', e.message) }
       }
@@ -283,7 +291,7 @@ export default function BookingView({ onNavigate }) {
     // Fix: geocodificar cuando el cliente escribe manualmente y pierde el foco sin seleccionar del dropdown
     inputRef.current.addEventListener('blur', async () => {
       const val = inputRef.current?.value?.trim()
-      if (!val || addressDetails) return // ya tiene dirección válida
+      if (!val || addressDetailsRef.current) return // ya tiene dirección válida
       try {
         const result = await new window.google.maps.Geocoder().geocode({
           address: val,
@@ -303,7 +311,7 @@ export default function BookingView({ onNavigate }) {
         }
       } catch { setMapError('Error al buscar la dirección. Intenta de nuevo.') }
     })
-  }, [addressDetails])
+  }, [])
 
   const reverseGeocode = async (lat, lng) => {
     try {
@@ -360,9 +368,26 @@ export default function BookingView({ onNavigate }) {
       const price      = getPrice()
       const bookingRef = generateRef()
 
-      const { data: newBooking, error: insertError } = await supabase
-        .from('bookings')
-        .insert({
+      // Usar fetch directo para evitar el lock de Supabase en móvil
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      let token = supabaseKey
+      try {
+        const stored = localStorage.getItem('mazclean-auth')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          token = parsed?.access_token || parsed?.session?.access_token || supabaseKey
+        }
+      } catch {}
+
+      const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/bookings`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'apikey': supabaseKey,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation',
+        },
+        body: JSON.stringify({
           booking_ref:         bookingRef,
           client_id:           user.id,
           service_id:          service.id,
@@ -390,11 +415,14 @@ export default function BookingView({ onNavigate }) {
           assignment_mode:     'autonomo',
           created_at:          new Date().toISOString(),
           updated_at:          new Date().toISOString(),
-        })
-        .select()
-        .single()
+        }),
+      })
 
-      if (insertError) throw insertError
+      if (!insertRes.ok) throw new Error(`HTTP ${insertRes.status}`)
+      const insertData = await insertRes.json()
+      const newBooking = Array.isArray(insertData) ? insertData[0] : insertData
+      if (!newBooking?.id) throw new Error('No se obtuvo ID del booking')
+
       clearTimeout(timeoutId)
 
       try {
@@ -428,9 +456,8 @@ export default function BookingView({ onNavigate }) {
     setDate(''); setTimeFrom(''); setTimeTo(''); setNotes(''); setRangeError('')
     setNoCoverage(false); setAvailableSlots([]); setNoSlotsAvailable(false)
     mapInstanceRef.current = null; markerRef.current = null; autocompleteRef.current = null
-    // Limpiar el div del mapa para forzar reinicialización completa en la próxima reservación
-    if (mapRef.current) mapRef.current.innerHTML = ''
     if (inputRef.current) inputRef.current.value = ''
+    setMapKey(k => k + 1) // Fuerza remontaje completo del mapa
   }
 
   const price   = getPrice()
@@ -529,9 +556,8 @@ export default function BookingView({ onNavigate }) {
           </div>
         )}
 
-        {/* STEP 2 */}
-        {step === 2 && (
-          <div style={{ padding: isMobile ? '16px 12px' : 24 }}>
+        {/* STEP 2 — siempre montado para preservar el mapa de Google */}
+        <div style={{ display: step === 2 ? 'block' : 'none', padding: isMobile ? '16px 12px' : 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Dónde está tu vehículo?</h3>
             <div style={{ position: 'relative', marginBottom: 12 }}>
               <input ref={inputRef} style={{ padding: '12px 12px 12px 40px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 }} placeholder="Busca tu dirección..." defaultValue={address} onChange={e => { if (!e.target.value) { setAddress(''); setAddressDetails(null) } }} />
@@ -554,7 +580,6 @@ export default function BookingView({ onNavigate }) {
               </div>
             )}
           </div>
-        )}
 
         {/* STEP 3 */}
         {step === 3 && (

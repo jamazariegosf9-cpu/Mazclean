@@ -11,7 +11,8 @@ import { sendWhatsApp } from './lib/whatsapp';
 import AdminViewA from './AdminViewA';
 import AdminViewB from './AdminViewB';
 
-const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const EMOJI_OPTIONS = ['🚿','🪣','✨','💎','🏆','🚗','🧽','💧','🛻','🚙','⚡','🔧','🪟','🧴','🫧'];
 
 const emptyService = {
@@ -75,7 +76,6 @@ const AdminViewC = () => {
     if (activeTab === 'catalog') fetchServices();
   }, [activeTab]);
 
-  // Fix overflow al cambiar al tab de operadores
   useEffect(() => {
     if (activeTab !== 'operators') return;
     const fixOverflow = () => {
@@ -92,15 +92,31 @@ const AdminViewC = () => {
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [activeTab]);
 
+  // ── fetchData con fetch directo para evitar lock de Supabase ─────────────
   const fetchData = async () => {
     try {
       setLoading(true);
-      const { data: bookingsData } = await supabase
-        .from('bookings')
-        .select('*, customer:client_id(full_name, phone), operator:operator_id(full_name, phone)')
-        .order('created_at', { ascending: false });
-      const { data: operatorsData } = await supabase
-        .from('profiles').select('*').eq('role', 'operador');
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY;
+        }
+      } catch {}
+
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'apikey': SUPABASE_ANON_KEY,
+      };
+
+      const [bRes, oRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/bookings?select=*,customer:client_id(full_name,phone),operator:operator_id(full_name,phone)&order=created_at.desc`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/profiles?role=eq.operador&select=*`, { headers }),
+      ]);
+
+      const bookingsData  = bRes.ok ? await bRes.json() : [];
+      const operatorsData = oRes.ok ? await oRes.json() : [];
 
       setBookings(bookingsData || []);
       setOperators(operatorsData || []);
@@ -122,12 +138,19 @@ const AdminViewC = () => {
 
   const fetchUnattendedBookings = async () => {
     try {
-      const { data } = await supabase
-        .from('bookings')
-        .select('*, customer:client_id(full_name, phone)')
-        .eq('status', 'pendiente').is('operator_id', null).eq('current_ronda', 4)
-        .order('created_at', { ascending: true });
-      setUnattendedBookings(data || []);
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY;
+        }
+      } catch {}
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/bookings?status=eq.pendiente&operator_id=is.null&current_ronda=eq.4&select=*,customer:client_id(full_name,phone)&order=created_at.asc`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
+      );
+      setUnattendedBookings(res.ok ? await res.json() : []);
     } catch (err) { console.error('fetchUnattendedBookings:', err); }
   };
 
@@ -234,7 +257,6 @@ const AdminViewC = () => {
     { label: '% Completado', value: `${stats.completionRate}%`,           icon: '📈', color: '#7c3aed' },
   ];
 
-  // Props compartidos para A y B
   const sharedProps = { bookings, setBookings, operators, setOperators, loading, isMobile, sendWhatsApp };
 
   return (
