@@ -6,6 +6,7 @@ import { supabase } from './lib/supabase';
 import { sendWhatsApp } from './lib/whatsapp';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 const getStatusStyle = (status) => {
   switch (status) {
@@ -15,6 +16,7 @@ const getStatusStyle = (status) => {
     case 'en_proceso': return { bg: '#ffedd5', text: '#9a3412', border: '#fed7aa' };
     case 'finalizado': return { bg: '#dcfce7', text: '#166534', border: '#bbf7d0' };
     case 'cancelado':  return { bg: '#fee2e2', text: '#991b1b', border: '#fecaca' };
+    case 'rechazado':  return { bg: '#fae8ff', text: '#7e22ce', border: '#e9d5ff' };
     default:           return { bg: '#f3f4f6', text: '#374151', border: '#e5e7eb' };
   }
 };
@@ -32,6 +34,7 @@ const AdminViewA = ({
   const [assigning, setAssigning]       = useState(null);
   const [assigningManual, setAssigningManual] = useState(null);
   const [cancellingBooking, setCancellingBooking] = useState(null);
+  const [rejectingBooking, setRejectingBooking] = useState(null);
   const [editModal, setEditModal]       = useState(false);
   const [editData, setEditData]         = useState({});
   const [savingEdit, setSavingEdit]     = useState(false);
@@ -158,6 +161,43 @@ const AdminViewA = ({
     finally { setCancellingBooking(null); }
   };
 
+  // Rechazar reservación — status 'rechazado' para análisis de zonas sin cobertura
+  const rejectBooking = async (booking) => {
+    if (!confirm(`¿Rechazar la reservación ${booking.booking_ref}? Se notificará al cliente y quedará registrada para análisis de cobertura.`)) return;
+    setRejectingBooking(booking.id);
+    try {
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY;
+        }
+      } catch {}
+
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${booking.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'apikey': SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({ status: 'rechazado', updated_at: new Date().toISOString() }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      if (booking.customer?.phone) {
+        try { await sendWhatsApp('booking_cancelled', booking.customer.phone, { booking_ref: booking.booking_ref, service_name: booking.service_name }); }
+        catch (e) { console.warn('WhatsApp omitido:', e.message); }
+      }
+      setBookings(prev => prev.map(b => b.id === booking.id ? { ...b, status: 'rechazado' } : b));
+      setUnattendedBookings(prev => prev.filter(b => b.id !== booking.id));
+      fetchData();
+    } catch (err) { alert('Error al rechazar: ' + err.message); }
+    finally { setRejectingBooking(null); }
+  };
+
   const deleteBooking = async (bookingId) => {
     if (!confirm('¿Eliminar esta reservación?')) return;
     const { error } = await supabase.from('bookings').delete().eq('id', bookingId);
@@ -200,7 +240,16 @@ const AdminViewA = ({
           <option value="month">Este mes</option>
         </select>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
-          {[{ id: 'all', label: 'Todos' }, { id: 'pendiente', label: 'Pendientes' }, { id: 'confirmado', label: 'Confirmados' }, { id: 'en_camino', label: 'En Camino' }, { id: 'en_proceso', label: 'Lavando' }, { id: 'finalizado', label: 'Listos' }, { id: 'cancelado', label: 'Cancelados' }].map(f => (
+          {[
+            { id: 'all',       label: 'Todos' },
+            { id: 'pendiente', label: 'Pendientes' },
+            { id: 'confirmado',label: 'Confirmados' },
+            { id: 'en_camino', label: 'En Camino' },
+            { id: 'en_proceso',label: 'Lavando' },
+            { id: 'finalizado',label: 'Listos' },
+            { id: 'cancelado', label: 'Cancelados' },
+            { id: 'rechazado', label: 'Rechazados' },
+          ].map(f => (
             <button key={f.id} onClick={() => setStatusFilter(f.id)} style={{ padding: '8px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none', background: statusFilter === f.id ? '#3b82f6' : '#f3f4f6', color: statusFilter === f.id ? '#fff' : '#6b7280', minHeight: 36 }}>{f.label}</button>
           ))}
         </div>
@@ -213,7 +262,7 @@ const AdminViewA = ({
             <span style={{ fontSize: 20 }}>🚨</span>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: '#991b1b', margin: 0 }}>Requieren tu atención — Sin operador ({unattendedBookings.length})</h2>
           </div>
-          <p style={{ fontSize: 13, color: '#7f1d1d', margin: '0 0 14px', lineHeight: 1.5 }}>Estos servicios no fueron aceptados en las 3 rondas automáticas. Asigna manualmente o cancela.</p>
+          <p style={{ fontSize: 13, color: '#7f1d1d', margin: '0 0 14px', lineHeight: 1.5 }}>Estos servicios no fueron aceptados en las 3 rondas automáticas. Asigna manualmente, cancela o rechaza.</p>
           <div style={{ display: 'grid', gap: 10 }}>
             {unattendedBookings.map(booking => (
               <div key={booking.id} style={{ background: '#fff', borderRadius: 12, padding: '14px 16px', border: '1px solid #fecaca' }}>
@@ -235,12 +284,16 @@ const AdminViewA = ({
                     style={{ flex: 1, padding: '10px 12px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44, fontFamily: 'inherit' }}>
                     <option value="">{assigningManual === booking.id ? '⏳ Asignando...' : '👷 Asignar operador...'}</option>
                     {operators.filter(op => op?.operator_status === 'aprobado' && op?.status === 'activo').map(op => (
-                      <option key={op.id} value={op.id}>{op.full_name} — {op.assignment_mode === 'admin_asignado' ? '⭐ Admin' : 'Autónomo'}</option>
+                      <option key={op.id} value={op.id}>{op.full_name} — {op.assignment_mode === 'preferente' ? '⭐ Preferente' : 'Autónomo'}</option>
                     ))}
                   </select>
                   <button onClick={() => cancelUnattendedBooking(booking)} disabled={cancellingBooking === booking.id}
-                    style={{ padding: '10px 16px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 44, flexShrink: 0 }}>
+                    style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 44, flexShrink: 0 }}>
                     {cancellingBooking === booking.id ? '⏳...' : '❌ Cancelar'}
+                  </button>
+                  <button onClick={() => rejectBooking(booking)} disabled={rejectingBooking === booking.id}
+                    style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #e9d5ff', background: '#faf5ff', color: '#7e22ce', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 44, flexShrink: 0 }}>
+                    {rejectingBooking === booking.id ? '⏳...' : '🚫 Rechazar'}
                   </button>
                 </div>
               </div>
@@ -297,6 +350,11 @@ const AdminViewA = ({
                   <div style={{ display: 'flex', gap: 6, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                     <button onClick={() => { setSelectedBooking(booking); setIsModalOpen(true); }} style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44, flex: isMobile ? 1 : 'none' }}>👥 Asignar</button>
                     <button onClick={() => { setEditData({ ...booking }); setEditModal(true); }} style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44, flex: isMobile ? 1 : 'none' }}>✏️ Editar</button>
+                    {!['rechazado','cancelado','finalizado'].includes(booking.status) && (
+                      <button onClick={() => rejectBooking(booking)} disabled={rejectingBooking === booking.id} style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #e9d5ff', background: '#faf5ff', color: '#7e22ce', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44, flex: isMobile ? 1 : 'none' }}>
+                        {rejectingBooking === booking.id ? '⏳...' : '🚫 Rechazar'}
+                      </button>
+                    )}
                     <button onClick={() => deleteBooking(booking.id)} style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#991b1b', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44, flex: isMobile ? 1 : 'none' }}>🗑 Eliminar</button>
                   </div>
                 </div>
