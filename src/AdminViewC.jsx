@@ -32,6 +32,138 @@ function useIsMobile() {
   return isMobile;
 }
 
+// ── Componente de configuración paramétrica de membresías ─────────────────
+const MembresiaConfig = ({ isMobile }) => {
+  const [config, setConfig]     = useState(null);
+  const [saving, setSaving]     = useState(false);
+  const [form, setForm]         = useState(null);
+  const [success, setSuccess]   = useState('');
+  const [error, setError]       = useState('');
+
+  const supabaseUrl      = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseAnonKey  = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  useEffect(() => { fetchConfig(); }, []);
+
+  const fetchConfig = async () => {
+    try {
+      const { data } = await supabase.from('membership_config').select('*').single();
+      setConfig(data);
+      setForm({ ...data });
+    } catch (err) { setError('Error cargando configuración'); }
+  };
+
+  const saveConfig = async () => {
+    setSaving(true); setSuccess(''); setError('');
+    try {
+      let token = supabaseAnonKey;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseAnonKey; }
+      } catch {}
+      const res = await fetch(`${supabaseUrl}/rest/v1/membership_config?id=eq.${config.id}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseAnonKey, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({
+          operator_price:        parseFloat(form.operator_price) || 200,
+          operator_duration_days: parseInt(form.operator_duration_days) || 30,
+          operator_enabled:      form.operator_enabled,
+          client_price:          parseFloat(form.client_price) || 99,
+          client_duration_days:  parseInt(form.client_duration_days) || 30,
+          client_enabled:        form.client_enabled,
+          guarantee_services:    parseInt(form.guarantee_services) || 5,
+          updated_at:            new Date().toISOString(),
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setConfig({ ...form });
+      setSuccess('Configuración guardada correctamente.');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) { setError(err.message); }
+    finally { setSaving(false); }
+  };
+
+  if (!form) return <div style={{ padding: 48, textAlign: 'center', color: '#9ca3af' }}>Cargando...</div>;
+
+  const inputStyle = { padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 };
+  const labelStyle = { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 5, display: 'block' };
+
+  return (
+    <div style={{ marginTop: 16, display: 'grid', gap: 16 }}>
+
+      {/* Membresía Operadores */}
+      <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+        <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h2 style={{ color: '#fff', fontWeight: 700, fontSize: 15, margin: 0 }}>👷 Membresía Operadores</h2>
+            <p style={{ color: '#bfdbfe', fontSize: 12, margin: '2px 0 0' }}>Configuración del cobro mensual a operadores</p>
+          </div>
+          <button onClick={() => setForm(p => ({ ...p, operator_enabled: !p.operator_enabled }))}
+            style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: form.operator_enabled ? '#10b981' : 'rgba(255,255,255,0.2)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 36 }}>
+            {form.operator_enabled ? '✅ Habilitado' : '○ Deshabilitado'}
+          </button>
+        </div>
+        <div style={{ padding: isMobile ? '16px' : '20px 24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Precio mensual (MXN)</label>
+              <input type="number" min="0" value={form.operator_price} onChange={e => setForm(p => ({ ...p, operator_price: e.target.value }))} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Duración (días)</label>
+              <input type="number" min="1" value={form.operator_duration_days} onChange={e => setForm(p => ({ ...p, operator_duration_days: e.target.value }))} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Servicios garantizados (1er mes)</label>
+              <input type="number" min="0" value={form.guarantee_services} onChange={e => setForm(p => ({ ...p, guarantee_services: e.target.value }))} style={inputStyle} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Membresía Cliente Premium */}
+      <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+        <div style={{ background: 'linear-gradient(135deg,#7c3aed,#a78bfa)', padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h2 style={{ color: '#fff', fontWeight: 700, fontSize: 15, margin: 0 }}>⭐ Membresía Premium Clientes</h2>
+            <p style={{ color: '#ede9fe', fontSize: 12, margin: '2px 0 0' }}>Configuración de membresía premium para clientes</p>
+          </div>
+          <button onClick={() => setForm(p => ({ ...p, client_enabled: !p.client_enabled }))}
+            style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: form.client_enabled ? '#10b981' : 'rgba(255,255,255,0.2)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 36 }}>
+            {form.client_enabled ? '✅ Habilitado' : '○ Deshabilitado'}
+          </button>
+        </div>
+        <div style={{ padding: isMobile ? '16px' : '20px 24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Precio mensual (MXN)</label>
+              <input type="number" min="0" value={form.client_price} onChange={e => setForm(p => ({ ...p, client_price: e.target.value }))} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Duración (días)</label>
+              <input type="number" min="1" value={form.client_duration_days} onChange={e => setForm(p => ({ ...p, client_duration_days: e.target.value }))} style={inputStyle} />
+            </div>
+          </div>
+          <div style={{ marginTop: 14, background: '#f5f3ff', borderRadius: 10, padding: '12px 14px', border: '1px solid #e9d5ff' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed', marginBottom: 4 }}>Beneficios Premium (próximamente)</div>
+            <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.6 }}>
+              ⭐ Prioridad en rondas de asignación · 📅 Horarios reservados · 🎯 Operador preferente · ❌ Cancelación flexible
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Botón guardar */}
+      {error   && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
+      {success && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', color: '#166534', fontSize: 14 }}>✅ {success}</div>}
+      <button onClick={saveConfig} disabled={saving}
+        style={{ padding: '14px 28px', background: saving ? '#9ca3af' : '#1e40af', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', minHeight: 52, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+        💾 {saving ? 'Guardando...' : 'Guardar Configuración'}
+      </button>
+    </div>
+  );
+};
+
 const AdminViewC = () => {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab]   = useState('bookings');
@@ -247,6 +379,8 @@ const AdminViewC = () => {
   const inputStyle = { padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 };
   const labelStyle = { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 5, display: 'block' };
 
+  const membresíasActivas = operators.filter(o => o.membership_status === 'activa').length;
+
   const statCards = [
     { label: 'Total',        value: stats.total,                          icon: '📋', color: '#6b7280' },
     { label: 'Pendientes',   value: stats.pending,                        icon: '⏳', color: '#d97706' },
@@ -255,6 +389,7 @@ const AdminViewC = () => {
     { label: 'Cancelados',   value: stats.cancelled,                      icon: '❌', color: '#ef4444' },
     { label: 'Ingresos',     value: `$${stats.revenue.toLocaleString()}`, icon: '💰', color: '#059669' },
     { label: '% Completado', value: `${stats.completionRate}%`,           icon: '📈', color: '#7c3aed' },
+    { label: 'Membresías',   value: membresíasActivas,                    icon: '💳', color: '#0891b2' },
   ];
 
   const sharedProps = { bookings, setBookings, operators, setOperators, loading, isMobile, sendWhatsApp };
@@ -290,6 +425,7 @@ const AdminViewC = () => {
             { id: 'bookings',  label: `📋 Reservaciones${unattendedBookings.length > 0 ? ` 🚨${unattendedBookings.length}` : ''}` },
             { id: 'operators', label: `👷 Operadores${incidents.length > 0 || pendingOperators.length > 0 ? ` ⚠️${incidents.length + pendingOperators.length}` : ''}` },
             { id: 'catalog',   label: '🛎 Catálogo' },
+            { id: 'membresias', label: '💳 Membresías' },
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               style={{ padding: isMobile ? '8px 12px' : '8px 20px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: isMobile ? 12 : 14, fontWeight: 600, whiteSpace: 'nowrap', background: activeTab === tab.id ? '#fff' : 'transparent', color: activeTab === tab.id ? '#1e40af' : '#6b7280', boxShadow: activeTab === tab.id ? '0 2px 8px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.2s', minHeight: 44 }}>
@@ -377,6 +513,11 @@ const AdminViewC = () => {
               </div>
             )}
           </div>
+        )}
+
+        {/* Tab: Membresías */}
+        {activeTab === 'membresias' && (
+          <MembresiaConfig isMobile={isMobile} />
         )}
       </div>
 
