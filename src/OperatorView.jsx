@@ -881,6 +881,20 @@ const OperatorView = () => {
           <div>
             <h1 style={{ color: '#fff', fontSize: isMobile ? 18 : 22, fontWeight: 700, margin: '0 0 4px' }}>🚗 Mis Servicios</h1>
             <p style={{ color: '#bfdbfe', fontSize: 13, margin: 0 }}>Hola, {user?.user_metadata?.full_name || profile?.full_name || 'Operador'}</p>
+            {/* Banner membresía */}
+            {profile?.membership_status === 'activa' && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, background: 'rgba(16,185,129,0.2)', border: '1px solid rgba(16,185,129,0.4)', borderRadius: 20, padding: '3px 10px' }}>
+                <span style={{ fontSize: 11, color: '#6ee7b7', fontWeight: 700 }}>
+                  💳 Membresía activa
+                  {profile.membership_end_at ? ` — vence ${new Date(profile.membership_end_at).toLocaleDateString('es-MX')}` : ''}
+                </span>
+              </div>
+            )}
+            {profile?.membership_status === 'vencida' && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 20, padding: '3px 10px' }}>
+                <span style={{ fontSize: 11, color: '#fde68a', fontWeight: 700 }}>⚠️ Membresía vencida</span>
+              </div>
+            )}
           </div>
           <button onClick={() => signOut()} style={{ background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 10, padding: '10px 12px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', minHeight: 44 }}>
             <LogOut size={16} />
