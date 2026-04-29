@@ -48,12 +48,28 @@ export default function ClientView() {
   const [ratingReview, setRatingReview]   = useState('')
   const [savingRating, setSavingRating]   = useState(false)
 
+  // ── Membresía ───────────────────────────────────────────────────
+  const [membershipConfig, setMembershipConfig] = useState(null)
+  const [clientProfile, setClientProfile]       = useState(null)
+
   useEffect(() => {
     if (user) {
       fetchBookings()
       loadGoogleMapsScript(GOOGLE_MAPS_API_KEY).then(() => setMapsLoaded(true))
+      fetchMembershipData()
     }
   }, [user])
+
+  const fetchMembershipData = async () => {
+    try {
+      const [{ data: cfg }, { data: prof }] = await Promise.all([
+        supabase.from('membership_config').select('*').single(),
+        supabase.from('profiles').select('membership_status,membership_type,membership_end_at').eq('id', user.id).single(),
+      ])
+      setMembershipConfig(cfg)
+      setClientProfile(prof)
+    } catch (err) { console.error('fetchMembershipData:', err) }
+  }
 
   const fetchBookings = async (silent = false) => {
     if (fetchingRef.current) return
@@ -220,6 +236,48 @@ export default function ClientView() {
       )}
 
       <div style={styles.card}>
+
+        {/* ── Membresía Premium (visible solo si client_enabled = true) ── */}
+        {membershipConfig?.client_enabled && (
+          <div style={{ marginBottom: 20, borderRadius: 14, overflow: 'hidden', border: '1.5px solid #e9d5ff' }}>
+            <div style={{ background: 'linear-gradient(135deg,#7c3aed,#a78bfa)', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>⭐ Membresía Premium</div>
+                <div style={{ color: '#ede9fe', fontSize: 12, marginTop: 2 }}>
+                  ${membershipConfig.client_price} MXN / {membershipConfig.client_duration_days} días
+                </div>
+              </div>
+              {clientProfile?.membership_status === 'activa'
+                ? <span style={{ background: 'rgba(16,185,129,0.25)', border: '1px solid rgba(16,185,129,0.5)', borderRadius: 20, padding: '4px 12px', color: '#6ee7b7', fontSize: 12, fontWeight: 700 }}>✅ Activa</span>
+                : <span style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 20, padding: '4px 12px', color: '#ede9fe', fontSize: 12, fontWeight: 700 }}>○ Inactiva</span>
+              }
+            </div>
+            <div style={{ background: '#faf5ff', padding: '12px 16px' }}>
+              {clientProfile?.membership_status === 'activa' ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ fontSize: 13, color: '#6b21a8', fontWeight: 600 }}>
+                    💳 Tu membresía está activa
+                    {clientProfile.membership_end_at && (
+                      <span style={{ fontWeight: 400, color: '#7c3aed', marginLeft: 6 }}>
+                        — vence el {new Date(clientProfile.membership_end_at).toLocaleDateString('es-MX')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 10, lineHeight: 1.6 }}>
+                    ⭐ Prioridad en asignación · 📅 Horarios reservados · 🎯 Operador preferente · ❌ Cancelación flexible
+                  </div>
+                  <div style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>
+                    Próximamente disponible el pago en línea.
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <h2 style={styles.title}>🚗 Mis Reservaciones</h2>
 
         {fetchError && (
