@@ -10,7 +10,19 @@ import { AlertTriangle, Star } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { sendWhatsApp } from './lib/whatsapp';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+const getMembershipBadge = (op) => {
+  const status = op.membership_status || 'ninguna';
+  if (status === 'activa') {
+    const endAt    = op.membership_end_at ? new Date(op.membership_end_at) : null;
+    const daysLeft = endAt ? Math.ceil((endAt - new Date()) / (1000 * 60 * 60 * 24)) : null;
+    return { label: daysLeft !== null ? `💳 Activa — ${daysLeft}d` : '💳 Activa', color: '#059669', bg: '#f0fdf4', border: '#bbf7d0' };
+  }
+  if (status === 'vencida') return { label: '⚠️ Vencida', color: '#d97706', bg: '#fffbeb', border: '#fde68a' };
+  return { label: '○ Sin membresía', color: '#9ca3af', bg: '#f9fafb', border: '#e5e7eb' };
+};
 
 const WORK_DAYS_LABELS = {
   lun: 'Lunes', mar: 'Martes', mie: 'Miércoles', jue: 'Jueves',
@@ -101,7 +113,80 @@ const AdminViewB = ({
   const [operatorError, setOperatorError]       = useState('');
   const [operatorSuccess, setOperatorSuccess]   = useState('');
 
-  useEffect(() => { fetchIncidents(); fetchPendingOperators(); }, []);
+  useEffect(() => { fetchIncidents(); fetchPendingOperators(); fetchMembershipConfig(); }, []);
+
+  // ── Membresía ─────────────────────────────────────────────────────────────
+  const [membershipConfig, setMembershipConfig]     = useState(null);
+  const [updatingMembership, setUpdatingMembership] = useState(null);
+  const [membershipModal, setMembershipModal]       = useState(false);
+  const [membershipOp, setMembershipOp]             = useState(null);
+  const [membershipDays, setMembershipDays]         = useState(30);
+
+  const fetchMembershipConfig = async () => {
+    try {
+      const { data } = await supabase.from('membership_config').select('*').single();
+      setMembershipConfig(data);
+    } catch (err) { console.error('fetchMembershipConfig:', err); }
+  };
+
+  const toggleMembershipEnabled = async (field) => {
+    if (!membershipConfig) return;
+    const newVal = !membershipConfig[field];
+    try {
+      const { error } = await supabase.from('membership_config').update({ [field]: newVal, updated_at: new Date().toISOString() }).eq('id', membershipConfig.id);
+      if (error) throw error;
+      setMembershipConfig(prev => ({ ...prev, [field]: newVal }));
+    } catch (err) { alert('Error: ' + err.message); }
+  };
+
+  const openMembershipModal = (op) => {
+    setMembershipOp(op);
+    setMembershipDays(membershipConfig?.operator_duration_days || 30);
+    setMembershipModal(true);
+  };
+
+  const saveMembership = async () => {
+    if (!membershipOp) return;
+    setUpdatingMembership(membershipOp.id);
+    try {
+      const now   = new Date();
+      const endAt = new Date(now.getTime() + membershipDays * 24 * 60 * 60 * 1000);
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
+      } catch {}
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${membershipOp.id}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ membership_status: 'activa', membership_type: 'operador', membership_start_at: now.toISOString(), membership_end_at: endAt.toISOString(), updated_at: now.toISOString() }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setOperators(prev => prev.map(o => o.id === membershipOp.id ? { ...o, membership_status: 'activa', membership_type: 'operador', membership_start_at: now.toISOString(), membership_end_at: endAt.toISOString() } : o));
+      setMembershipModal(false);
+    } catch (err) { alert('Error: ' + err.message); }
+    finally { setUpdatingMembership(null); }
+  };
+
+  const revokeMembership = async (op) => {
+    if (!confirm(`¿Desactivar membresía de ${op.full_name}?`)) return;
+    setUpdatingMembership(op.id);
+    try {
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
+      } catch {}
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${op.id}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ membership_status: 'vencida', membership_end_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setOperators(prev => prev.map(o => o.id === op.id ? { ...o, membership_status: 'vencida' } : o));
+    } catch (err) { alert('Error: ' + err.message); }
+    finally { setUpdatingMembership(null); }
+  };
 
   const fetchPendingOperators = async () => {
     try {
@@ -416,6 +501,35 @@ const AdminViewB = ({
   return (
     <div style={{ marginTop: 16, display: 'grid', gap: 16, overflowX: 'hidden', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
 
+      {/* ── CONTROL MEMBRESÍAS ── */}
+      {membershipConfig && (
+        <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', padding: isMobile ? '12px' : '16px 20px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 12 }}>💳 Control de Membresías</div>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f9fafb', borderRadius: 10, padding: '10px 14px', border: '1px solid #e5e7eb' }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#1f2937' }}>Membresía Operadores</div>
+                <div style={{ fontSize: 11, color: '#9ca3af' }}>${membershipConfig.operator_price} MXN / {membershipConfig.operator_duration_days} días</div>
+              </div>
+              <button onClick={() => toggleMembershipEnabled('operator_enabled')}
+                style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: membershipConfig.operator_enabled ? '#10b981' : '#e5e7eb', color: membershipConfig.operator_enabled ? '#fff' : '#6b7280', fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 36 }}>
+                {membershipConfig.operator_enabled ? '✅ Activo' : '○ Inactivo'}
+              </button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f9fafb', borderRadius: 10, padding: '10px 14px', border: '1px solid #e5e7eb' }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#1f2937' }}>Membresía Premium Clientes</div>
+                <div style={{ fontSize: 11, color: '#9ca3af' }}>${membershipConfig.client_price} MXN / {membershipConfig.client_duration_days} días</div>
+              </div>
+              <button onClick={() => toggleMembershipEnabled('client_enabled')}
+                style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: membershipConfig.client_enabled ? '#10b981' : '#e5e7eb', color: membershipConfig.client_enabled ? '#fff' : '#6b7280', fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 36 }}>
+                {membershipConfig.client_enabled ? '✅ Activo' : '○ Inactivo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── CHIPS + FILTROS ── */}
       <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', padding: isMobile ? '12px' : '16px 20px' }}>
 
@@ -661,6 +775,7 @@ const AdminViewB = ({
                 const totalRev = opBookings.reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
                 const commission = totalRev * ((op.commission_pct || 15) / 100);
                 const opStatusCfg = getOpStatusCfg(op.status);
+                const memBadge = getMembershipBadge(op);
                 return (
                   <div key={op.id} style={{ background: '#f9fafb', borderRadius: 12, border: `1.5px solid ${opStatusCfg.border}`, padding: 16, display: 'flex', flexDirection: 'column', gap: 10, opacity: op.status === 'desactivado' ? 0.7 : 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -684,6 +799,38 @@ const AdminViewB = ({
                       <div><div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase' }}>Comisión ({op.commission_pct || 15}%)</div><div style={{ fontSize: 13, fontWeight: 700, color: '#059669' }}>${commission.toFixed(2)}</div></div>
                       <div style={{ textAlign: 'center' }}><div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase' }}>Servicios</div><div style={{ fontSize: 13, fontWeight: 700, color: '#1f2937' }}>{opBookings.length}</div></div>
                       <div style={{ textAlign: 'right' }}><div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase' }}>Rating</div><div style={{ fontSize: 13, fontWeight: 700, color: op.rating_avg >= 4 ? '#10b981' : op.rating_avg ? '#f59e0b' : '#9ca3af' }}>{op.rating_avg ? `${Number(op.rating_avg).toFixed(1)} ⭐` : '—'}</div></div>
+                    </div>
+
+                    {/* ── MEMBRESÍA ── */}
+                    <div style={{ background: memBadge.bg, borderRadius: 10, padding: '10px 14px', border: `1.5px solid ${memBadge.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: memBadge.color }}>{memBadge.label}</div>
+                        {op.membership_status === 'activa' && op.membership_end_at && (
+                          <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>Vence: {new Date(op.membership_end_at).toLocaleDateString('es-MX')}</div>
+                        )}
+                        {op.membership_status === 'vencida' && op.membership_end_at && (
+                          <div style={{ fontSize: 10, color: '#d97706', marginTop: 2 }}>Venció: {new Date(op.membership_end_at).toLocaleDateString('es-MX')}</div>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        {op.membership_status === 'activa' ? (
+                          <>
+                            <button onClick={() => revokeMembership(op)} disabled={updatingMembership === op.id}
+                              style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                              {updatingMembership === op.id ? '⏳' : '✕ Revocar'}
+                            </button>
+                            <button onClick={() => openMembershipModal(op)} disabled={updatingMembership === op.id}
+                              style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                              ↻ Extender
+                            </button>
+                          </>
+                        ) : (
+                          <button onClick={() => openMembershipModal(op)} disabled={updatingMembership === op.id}
+                            style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#059669', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                            {updatingMembership === op.id ? '⏳' : '+ Activar'}
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <div>
@@ -1146,6 +1293,50 @@ const AdminViewB = ({
             </div>
             <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', textAlign: 'right' }}>
               <button onClick={() => setKpisModal(false)} style={{ padding: '12px 24px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════ MODAL: ACTIVAR/EXTENDER MEMBRESÍA ════ */}
+      {membershipModal && membershipOp && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, boxShadow: '0 8px 40px rgba(0,0,0,0.2)', width: '100%', maxWidth: isMobile ? '100%' : 420, overflow: 'hidden' }}>
+            <div style={{ background: 'linear-gradient(135deg,#059669,#10b981)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>💳 {membershipOp.membership_status === 'activa' ? 'Extender' : 'Activar'} Membresía</h3>
+              <button onClick={() => setMembershipModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#a7f3d0', fontSize: 22, borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+            <div style={{ padding: isMobile ? '16px' : 20 }}>
+              <div style={{ background: '#f0fdf4', borderRadius: 10, padding: '12px 14px', marginBottom: 16, border: '1px solid #bbf7d0' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#065f46' }}>{membershipOp.full_name}</div>
+                <div style={{ fontSize: 12, color: '#059669', marginTop: 2 }}>
+                  {membershipOp.membership_status === 'activa' && membershipOp.membership_end_at
+                    ? `Vence actualmente: ${new Date(membershipOp.membership_end_at).toLocaleDateString('es-MX')}`
+                    : 'Sin membresía activa'}
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 5, display: 'block' }}>Días de membresía</label>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  {[30, 60, 90].map(d => (
+                    <button key={d} onClick={() => setMembershipDays(d)}
+                      style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: `1.5px solid ${membershipDays === d ? '#059669' : '#e5e7eb'}`, background: membershipDays === d ? '#f0fdf4' : '#fff', color: membershipDays === d ? '#059669' : '#374151', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 44 }}>
+                      {d} días
+                    </button>
+                  ))}
+                </div>
+                <input type="number" min="1" max="365" value={membershipDays} onChange={e => setMembershipDays(parseInt(e.target.value) || 30)} style={{ padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 }} />
+                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 8 }}>
+                  Nueva fecha de vencimiento: <strong>{new Date(Date.now() + membershipDays * 24 * 60 * 60 * 1000).toLocaleDateString('es-MX')}</strong>
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10 }}>
+              <button onClick={() => setMembershipModal(false)} style={{ flex: 1, padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cancelar</button>
+              <button onClick={saveMembership} disabled={updatingMembership === membershipOp.id}
+                style={{ flex: 2, padding: '12px', background: updatingMembership === membershipOp.id ? '#9ca3af' : '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>
+                {updatingMembership === membershipOp.id ? '⏳ Guardando...' : `✅ ${membershipOp.membership_status === 'activa' ? 'Extender' : 'Activar'} por ${membershipDays} días`}
+              </button>
             </div>
           </div>
         </div>
