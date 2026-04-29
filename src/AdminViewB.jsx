@@ -264,7 +264,7 @@ const AdminViewB = ({
   };
 
   const toggleAssignmentMode = async (op) => {
-    const newMode = op.assignment_mode === 'admin_asignado' ? 'autonomo' : 'admin_asignado';
+    const newMode = op.assignment_mode === 'preferente' ? 'autonomo' : 'preferente';
     try {
       const { error } = await supabase.from('profiles').update({ assignment_mode: newMode, updated_at: new Date().toISOString() }).eq('id', op.id);
       if (error) throw error;
@@ -708,11 +708,11 @@ const AdminViewB = ({
 
                     <div style={{ background: '#f9fafb', borderRadius: 10, padding: '10px 14px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                       <div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: '#374151' }}>{op.assignment_mode === 'admin_asignado' ? '⭐ Preferente' : '🤖 Autónomo'}</div>
-                        <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>{op.assignment_mode === 'admin_asignado' ? 'Tiene prioridad en la asignación' : 'Acepta por su cuenta'}</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#374151' }}>{op.assignment_mode === 'preferente' ? '⭐ Preferente' : '🤖 Autónomo'}</div>
+                        <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>{op.assignment_mode === 'preferente' ? 'Tiene prioridad en la asignación' : 'Acepta por su cuenta'}</div>
                       </div>
-                      <button onClick={() => toggleAssignmentMode(op)} style={{ padding: '8px 12px', borderRadius: 8, border: 'none', background: op.assignment_mode === 'admin_asignado' ? '#1e40af' : '#e5e7eb', color: op.assignment_mode === 'admin_asignado' ? '#fff' : '#6b7280', fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0, minHeight: 36 }}>
-                        {op.assignment_mode === 'admin_asignado' ? '⭐ Pref.' : '🤖 Auto'}
+                      <button onClick={() => toggleAssignmentMode(op)} style={{ padding: '8px 12px', borderRadius: 8, border: 'none', background: op.assignment_mode === 'preferente' ? '#1e40af' : '#e5e7eb', color: op.assignment_mode === 'preferente' ? '#fff' : '#6b7280', fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0, minHeight: 36 }}>
+                        {op.assignment_mode === 'preferente' ? '⭐ Pref.' : '🤖 Auto'}
                       </button>
                     </div>
                   </div>
