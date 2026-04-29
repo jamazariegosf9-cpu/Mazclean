@@ -289,6 +289,7 @@ const OperatorView = () => {
   const [activeTab, setActiveTab]             = useState('solicitudes');
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [updatingId, setUpdatingId]           = useState(null);
+  const [waLog, setWaLog]                     = useState(null); // log visual móvil
   const fetchingRef                           = useRef(false);
   const bookingsCache                         = useRef([]);
 
@@ -642,14 +643,28 @@ const OperatorView = () => {
 
       if (phone) {
         console.log(`[WA] ${eventName} → ${phone}`);
-        sendWhatsApp(eventName, phone, {
-          booking_ref: booking?.booking_ref, service_name: booking?.service_name,
-          booking_id: bookingId, operator_name: profile?.full_name || user?.user_metadata?.full_name || 'tu operador',
-          total_price: booking?.total_price, scheduled_date: booking?.scheduled_date,
-          scheduled_time_from: booking?.scheduled_time_from, scheduled_time_to: booking?.scheduled_time_to,
-        });
+        try {
+          const waResult = await sendWhatsApp(eventName, phone, {
+            booking_ref: booking?.booking_ref, service_name: booking?.service_name,
+            booking_id: bookingId, operator_name: profile?.full_name || user?.user_metadata?.full_name || 'tu operador',
+            total_price: booking?.total_price, scheduled_date: booking?.scheduled_date,
+            scheduled_time_from: booking?.scheduled_time_from, scheduled_time_to: booking?.scheduled_time_to,
+          });
+          const logMsg = `WA[${eventName}] → ${phone} | total:${booking?.total_price} | from:${booking?.scheduled_time_from} | resultado:${waResult?.success ? '✅' : '❌'} ${waResult?.error || waResult?.sid || ''}`;
+          console.log(logMsg);
+          setWaLog(logMsg);
+          setTimeout(() => setWaLog(null), 12000);
+        } catch (waErr) {
+          const errMsg = `WA[${eventName}] ERROR: ${waErr.message}`;
+          console.error(errMsg);
+          setWaLog(errMsg);
+          setTimeout(() => setWaLog(null), 12000);
+        }
       } else {
-        console.warn(`[WA] ${eventName}: no se encontró teléfono`);
+        const noPhoneMsg = `WA[${eventName}]: ❌ sin teléfono | bookingId:${bookingId} | booking:${booking?.id || 'null'}`;
+        console.warn(noPhoneMsg);
+        setWaLog(noPhoneMsg);
+        setTimeout(() => setWaLog(null), 12000);
       }
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, status: newStatus }));
     } catch (err) {
@@ -876,6 +891,14 @@ const OperatorView = () => {
   // ── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6', paddingBottom: isMobile ? 72 : 80 }}>
+
+      {/* 🛠 LOG VISUAL TEMPORAL — remover después de debug */}
+      {waLog && (
+        <div style={{ position: 'fixed', bottom: 80, left: 12, right: 12, zIndex: 9999, background: waLog.includes('❌') || waLog.includes('ERROR') ? '#fef2f2' : '#f0fdf4', border: `2px solid ${waLog.includes('❌') || waLog.includes('ERROR') ? '#fecaca' : '#bbf7d0'}`, borderRadius: 12, padding: '12px 16px', fontSize: 11, color: '#1f2937', fontFamily: 'monospace', wordBreak: 'break-all', boxShadow: '0 4px 24px rgba(0,0,0,0.15)' }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>🛠 WA DEBUG</div>
+          {waLog}
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: isMobile ? '20px 16px 16px' : '32px 24px 28px', borderRadius: '0 0 24px 24px', boxShadow: '0 4px 24px rgba(30,64,175,0.3)' }}>
