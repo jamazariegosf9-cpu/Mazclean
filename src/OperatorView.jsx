@@ -645,6 +645,8 @@ const OperatorView = () => {
         sendWhatsApp(eventName, phone, {
           booking_ref: booking?.booking_ref, service_name: booking?.service_name,
           booking_id: bookingId, operator_name: profile?.full_name || user?.user_metadata?.full_name || 'tu operador',
+          total_price: booking?.total_price, scheduled_date: booking?.scheduled_date,
+          scheduled_time_from: booking?.scheduled_time_from, scheduled_time_to: booking?.scheduled_time_to,
         });
       } else {
         console.warn(`[WA] ${eventName}: no se encontró teléfono`);
@@ -697,7 +699,7 @@ const OperatorView = () => {
       if (!bookingForChecklist) { console.log('[CHECKLIST] No se encontró booking'); setPendingFinalize(null); return; }
       const items = await loadChecklist(bookingForChecklist);
       console.log('[CHECKLIST] items:', items);
-      if (!items) { setPendingFinalize(null); await updateStatus(currentPending, 'finalizado', 'done'); return; }
+      if (!items) { setPendingFinalize(null); await updateStatus(currentPending, 'finalizado', 'done', bookingForChecklist); return; }
       setChecklist(items); setChecklistModal(true);
     }
   };
@@ -754,14 +756,14 @@ const OperatorView = () => {
   const confirmFinalize = async () => {
     if (!checklist.every(item => item.checked)) { alert('Por favor completa todos los items del checklist.'); return; }
     const bookingToFinalize = pendingFinalize;
+    const bookingData = bookings.find(b => b.id === bookingToFinalize);
     setChecklistModal(false);
     setPendingFinalize(null);
     setChecklist([]);
     setPhotoModalSafe(false);
     setPhotosData({});
     setPhotoBooking(null);
-    // No pasamos bookingData — updateStatus hará fetch directo para obtener el teléfono
-    await updateStatus(bookingToFinalize, 'finalizado', 'done');
+    await updateStatus(bookingToFinalize, 'finalizado', 'done', bookingData);
   };
 
 
