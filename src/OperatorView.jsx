@@ -772,7 +772,7 @@ const OperatorView = () => {
     const bookingToFinalize = pendingFinalize;
     const bookingData = bookings.find(b => b.id === bookingToFinalize);
 
-    // Log visual inmediato — antes de cualquier validación
+    // Log visual inmediato
     const debugMsg = `confirmFinalize | pendingFinalize:${bookingToFinalize || 'NULL'} | bookingData:${bookingData?.booking_ref || 'NULL'} | checklist:${checklist.length} items | allChecked:${checklist.every(i => i.checked)}`;
     console.log('[FINALIZE]', debugMsg);
     setWaLog(debugMsg);
@@ -781,13 +781,28 @@ const OperatorView = () => {
     if (!checklist.every(item => item.checked)) { alert('Por favor completa todos los items del checklist.'); return; }
     if (!bookingToFinalize) { setWaLog('❌ ERROR: pendingFinalize es null'); return; }
 
+    // ── FIX: cerrar modales ANTES de hacer await para no bloquear el re-render,
+    // pero capturar snapshot completo del booking ANTES de limpiar el state ──
+    const bookingSnapshot = {
+      id:                  bookingData?.id,
+      booking_ref:         bookingData?.booking_ref,
+      service_name:        bookingData?.service_name,
+      total_price:         bookingData?.total_price,
+      scheduled_date:      bookingData?.scheduled_date,
+      scheduled_time_from: bookingData?.scheduled_time_from,
+      scheduled_time_to:   bookingData?.scheduled_time_to,
+      customer:            bookingData?.customer,
+    };
+
     setChecklistModal(false);
     setPendingFinalize(null);
     setChecklist([]);
     setPhotoModalSafe(false);
     setPhotosData({});
     setPhotoBooking(null);
-    await updateStatus(bookingToFinalize, 'finalizado', 'done', bookingData);
+
+    // Pasar snapshot — ya no depende del state de bookings
+    await updateStatus(bookingToFinalize, 'finalizado', 'done', bookingSnapshot);
   };
 
 
