@@ -769,9 +769,18 @@ const OperatorView = () => {
   const toggleCheckItem = (id) => { setChecklist(prev => prev.map(item => item.id === id ? { ...item, checked: !item.checked } : item)); };
 
   const confirmFinalize = async () => {
-    if (!checklist.every(item => item.checked)) { alert('Por favor completa todos los items del checklist.'); return; }
     const bookingToFinalize = pendingFinalize;
     const bookingData = bookings.find(b => b.id === bookingToFinalize);
+
+    // Log visual inmediato — antes de cualquier validación
+    const debugMsg = `confirmFinalize | pendingFinalize:${bookingToFinalize || 'NULL'} | bookingData:${bookingData?.booking_ref || 'NULL'} | checklist:${checklist.length} items | allChecked:${checklist.every(i => i.checked)}`;
+    console.log('[FINALIZE]', debugMsg);
+    setWaLog(debugMsg);
+    setTimeout(() => setWaLog(null), 15000);
+
+    if (!checklist.every(item => item.checked)) { alert('Por favor completa todos los items del checklist.'); return; }
+    if (!bookingToFinalize) { setWaLog('❌ ERROR: pendingFinalize es null'); return; }
+
     setChecklistModal(false);
     setPendingFinalize(null);
     setChecklist([]);
