@@ -701,6 +701,51 @@ const OperatorView = () => {
     if (booking.photo_interior_after) existing.interior_after = booking.photo_interior_after;
     setPhotoBooking(booking); setPhotosData(existing); setPhotoStep(3); setPhotoPhase('after');
     setPendingFinalize(booking.id); setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModalSafe(true);
+
+    // ── Enviar WhatsApp done aquí — fetch directo para evitar lock Supabase en móvil ──
+    const sendDoneWhatsApp = async () => {
+      try {
+        const phone = booking?.customer?.phone;
+        if (!phone) {
+          // Intentar obtener teléfono via fetch directo
+          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+          const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+          let token = supabaseKey;
+          try {
+            const stored = localStorage.getItem('mazclean-auth');
+            if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
+          } catch {}
+          const r = await fetch(`${supabaseUrl}/rest/v1/bookings?id=eq.${booking.id}&select=customer:client_id(phone)`, { headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey } });
+          if (r.ok) {
+            const d = await r.json();
+            const fetchedPhone = d?.[0]?.customer?.phone;
+            if (fetchedPhone) {
+              await sendWhatsApp('done', fetchedPhone, {
+                booking_ref: booking?.booking_ref, service_name: booking?.service_name,
+                total_price: booking?.total_price, scheduled_date: booking?.scheduled_date,
+                scheduled_time_from: booking?.scheduled_time_from, scheduled_time_to: booking?.scheduled_time_to,
+                booking_id: booking?.id,
+              });
+              setWaLog(`✅ WA done → ${fetchedPhone} | ref:${booking?.booking_ref} | $${booking?.total_price}`);
+              setTimeout(() => setWaLog(null), 8000);
+            }
+          }
+          return;
+        }
+        await sendWhatsApp('done', phone, {
+          booking_ref: booking?.booking_ref, service_name: booking?.service_name,
+          total_price: booking?.total_price, scheduled_date: booking?.scheduled_date,
+          scheduled_time_from: booking?.scheduled_time_from, scheduled_time_to: booking?.scheduled_time_to,
+          booking_id: booking?.id,
+        });
+        setWaLog(`✅ WA done → ${phone} | ref:${booking?.booking_ref} | $${booking?.total_price}`);
+        setTimeout(() => setWaLog(null), 8000);
+      } catch (err) {
+        setWaLog(`❌ WA done ERROR: ${err.message}`);
+        setTimeout(() => setWaLog(null), 8000);
+      }
+    };
+    sendDoneWhatsApp();
   };
 
   const closePhotoModal = async (bookingOverride = null) => {
