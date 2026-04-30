@@ -290,6 +290,15 @@ const OperatorView = () => {
   const [operatorMembership, setOperatorMembership]       = useState(null);
   // Promo efectiva del operador
   const [effectivePromo, setEffectivePromo]               = useState(null);
+  // Chat interno
+  const [chatBookingId, setChatBookingId]     = useState(null);
+  const [chatMessages, setChatMessages]       = useState([]);
+  const [chatInput, setChatInput]             = useState('');
+  const [chatLoading, setChatLoading]         = useState(false);
+  const [chatSending, setChatSending]         = useState(false);
+  const [chatError, setChatError]             = useState('');
+  const chatBottomRef                         = useRef(null);
+  const chatChannelRef                        = useRef(null);
   // Deposito bancario
   const [depositModal, setDepositModal]                   = useState(false);
   const [depositLoading, setDepositLoading]               = useState(false);
@@ -617,6 +626,90 @@ const OperatorView = () => {
       setCancellingMembership(false);
     }
   };
+
+  // ── Helper token — sin getSession() para no romper el lock en móvil ───────────
+  const getToken = () => {
+    try {
+      const stored = localStorage.getItem('mazclean-auth')
+      if (stored) { const p = JSON.parse(stored); return p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY }
+    } catch {}
+    return SUPABASE_ANON_KEY
+  }
+
+  // ── Validar que el mensaje no contiene números de teléfono (8+ dígitos) ──────
+  const containsPhone = (text) => {
+    const digits = text.replace(/[^0-9]/g, '')
+    // Buscar secuencias de 8+ dígitos consecutivos en el texto original
+    return /\d[\d\s\-\.]{6,}\d/.test(text) && digits.length >= 8
+  }
+
+  // ── Cargar mensajes del chat ───────────────────────────────────────────────
+  const fetchMessages = async (bookingId) => {
+    setChatLoading(true)
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/messages?booking_id=eq.${bookingId}&order=created_at.asc&select=*`,
+        { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (res.ok) setChatMessages(await res.json())
+    } catch (err) { console.error('fetchMessages:', err) }
+    finally { setChatLoading(false) }
+  }
+
+  // ── Abrir chat ────────────────────────────────────────────────────────────
+  const openChat = async (bookingId) => {
+    setChatBookingId(bookingId)
+    setChatInput('')
+    setChatError('')
+    await fetchMessages(bookingId)
+    // Suscripción Realtime
+    if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current)
+    chatChannelRef.current = supabase
+      .channel(`chat-${bookingId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `booking_id=eq.${bookingId}` },
+        (payload) => {
+          setChatMessages(prev => {
+            if (prev.find(m => m.id === payload.new.id)) return prev
+            return [...prev, payload.new]
+          })
+        }
+      )
+      .subscribe()
+  }
+
+  const closeChat = () => {
+    setChatBookingId(null)
+    setChatMessages([])
+    setChatInput('')
+    setChatError('')
+    if (chatChannelRef.current) { supabase.removeChannel(chatChannelRef.current); chatChannelRef.current = null }
+  }
+
+  // ── Enviar mensaje ────────────────────────────────────────────────────────
+  const sendMessage = async () => {
+    if (!chatInput.trim() || chatSending) return
+    if (containsPhone(chatInput)) {
+      setChatError('No está permitido compartir números de contacto en el chat.')
+      return
+    }
+    setChatSending(true)
+    setChatError('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ booking_id: chatBookingId, sender_id: user.id, sender_role: 'operador', content: chatInput.trim() }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setChatInput('')
+    } catch (err) { setChatError('Error al enviar: ' + err.message) }
+    finally { setChatSending(false) }
+  }
+
+  // Scroll al fondo cuando llegan mensajes nuevos
+  useEffect(() => {
+    if (chatBottomRef.current) chatBottomRef.current.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages])
 
   const fetchOperatorBookings = async (silent = false) => {
     if (fetchingRef.current) return;
@@ -1301,10 +1394,16 @@ const OperatorView = () => {
                         </button>
                       )}
                       {['confirmado','en_camino','en_proceso'].includes(booking.status) && (
-                        <button onClick={e => { e.stopPropagation(); setIncidentBooking(booking); setIncidentModal(true); }}
-                          style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 10, padding: '13px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, minHeight: 48 }}>
-                          <AlertTriangle size={14} />
-                        </button>
+                        <>
+                          <button onClick={e => { e.stopPropagation(); openChat(booking.id); }}
+                            style={{ background: '#eff6ff', color: '#1e40af', border: '1.5px solid #bfdbfe', borderRadius: 10, padding: '13px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, minHeight: 48, position: 'relative' }}>
+                            💬
+                          </button>
+                          <button onClick={e => { e.stopPropagation(); setIncidentBooking(booking); setIncidentModal(true); }}
+                            style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 10, padding: '13px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, minHeight: 48 }}>
+                            <AlertTriangle size={14} />
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -1579,6 +1678,69 @@ const OperatorView = () => {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CHAT */}
+      {chatBookingId && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, width: '100%', maxWidth: isMobile ? '100%' : 440, height: isMobile ? '75vh' : 520, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>💬 Chat con el cliente</div>
+                <div style={{ color: '#bfdbfe', fontSize: 11, marginTop: 2 }}>Solo disponible durante el servicio activo</div>
+              </div>
+              <button onClick={closeChat} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 32, height: 32, color: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+            {/* Mensajes */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, background: '#f8fafc' }}>
+              {chatLoading ? (
+                <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 13, padding: 24 }}>Cargando mensajes...</div>
+              ) : chatMessages.length === 0 ? (
+                <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 13, padding: 24 }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>💬</div>
+                  Sin mensajes aún. Escribe para contactar al cliente.
+                </div>
+              ) : chatMessages.map(msg => {
+                const isMe = msg.sender_id === user?.id
+                return (
+                  <div key={msg.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
+                    <div style={{ maxWidth: '78%', padding: '8px 12px', borderRadius: isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: isMe ? '#1e40af' : '#fff', color: isMe ? '#fff' : '#1f2937', fontSize: 13, lineHeight: 1.5, boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
+                      {!isMe && <div style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', marginBottom: 3 }}>Cliente</div>}
+                      {msg.content}
+                      <div style={{ fontSize: 10, opacity: 0.7, marginTop: 3, textAlign: 'right' }}>
+                        {new Date(msg.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+              <div ref={chatBottomRef} />
+            </div>
+            {/* Aviso privacidad */}
+            <div style={{ background: '#fffbeb', borderTop: '1px solid #fde68a', padding: '6px 14px', fontSize: 11, color: '#92400e', flexShrink: 0 }}>
+              🔒 No compartas números telefónicos. La comunicación es exclusiva de la App.
+            </div>
+            {/* Input */}
+            <div style={{ padding: '10px 12px', borderTop: '1px solid #f3f4f6', background: '#fff', flexShrink: 0 }}>
+              {chatError && <div style={{ fontSize: 11, color: '#dc2626', marginBottom: 6, padding: '4px 8px', background: '#fef2f2', borderRadius: 6 }}>⚠️ {chatError}</div>}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={chatInput}
+                  onChange={e => { setChatInput(e.target.value); setChatError('') }}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                  placeholder="Escribe un mensaje..."
+                  style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, outline: 'none', fontFamily: 'inherit', minHeight: 42 }}
+                  maxLength={300}
+                />
+                <button onClick={sendMessage} disabled={chatSending || !chatInput.trim()}
+                  style={{ padding: '10px 16px', background: chatSending || !chatInput.trim() ? '#9ca3af' : '#1e40af', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: chatSending || !chatInput.trim() ? 'not-allowed' : 'pointer', minHeight: 42, flexShrink: 0 }}>
+                  {chatSending ? '⏳' : '➤'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

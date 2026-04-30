@@ -236,6 +236,85 @@ export default function ClientView() {
     }
   }
 
+  // ── Chat interno ──────────────────────────────────────────────────────────────
+  const containsPhone = (text) => /\d[\d\s\-\.]{6,}\d/.test(text) && text.replace(/[^0-9]/g, '').length >= 8
+
+  const fetchMessages = async (bookingId) => {
+    setChatLoading(true)
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/messages?booking_id=eq.${bookingId}&order=created_at.asc&select=*`,
+        { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (res.ok) {
+        const msgs = await res.json()
+        setChatMessages(msgs)
+        // Contar no leídos del operador
+        setUnreadCount(msgs.filter(m => m.sender_role === 'operador' && !m.read_at).length)
+      }
+    } catch (err) { console.error('fetchMessages:', err) }
+    finally { setChatLoading(false) }
+  }
+
+  const openChat = async (bookingId) => {
+    setChatOpen(true)
+    setChatInput('')
+    setChatError('')
+    setUnreadCount(0)
+    await fetchMessages(bookingId)
+    if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current)
+    chatChannelRef.current = supabase
+      .channel(`chat-client-${bookingId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `booking_id=eq.${bookingId}` },
+        (payload) => {
+          setChatMessages(prev => {
+            if (prev.find(m => m.id === payload.new.id)) return prev
+            return [...prev, payload.new]
+          })
+        }
+      )
+      .subscribe()
+  }
+
+  const closeChat = () => {
+    setChatOpen(false)
+    setChatMessages([])
+    setChatInput('')
+    setChatError('')
+    if (chatChannelRef.current) { supabase.removeChannel(chatChannelRef.current); chatChannelRef.current = null }
+  }
+
+  const sendMessage = async (bookingId) => {
+    if (!chatInput.trim() || chatSending) return
+    if (containsPhone(chatInput)) { setChatError('No está permitido compartir números de contacto en el chat.'); return }
+    setChatSending(true); setChatError('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ booking_id: bookingId, sender_id: user.id, sender_role: 'cliente', content: chatInput.trim() }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setChatInput('')
+    } catch (err) { setChatError('Error al enviar: ' + err.message) }
+    finally { setChatSending(false) }
+  }
+
+  useEffect(() => {
+    if (chatBottomRef.current) chatBottomRef.current.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages])
+
+  // Suscribir al chat cuando hay booking activo confirmado/en_camino/en_proceso
+  useEffect(() => {
+    if (!activeBooking?.id) return
+    if (!['confirmado','en_camino','en_proceso'].includes(activeBooking.status)) return
+    // Verificar mensajes no leídos del operador
+    fetch(
+      `${SUPABASE_URL}/rest/v1/messages?booking_id=eq.${activeBooking.id}&sender_role=eq.operador&read_at=is.null&select=id`,
+      { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+    ).then(r => r.json()).then(rows => setUnreadCount(rows?.length || 0)).catch(() => {})
+  }, [activeBooking?.id, activeBooking?.status])
+
   const fetchBookings = async (silent = false) => {
     if (fetchingRef.current) return
     fetchingRef.current = true
@@ -398,6 +477,21 @@ export default function ClientView() {
     <div style={styles.container}>
       {activeBooking && ['en_camino', 'en_proceso'].includes(activeBooking.status) && (
         <TrackingCard booking={activeBooking} mapsLoaded={mapsLoaded} eta={eta} setEta={setEta} />
+      )}
+
+      {/* Botón chat flotante — solo cuando hay servicio confirmado/en_camino/en_proceso */}
+      {activeBooking && ['confirmado','en_camino','en_proceso'].includes(activeBooking.status) && (
+        <div style={{ position: 'fixed', bottom: 80, right: 16, zIndex: 90 }}>
+          <button onClick={() => openChat(activeBooking.id)}
+            style={{ width: 52, height: 52, borderRadius: '50%', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', border: 'none', color: '#fff', fontSize: 22, cursor: 'pointer', boxShadow: '0 4px 16px rgba(30,64,175,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+            💬
+            {unreadCount > 0 && (
+              <span style={{ position: 'absolute', top: -4, right: -4, background: '#dc2626', color: '#fff', borderRadius: '50%', width: 20, height: 20, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {unreadCount}
+              </span>
+            )}
+          </button>
+        </div>
       )}
 
       <div style={styles.card}>
@@ -563,6 +657,61 @@ export default function ClientView() {
           </>
         )}
       </div>
+
+      {/* ════ MODAL CHAT ════ */}
+      {chatOpen && activeBooking && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, height: '75vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>💬 Chat con tu operador</div>
+                <div style={{ color: '#bfdbfe', fontSize: 11, marginTop: 2 }}>Comunicación directa durante el servicio</div>
+              </div>
+              <button onClick={closeChat} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 32, height: 32, color: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, background: '#f8fafc' }}>
+              {chatLoading ? (
+                <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 13, padding: 24 }}>Cargando mensajes...</div>
+              ) : chatMessages.length === 0 ? (
+                <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 13, padding: 24 }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>💬</div>
+                  Sin mensajes aún. Puedes escribirle a tu operador.
+                </div>
+              ) : chatMessages.map(msg => {
+                const isMe = msg.sender_role === 'cliente'
+                return (
+                  <div key={msg.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
+                    <div style={{ maxWidth: '78%', padding: '8px 12px', borderRadius: isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: isMe ? '#1e40af' : '#fff', color: isMe ? '#fff' : '#1f2937', fontSize: 13, lineHeight: 1.5, boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
+                      {!isMe && <div style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', marginBottom: 3 }}>Operador</div>}
+                      {msg.content}
+                      <div style={{ fontSize: 10, opacity: 0.7, marginTop: 3, textAlign: 'right' }}>
+                        {new Date(msg.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+              <div ref={chatBottomRef} />
+            </div>
+            <div style={{ background: '#fffbeb', borderTop: '1px solid #fde68a', padding: '6px 14px', fontSize: 11, color: '#92400e', flexShrink: 0 }}>
+              🔒 No compartas números telefónicos. Comunicación exclusiva de la App.
+            </div>
+            <div style={{ padding: '10px 12px', borderTop: '1px solid #f3f4f6', background: '#fff', flexShrink: 0 }}>
+              {chatError && <div style={{ fontSize: 11, color: '#dc2626', marginBottom: 6, padding: '4px 8px', background: '#fef2f2', borderRadius: 6 }}>⚠️ {chatError}</div>}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input value={chatInput} onChange={e => { setChatInput(e.target.value); setChatError('') }}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(activeBooking.id) } }}
+                  placeholder="Escribe un mensaje..." maxLength={300}
+                  style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, outline: 'none', fontFamily: 'inherit', minHeight: 42 }} />
+                <button onClick={() => sendMessage(activeBooking.id)} disabled={chatSending || !chatInput.trim()}
+                  style={{ padding: '10px 16px', background: chatSending || !chatInput.trim() ? '#9ca3af' : '#1e40af', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: chatSending || !chatInput.trim() ? 'not-allowed' : 'pointer', minHeight: 42, flexShrink: 0 }}>
+                  {chatSending ? '⏳' : '➤'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ════ MODAL DEPOSITO BANCARIO ════ */}
       {depositModal && (
