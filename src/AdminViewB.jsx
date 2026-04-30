@@ -78,6 +78,11 @@ const AdminViewB = ({
   const [activeChip, setActiveChip]         = useState('todos');
   const [zoneSearch, setZoneSearch]         = useState('');
   const [radiusFilter, setRadiusFilter]     = useState('all');
+  // ── Paginación ────────────────────────────────────────────────────────────
+  const [operatorsPage, setOperatorsPage]   = useState(1);
+  const [pendingPage, setPendingPage]       = useState(1);
+  const OPERATORS_PER_PAGE = 15;
+  const PENDING_PER_PAGE   = 10;
 
   // ── Review modal ─────────────────────────────────────────────────────────
   const [reviewModal, setReviewModal]       = useState(false);
@@ -326,6 +331,10 @@ const AdminViewB = ({
     }
     return true;
   });
+
+  // Reset páginas al cambiar filtros
+  useEffect(() => { setOperatorsPage(1); }, [activeChip, zoneSearch, radiusFilter]);
+  useEffect(() => { setPendingPage(1); }, [zoneSearch]);
 
   const filteredPending = pendingOperators.filter(op => {
     if (activeChip === 'sin_revisar')  return ['pendiente','pending_review'].includes(op.operator_status);
@@ -693,7 +702,7 @@ const AdminViewB = ({
             <button onClick={fetchPendingOperators} style={{ border: 'none', cursor: 'pointer', color: '#92400e', fontSize: 13, fontWeight: 600, padding: '6px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', minHeight: 36 }}>↻ Refrescar</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, width: '100%', maxWidth: '100%', boxSizing: 'border-box', minWidth: 0 }}>
-            {filteredPending.map(op => {
+            {paginatedPending.map(op => {
               const allRejDocs    = Array.isArray(op.rejected_documents) ? op.rejected_documents : [];
               const correctedDocs = allRejDocs.filter(d => d.status === 'corregido');
               const pendingDocs   = allRejDocs.filter(d => d.status !== 'corregido');
@@ -819,6 +828,17 @@ const AdminViewB = ({
         </div>
       )}
 
+      {/* Paginación — pendientes */}
+      {showPending && filteredPending.length > PENDING_PER_PAGE && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12, padding: '10px 0' }}>
+          <button onClick={() => setPendingPage(p => Math.max(1, p - 1))} disabled={pendingPage === 1}
+            style={{ padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e5e7eb', background: pendingPage === 1 ? '#f9fafb' : '#fff', color: pendingPage === 1 ? '#9ca3af' : '#374151', fontSize: 12, fontWeight: 600, cursor: pendingPage === 1 ? 'not-allowed' : 'pointer', minHeight: 38 }}>← Anterior</button>
+          <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 600 }}>Página {pendingPage} de {totalPendingPages} · {filteredPending.length} pendientes</span>
+          <button onClick={() => setPendingPage(p => Math.min(totalPendingPages, p + 1))} disabled={pendingPage === totalPendingPages}
+            style={{ padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e5e7eb', background: pendingPage === totalPendingPages ? '#f9fafb' : '#fff', color: pendingPage === totalPendingPages ? '#9ca3af' : '#374151', fontSize: 12, fontWeight: 600, cursor: pendingPage === totalPendingPages ? 'not-allowed' : 'pointer', minHeight: 38 }}>Siguiente →</button>
+        </div>
+      )}
+
       {showPending && filteredPending.length === 0 && (
         <div style={{ background: '#f0fdf4', borderRadius: 12, border: '1.5px solid #bbf7d0', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 10 }}>
           <span>✅</span><span style={{ fontSize: 13, color: '#166534', fontWeight: 600 }}>Sin operadores pendientes en esta vista</span>
@@ -897,11 +917,21 @@ const AdminViewB = ({
               {filteredOperators.length > 0 && <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>({filteredOperators.length} operadores)</span>}
             </h2>
           </div>
+          {/* Paginación — operadores aprobados */}
+          {filteredOperators.length > OPERATORS_PER_PAGE && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginBottom: 16, padding: '10px 0' }}>
+              <button onClick={() => setOperatorsPage(p => Math.max(1, p - 1))} disabled={operatorsPage === 1}
+                style={{ padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e5e7eb', background: operatorsPage === 1 ? '#f9fafb' : '#fff', color: operatorsPage === 1 ? '#9ca3af' : '#374151', fontSize: 12, fontWeight: 600, cursor: operatorsPage === 1 ? 'not-allowed' : 'pointer', minHeight: 38 }}>← Anterior</button>
+              <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 600 }}>Página {operatorsPage} de {totalOperatorsPages} · {filteredOperators.length} operadores</span>
+              <button onClick={() => setOperatorsPage(p => Math.min(totalOperatorsPages, p + 1))} disabled={operatorsPage === totalOperatorsPages}
+                style={{ padding: '7px 14px', borderRadius: 8, border: '1.5px solid #e5e7eb', background: operatorsPage === totalOperatorsPages ? '#f9fafb' : '#fff', color: operatorsPage === totalOperatorsPages ? '#9ca3af' : '#374151', fontSize: 12, fontWeight: 600, cursor: operatorsPage === totalOperatorsPages ? 'not-allowed' : 'pointer', minHeight: 38 }}>Siguiente →</button>
+            </div>
+          )}
           {filteredOperators.length === 0 ? (
             <p style={{ color: '#9ca3af', fontSize: 14, fontStyle: 'italic' }}>No hay operadores en esta vista.</p>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(280px,1fr))', gap: 12 }}>
-              {filteredOperators.map(op => {
+              {paginatedOperators.map(op => {
                 const status = getOperatorStatus(op.id);
                 const opBookings = bookings.filter(b => b.operator_id === op.id && b.status === 'finalizado');
                 const totalRev = opBookings.reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);

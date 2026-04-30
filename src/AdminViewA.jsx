@@ -40,6 +40,9 @@ const AdminViewA = ({
   const [savingEdit, setSavingEdit]     = useState(false);
   const [photoModal, setPhotoModal]     = useState(null);
   const [serverNow, setServerNow]       = useState(null);
+  // Paginación
+  const [bookingsPage, setBookingsPage] = useState(1);
+  const BOOKINGS_PER_PAGE = 20;
 
   useEffect(() => {
     const fetchServerTime = async () => {
@@ -72,11 +75,17 @@ const AdminViewA = ({
     return true;
   };
 
+  // Reset página al cambiar filtros
+  useEffect(() => { setBookingsPage(1); }, [searchTerm, statusFilter, dateFilter]);
+
   const filteredBookings = bookings.filter(b => {
     const matchSearch = b.booking_ref?.toLowerCase().includes(searchTerm.toLowerCase()) || b.customer?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) || b.service_name?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchStatus = statusFilter === 'all' || b.status === statusFilter;
     return matchSearch && matchStatus && applyDateFilter(b);
   });
+
+  const totalBookingPages = Math.max(1, Math.ceil(filteredBookings.length / BOOKINGS_PER_PAGE));
+  const paginatedBookings = filteredBookings.slice((bookingsPage - 1) * BOOKINGS_PER_PAGE, bookingsPage * BOOKINGS_PER_PAGE);
 
   const getOperatorStatus = (operatorId, forBooking = null) => {
     if (forBooking) {
@@ -314,7 +323,7 @@ const AdminViewA = ({
         <div style={{ textAlign: 'center', padding: 48, color: '#9ca3af', background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>No se encontraron reservaciones.</div>
       ) : (
         <div style={{ display: 'grid', gap: 10 }}>
-          {filteredBookings.map(booking => {
+          {paginatedBookings.map(booking => {
             const sc = getStatusStyle(booking.status);
             const urgent = isUrgent(booking);
             const delayed = isDelayed(booking);
