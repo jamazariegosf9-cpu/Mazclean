@@ -452,8 +452,20 @@ const OperatorView = () => {
   // ── Fetch bookings ────────────────────────────────────────────────────────
   const fetchMembershipConfig = async () => {
     try {
-      const { data } = await supabase.from('membership_config').select('operator_price,operator_duration_days,operator_enabled').single();
-      setMembershipConfig(data);
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      let token = supabaseKey;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
+      } catch {}
+      const res = await fetch(`${supabaseUrl}/rest/v1/membership_config?select=operator_price,operator_duration_days,operator_enabled&limit=1`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMembershipConfig(data?.[0] || null);
+      }
     } catch (err) { console.error('fetchMembershipConfig:', err); }
   };
 
