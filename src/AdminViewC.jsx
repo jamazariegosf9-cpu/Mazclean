@@ -34,14 +34,14 @@ function useIsMobile() {
 
 // ── Componente de configuración paramétrica de membresías ─────────────────
 const MembresiaConfig = ({ isMobile }) => {
-  const [config, setConfig]     = useState(null);
-  const [saving, setSaving]     = useState(false);
-  const [form, setForm]         = useState(null);
-  const [success, setSuccess]   = useState('');
-  const [error, setError]       = useState('');
+  const [config, setConfig]   = useState(null);
+  const [saving, setSaving]   = useState(false);
+  const [form, setForm]       = useState(null);
+  const [success, setSuccess] = useState('');
+  const [error, setError]     = useState('');
 
-  const supabaseUrl      = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseAnonKey  = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const supabaseUrl     = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
   useEffect(() => { fetchConfig(); }, []);
 
@@ -61,19 +61,31 @@ const MembresiaConfig = ({ isMobile }) => {
         const stored = localStorage.getItem('mazclean-auth');
         if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseAnonKey; }
       } catch {}
+      const body = {
+        // Operadores
+        operator_price:          parseFloat(form.operator_price)       || 200,
+        operator_duration_days:  parseInt(form.operator_duration_days)  || 30,
+        operator_enabled:        form.operator_enabled,
+        operator_trial_days:     parseInt(form.operator_trial_days)     || 0,
+        operator_promo_price:    form.operator_promo_active ? (parseFloat(form.operator_promo_price) || null) : null,
+        operator_promo_days:     form.operator_promo_active ? (parseInt(form.operator_promo_days) || null)    : null,
+        operator_promo_label:    form.operator_promo_active ? (form.operator_promo_label || null)             : null,
+        // Clientes
+        client_price:            parseFloat(form.client_price)          || 30,
+        client_duration_days:    parseInt(form.client_duration_days)    || 30,
+        client_enabled:          form.client_enabled,
+        client_trial_days:       parseInt(form.client_trial_days)       || 0,
+        client_promo_price:      form.client_promo_active ? (parseFloat(form.client_promo_price) || null)    : null,
+        client_promo_days:       form.client_promo_active ? (parseInt(form.client_promo_days) || null)       : null,
+        client_promo_label:      form.client_promo_active ? (form.client_promo_label || null)                : null,
+        // General
+        guarantee_services:      parseInt(form.guarantee_services)      || 5,
+        updated_at:              new Date().toISOString(),
+      };
       const res = await fetch(`${supabaseUrl}/rest/v1/membership_config?id=eq.${config.id}`, {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseAnonKey, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({
-          operator_price:        parseFloat(form.operator_price) || 200,
-          operator_duration_days: parseInt(form.operator_duration_days) || 30,
-          operator_enabled:      form.operator_enabled,
-          client_price:          parseFloat(form.client_price) || 99,
-          client_duration_days:  parseInt(form.client_duration_days) || 30,
-          client_enabled:        form.client_enabled,
-          guarantee_services:    parseInt(form.guarantee_services) || 5,
-          updated_at:            new Date().toISOString(),
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setConfig({ ...form });
@@ -85,70 +97,142 @@ const MembresiaConfig = ({ isMobile }) => {
 
   if (!form) return <div style={{ padding: 48, textAlign: 'center', color: '#9ca3af' }}>Cargando...</div>;
 
-  const inputStyle = { padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 };
-  const labelStyle = { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 5, display: 'block' };
+  const inp  = { padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 15, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 44 };
+  const lbl  = { fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block' };
+  const grid2 = { display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 };
+  const grid3 = { display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 12 };
+
+  // Precio efectivo (promo si activa, normal si no)
+  const opEffective  = form.operator_promo_active && form.operator_promo_price ? form.operator_promo_price : form.operator_price;
+  const clEffective  = form.client_promo_active   && form.client_promo_price   ? form.client_promo_price   : form.client_price;
 
   return (
-    <div style={{ marginTop: 16, display: 'grid', gap: 16 }}>
+    <div style={{ marginTop: 16, display: 'grid', gap: 20 }}>
 
-      {/* Membresía Operadores */}
+      {/* ── OPERADORES ── */}
       <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
         <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h2 style={{ color: '#fff', fontWeight: 700, fontSize: 15, margin: 0 }}>👷 Membresía Operadores</h2>
-            <p style={{ color: '#bfdbfe', fontSize: 12, margin: '2px 0 0' }}>Configuración del cobro mensual a operadores</p>
+            <p style={{ color: '#bfdbfe', fontSize: 12, margin: '2px 0 0' }}>
+              Precio efectivo: <strong>${opEffective} MXN/mes</strong>
+              {form.operator_trial_days > 0 && <span> · {form.operator_trial_days} días gratis</span>}
+            </p>
           </div>
           <button onClick={() => setForm(p => ({ ...p, operator_enabled: !p.operator_enabled }))}
             style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: form.operator_enabled ? '#10b981' : 'rgba(255,255,255,0.2)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 36 }}>
             {form.operator_enabled ? '✅ Habilitado' : '○ Deshabilitado'}
           </button>
         </div>
-        <div style={{ padding: isMobile ? '16px' : '20px 24px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 14 }}>
-            <div>
-              <label style={labelStyle}>Precio mensual (MXN)</label>
-              <input type="number" min="0" value={form.operator_price} onChange={e => setForm(p => ({ ...p, operator_price: e.target.value }))} style={inputStyle} />
+        <div style={{ padding: isMobile ? '14px' : '18px 22px', display: 'grid', gap: 14 }}>
+          {/* Precio y duración base */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Precio base</div>
+            <div style={grid3}>
+              <div><label style={lbl}>Precio mensual (MXN)</label><input type="number" min="0" value={form.operator_price} onChange={e => setForm(p => ({ ...p, operator_price: e.target.value }))} style={inp} /></div>
+              <div><label style={lbl}>Duración (días)</label><input type="number" min="1" value={form.operator_duration_days} onChange={e => setForm(p => ({ ...p, operator_duration_days: e.target.value }))} style={inp} /></div>
+              <div><label style={lbl}>Servicios garantizados</label><input type="number" min="0" value={form.guarantee_services} onChange={e => setForm(p => ({ ...p, guarantee_services: e.target.value }))} style={inp} /></div>
             </div>
-            <div>
-              <label style={labelStyle}>Duración (días)</label>
-              <input type="number" min="1" value={form.operator_duration_days} onChange={e => setForm(p => ({ ...p, operator_duration_days: e.target.value }))} style={inputStyle} />
+          </div>
+          {/* Período de prueba */}
+          <div style={{ background: '#f0fdf4', borderRadius: 10, padding: '12px 14px', border: '1px solid #bbf7d0' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#065f46', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>🎁 Período de prueba gratuito</div>
+            <div style={{ maxWidth: 220 }}>
+              <label style={lbl}>Días gratis (0 = sin prueba)</label>
+              <input type="number" min="0" max="90" value={form.operator_trial_days || 0} onChange={e => setForm(p => ({ ...p, operator_trial_days: e.target.value }))} style={inp} />
             </div>
-            <div>
-              <label style={labelStyle}>Servicios garantizados (1er mes)</label>
-              <input type="number" min="0" value={form.guarantee_services} onChange={e => setForm(p => ({ ...p, guarantee_services: e.target.value }))} style={inputStyle} />
+            {parseInt(form.operator_trial_days) > 0 && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#059669' }}>✅ Los nuevos operadores tendrán {form.operator_trial_days} días gratis antes del primer cobro.</div>
+            )}
+          </div>
+          {/* Promoción */}
+          <div style={{ background: '#fffbeb', borderRadius: 10, padding: '12px 14px', border: '1px solid #fde68a' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: 0.5 }}>🏷️ Precio promocional</div>
+              <button onClick={() => setForm(p => ({ ...p, operator_promo_active: !p.operator_promo_active }))}
+                style={{ padding: '4px 12px', borderRadius: 8, border: 'none', background: form.operator_promo_active ? '#f59e0b' : '#e5e7eb', color: form.operator_promo_active ? '#fff' : '#6b7280', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                {form.operator_promo_active ? '✅ Activa' : '○ Inactiva'}
+              </button>
             </div>
+            {form.operator_promo_active && (
+              <div style={grid3}>
+                <div><label style={lbl}>Precio promo (MXN)</label><input type="number" min="0" value={form.operator_promo_price || ''} onChange={e => setForm(p => ({ ...p, operator_promo_price: e.target.value }))} placeholder="ej. 150" style={inp} /></div>
+                <div><label style={lbl}>Días de la promo</label><input type="number" min="1" value={form.operator_promo_days || ''} onChange={e => setForm(p => ({ ...p, operator_promo_days: e.target.value }))} placeholder="ej. 30" style={inp} /></div>
+                <div><label style={lbl}>Etiqueta (ej. "Lanzamiento")</label><input type="text" value={form.operator_promo_label || ''} onChange={e => setForm(p => ({ ...p, operator_promo_label: e.target.value }))} placeholder="Precio especial" style={inp} /></div>
+              </div>
+            )}
+            {form.operator_promo_active && form.operator_promo_price && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#92400e' }}>
+                💡 Los operadores verán <strong>${form.operator_promo_price} MXN/mes</strong> en lugar de ${form.operator_price} MXN.
+                {form.operator_promo_label && <span> Etiqueta: "{form.operator_promo_label}"</span>}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Membresía Cliente Premium */}
+      {/* ── CLIENTES ── */}
       <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
         <div style={{ background: 'linear-gradient(135deg,#7c3aed,#a78bfa)', padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h2 style={{ color: '#fff', fontWeight: 700, fontSize: 15, margin: 0 }}>⭐ Membresía Premium Clientes</h2>
-            <p style={{ color: '#ede9fe', fontSize: 12, margin: '2px 0 0' }}>Configuración de membresía premium para clientes</p>
+            <p style={{ color: '#ede9fe', fontSize: 12, margin: '2px 0 0' }}>
+              Precio efectivo: <strong>${clEffective} MXN/mes</strong>
+              {form.client_trial_days > 0 && <span> · {form.client_trial_days} días gratis</span>}
+            </p>
           </div>
           <button onClick={() => setForm(p => ({ ...p, client_enabled: !p.client_enabled }))}
             style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: form.client_enabled ? '#10b981' : 'rgba(255,255,255,0.2)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 36 }}>
             {form.client_enabled ? '✅ Habilitado' : '○ Deshabilitado'}
           </button>
         </div>
-        <div style={{ padding: isMobile ? '16px' : '20px 24px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14 }}>
-            <div>
-              <label style={labelStyle}>Precio mensual (MXN)</label>
-              <input type="number" min="0" value={form.client_price} onChange={e => setForm(p => ({ ...p, client_price: e.target.value }))} style={inputStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>Duración (días)</label>
-              <input type="number" min="1" value={form.client_duration_days} onChange={e => setForm(p => ({ ...p, client_duration_days: e.target.value }))} style={inputStyle} />
+        <div style={{ padding: isMobile ? '14px' : '18px 22px', display: 'grid', gap: 14 }}>
+          {/* Precio base */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Precio base</div>
+            <div style={grid2}>
+              <div><label style={lbl}>Precio mensual (MXN)</label><input type="number" min="0" value={form.client_price} onChange={e => setForm(p => ({ ...p, client_price: e.target.value }))} style={inp} /></div>
+              <div><label style={lbl}>Duración (días)</label><input type="number" min="1" value={form.client_duration_days} onChange={e => setForm(p => ({ ...p, client_duration_days: e.target.value }))} style={inp} /></div>
             </div>
           </div>
-          <div style={{ marginTop: 14, background: '#f5f3ff', borderRadius: 10, padding: '12px 14px', border: '1px solid #e9d5ff' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed', marginBottom: 4 }}>Beneficios Premium (próximamente)</div>
-            <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.6 }}>
-              ⭐ Prioridad en rondas de asignación · 📅 Horarios reservados · 🎯 Operador preferente · ❌ Cancelación flexible
+          {/* Período de prueba */}
+          <div style={{ background: '#f0fdf4', borderRadius: 10, padding: '12px 14px', border: '1px solid #bbf7d0' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#065f46', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>🎁 Período de prueba gratuito</div>
+            <div style={{ maxWidth: 220 }}>
+              <label style={lbl}>Días gratis (0 = sin prueba)</label>
+              <input type="number" min="0" max="90" value={form.client_trial_days || 0} onChange={e => setForm(p => ({ ...p, client_trial_days: e.target.value }))} style={inp} />
             </div>
+            {parseInt(form.client_trial_days) > 0 && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#059669' }}>✅ Los nuevos clientes tendrán {form.client_trial_days} días gratis antes del primer cobro.</div>
+            )}
+          </div>
+          {/* Promoción */}
+          <div style={{ background: '#faf5ff', borderRadius: 10, padding: '12px 14px', border: '1px solid #e9d5ff' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#6b21a8', textTransform: 'uppercase', letterSpacing: 0.5 }}>🏷️ Precio promocional</div>
+              <button onClick={() => setForm(p => ({ ...p, client_promo_active: !p.client_promo_active }))}
+                style={{ padding: '4px 12px', borderRadius: 8, border: 'none', background: form.client_promo_active ? '#7c3aed' : '#e5e7eb', color: form.client_promo_active ? '#fff' : '#6b7280', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                {form.client_promo_active ? '✅ Activa' : '○ Inactiva'}
+              </button>
+            </div>
+            {form.client_promo_active && (
+              <div style={grid3}>
+                <div><label style={lbl}>Precio promo (MXN)</label><input type="number" min="0" value={form.client_promo_price || ''} onChange={e => setForm(p => ({ ...p, client_promo_price: e.target.value }))} placeholder="ej. 19" style={inp} /></div>
+                <div><label style={lbl}>Días de la promo</label><input type="number" min="1" value={form.client_promo_days || ''} onChange={e => setForm(p => ({ ...p, client_promo_days: e.target.value }))} placeholder="ej. 30" style={inp} /></div>
+                <div><label style={lbl}>Etiqueta (ej. "Intro")</label><input type="text" value={form.client_promo_label || ''} onChange={e => setForm(p => ({ ...p, client_promo_label: e.target.value }))} placeholder="Precio especial" style={inp} /></div>
+              </div>
+            )}
+            {form.client_promo_active && form.client_promo_price && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#6b21a8' }}>
+                💡 Los clientes verán <strong>${form.client_promo_price} MXN/mes</strong> en lugar de ${form.client_price} MXN.
+                {form.client_promo_label && <span> Etiqueta: "{form.client_promo_label}"</span>}
+              </div>
+            )}
+          </div>
+          {/* Beneficios */}
+          <div style={{ background: '#f5f3ff', borderRadius: 10, padding: '12px 14px', border: '1px solid #e9d5ff' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed', marginBottom: 4 }}>Beneficios Premium</div>
+            <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.6 }}>⭐ Prioridad en asignación · 📅 Horarios reservados · 🎯 Operador preferente · ❌ Cancelación flexible</div>
           </div>
         </div>
       </div>
@@ -247,27 +331,23 @@ const AdminViewC = () => {
         fetch(`${SUPABASE_URL}/rest/v1/profiles?role=eq.operador&select=*`, { headers }),
       ]);
 
-      // Si el fetch falla, preservar estado anterior — no vaciar el panel
-      const bookingsData  = bRes.ok  ? await bRes.json() : null;
-      const operatorsData = oRes.ok  ? await oRes.json() : null;
+      const bookingsData  = bRes.ok ? await bRes.json() : [];
+      const operatorsData = oRes.ok ? await oRes.json() : [];
 
-      if (bookingsData  !== null) setBookings(bookingsData);
-      if (operatorsData !== null) setOperators(operatorsData);
+      setBookings(bookingsData || []);
+      setOperators(operatorsData || []);
 
-      // Para stats usar los datos disponibles (anteriores si fetch falló)
-      if (bookingsData !== null) {
-        const total     = bookingsData.length;
-        const completed = bookingsData.filter(b => b.status === 'finalizado').length;
-        const cancelled = bookingsData.filter(b => b.status === 'cancelado').length;
-        const revenue   = bookingsData.filter(b => b.status === 'finalizado').reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
-        setStats({
-          total, completed, cancelled,
-          pending:        bookingsData.filter(b => b.status === 'pendiente').length,
-          active:         bookingsData.filter(b => ['confirmado','en_camino','en_proceso'].includes(b.status)).length,
-          revenue,
-          completionRate: total > 0 ? Math.round((completed / total) * 100) : 0
-        });
-      }
+      const total     = (bookingsData || []).length;
+      const completed = (bookingsData || []).filter(b => b.status === 'finalizado').length;
+      const cancelled = (bookingsData || []).filter(b => b.status === 'cancelado').length;
+      const revenue   = (bookingsData || []).filter(b => b.status === 'finalizado').reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
+      setStats({
+        total, completed, cancelled,
+        pending:        (bookingsData || []).filter(b => b.status === 'pendiente').length,
+        active:         (bookingsData || []).filter(b => ['confirmado','en_camino','en_proceso'].includes(b.status)).length,
+        revenue,
+        completionRate: total > 0 ? Math.round((completed / total) * 100) : 0
+      });
     } catch (err) { console.error('fetchData:', err); }
     finally { setLoading(false); }
   };
