@@ -1,5 +1,20 @@
-// src/lib/whatsapp.js
-import { supabase } from './supabase'
+// src/lib/whatsapp.js v2
+// Fix: reemplaza supabase.functions.invoke() por fetch directo
+// Motivo: invoke() bloquea el lock de Supabase en móvil causando que los mensajes no se envíen
+
+const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+function getToken() {
+  try {
+    const stored = localStorage.getItem('mazclean-auth')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      return parsed?.access_token || parsed?.session?.access_token || SUPABASE_KEY
+    }
+  } catch {}
+  return SUPABASE_KEY
+}
 
 /**
  * Envía un mensaje de WhatsApp al cliente
@@ -15,19 +30,27 @@ export async function sendWhatsApp(event, phone, booking) {
   }
 
   try {
-    const { data, error } = await supabase.functions.invoke('send-whatsapp', {
-      body: { event, phone, booking }
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
+      method:  'POST',
+      headers: {
+        'Authorization': `Bearer ${getToken()}`,
+        'apikey':        SUPABASE_KEY,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({ event, phone, booking }),
     })
 
-    if (error) {
-      console.warn(`⚠️ Twilio Límite/Error [${event}]:`, error.message)
-      return { success: false, error: error.message }
+    const data = await res.json()
+
+    if (!res.ok) {
+      console.warn(`⚠️ WhatsApp error [${event}]:`, data?.error || res.status)
+      return { success: false, error: data?.error }
     }
 
     console.log(`✅ WhatsApp enviado [${event}] a ${phone}`)
     return data
   } catch (err) {
-    console.error(`⚠️ Error crítico en invocación [${event}]:`, err.message)
+    console.error(`⚠️ Error crítico en sendWhatsApp [${event}]:`, err.message)
     return { success: false, error: err.message }
   }
 }
@@ -42,13 +65,21 @@ export async function sendWhatsApp(event, phone, booking) {
  */
 export async function updateOperatorLocation(bookingId, operatorId, lat, lng) {
   try {
-    const { data, error } = await supabase.functions.invoke('track-operator', {
-      body: { booking_id: bookingId, operator_id: operatorId, lat, lng }
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/track-operator`, {
+      method:  'POST',
+      headers: {
+        'Authorization': `Bearer ${getToken()}`,
+        'apikey':        SUPABASE_KEY,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({ booking_id: bookingId, operator_id: operatorId, lat, lng }),
     })
 
-    if (error) {
-      console.warn('⚠️ track-operator error:', error.message)
-      return { success: false, error: error.message }
+    const data = await res.json()
+
+    if (!res.ok) {
+      console.warn('⚠️ track-operator error:', data?.error || res.status)
+      return { success: false, error: data?.error }
     }
 
     return data
