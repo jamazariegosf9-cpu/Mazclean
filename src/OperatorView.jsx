@@ -280,12 +280,13 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
 // ── Componente principal ──────────────────────────────────────────────────────
 const OperatorView = () => {
   const { user, profile, signOut } = useAuth();
-  const [membershipConfig, setMembershipConfig]       = useState(null);
-  const [payingMembership, setPayingMembership]       = useState(false);
-  const [payError, setPayError]                       = useState('');
-  const [membershipHistory, setMembershipHistory]     = useState([]);
+  const [membershipConfig, setMembershipConfig]           = useState(null);
+  const [payingMembership, setPayingMembership]           = useState(false);
+  const [payError, setPayError]                           = useState('');
+  const [membershipHistory, setMembershipHistory]         = useState([]);
   const [showMembershipHistory, setShowMembershipHistory] = useState(false);
-  const [payError, setPayError]                   = useState('');
+  // Estado local de membresía — se refresca tras regresar de Stripe
+  const [operatorMembership, setOperatorMembership]       = useState(null);
   const isMobile = useIsMobile();
 
   // ── Estado general ────────────────────────────────────────────────────────
@@ -340,6 +341,34 @@ const OperatorView = () => {
     fetchOperatorBookings();
     fetchBookingRequests();
     fetchMembershipConfig();
+
+    // ── Detectar regreso desde Stripe con pago exitoso ────────────────────
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('membership') === 'success') {
+      // Limpiar URL inmediatamente
+      window.history.replaceState({}, '', window.location.pathname);
+      // Esperar 3s para que el webhook procese, luego refrescar membresía
+      setTimeout(async () => {
+        try {
+          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+          const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+          let token = supabaseKey;
+          try {
+            const stored = localStorage.getItem('mazclean-auth');
+            if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
+          } catch {}
+          const res = await fetch(
+            `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=membership_status,membership_type,membership_end_at,membership_start_at,membership_record_since`,
+            { headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey } }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.[0]) setOperatorMembership(data[0]);
+          }
+        } catch (err) { console.error('refreshMembership:', err); }
+      }, 3000);
+    }
+
     // Realtime: cambios en bookings del operador
     const bookingsChannel = supabase
       .channel('operator-bookings')
@@ -964,6 +993,11 @@ const OperatorView = () => {
   const photoBtnLabel      = uploadingPhoto ? (uploadProgress || 'Subiendo...') : currentPhotoSaved ? 'Cambiar foto' : 'Tomar foto';
   const canAdvancePhoto    = currentPhotoSaved && !uploadingPhoto;
 
+  // ── Perfil efectivo: usa refresco local si existe (post-pago Stripe) ────
+  const effectiveProfile = operatorMembership
+    ? { ...profile, ...operatorMembership }
+    : profile;
+
   // ── Tabs con el nuevo "Solicitudes" primero ───────────────────────────────
   const tabs = [
     { id: 'solicitudes',  label: 'Solicitudes', icon: '🔔', count: pendingRequests.length },
@@ -983,29 +1017,29 @@ const OperatorView = () => {
             <h1 style={{ color: '#fff', fontSize: isMobile ? 18 : 22, fontWeight: 700, margin: '0 0 4px' }}>🚗 Mis Servicios</h1>
             <p style={{ color: '#bfdbfe', fontSize: 13, margin: 0 }}>Hola, {user?.user_metadata?.full_name || profile?.full_name || 'Operador'}</p>
             {/* Banner membresía */}
-            {profile?.membership_status === 'activa' && (
+            {effectiveProfile?.membership_status === 'activa' && (
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, background: 'rgba(16,185,129,0.2)', border: '1px solid rgba(16,185,129,0.4)', borderRadius: 20, padding: '3px 10px' }}>
                 <span style={{ fontSize: 11, color: '#6ee7b7', fontWeight: 700 }}>
                   💳 Membresía activa
-                  {profile.membership_end_at ? ` — vence ${new Date(profile.membership_end_at).toLocaleDateString('es-MX')}` : ''}
+                  {effectiveProfile.membership_end_at ? ` — vence ${new Date(effectiveProfile.membership_end_at).toLocaleDateString('es-MX')}` : ''}
                 </span>
               </div>
             )}
-            {profile?.membership_status === 'vencida' && (
+            {effectiveProfile?.membership_status === 'vencida' && (
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 20, padding: '3px 10px' }}>
                 <span style={{ fontSize: 11, color: '#fde68a', fontWeight: 700 }}>⚠️ Membresía vencida</span>
               </div>
             )}
             {/* Record de miembro */}
-            {profile?.membership_record_since && (
+            {effectiveProfile?.membership_record_since && (
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, marginLeft: 4 }}>
                 <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>
-                  🏅 Miembro desde {new Date(profile.membership_record_since).toLocaleDateString('es-MX', { year: 'numeric', month: 'short' })}
+                  🏅 Miembro desde {new Date(effectiveProfile.membership_record_since).toLocaleDateString('es-MX', { year: 'numeric', month: 'short' })}
                 </span>
               </div>
             )}
             {/* Botón pago — activa: renovar anticipado (solo si vence en ≤15 días); inactiva/vencida: activar */}
-            {profile?.membership_status !== 'activa' && (
+            {effectiveProfile?.membership_status !== 'activa' && (
               <div style={{ marginTop: 8 }}>
                 {payError && <div style={{ fontSize: 10, color: '#fca5a5', marginBottom: 4 }}>⚠️ {payError}</div>}
                 <button onClick={handleSubscribeOperator} disabled={payingMembership}
@@ -1014,8 +1048,8 @@ const OperatorView = () => {
                 </button>
               </div>
             )}
-            {profile?.membership_status === 'activa' && profile?.membership_end_at && (() => {
-              const daysLeft = Math.ceil((new Date(profile.membership_end_at) - new Date()) / (1000 * 60 * 60 * 24));
+            {effectiveProfile?.membership_status === 'activa' && effectiveProfile?.membership_end_at && (() => {
+              const daysLeft = Math.ceil((new Date(effectiveProfile.membership_end_at) - new Date()) / (1000 * 60 * 60 * 24));
               if (daysLeft > 15) return null;
               return (
                 <div style={{ marginTop: 6 }}>
