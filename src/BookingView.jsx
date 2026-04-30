@@ -3,7 +3,7 @@ import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
 import { sendWhatsApp } from './lib/whatsapp'
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyA0k4Rg_XowxjDGUsLD3BldhpTINFMihjw'
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY   = import.meta.env.VITE_SUPABASE_ANON_KEY
 
