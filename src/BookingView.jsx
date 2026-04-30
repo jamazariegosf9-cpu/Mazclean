@@ -7,13 +7,38 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY   = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-const SERVICES = [
-  { id: '00131559-0491-479f-a295-664a68c3a222', name: 'Lavado Exterior',  description: 'Lavado completo de carrocería, llantas y cristales',            icon: '🚿', duration: '45 min', durationMin: 45,  prices: { sedan: 199, suv: 249, pickup: 299, van: 299 } },
-  { id: 'e85c4c06-9d09-4828-98f2-86401a4481ee', name: 'Lavado Interior',  description: 'Aspirado, limpieza de tablero, tapetes y vidrios interiores',    icon: '🪣', duration: '60 min', durationMin: 60,  prices: { sedan: 249, suv: 299, pickup: 349, van: 349 } },
-  { id: 'a539c1f0-73ee-4b22-b477-f1f826601d19', name: 'Lavado Completo',  description: 'Exterior + Interior en un solo servicio',                        icon: '✨', duration: '90 min', durationMin: 90,  prices: { sedan: 399, suv: 499, pickup: 599, van: 599 } },
-  { id: '69d83cc5-c32d-4e63-bf4f-bacad6a259a4', name: 'Encerado Premium', description: 'Aplicación de cera protectora de alta duración',                 icon: '💎', duration: '2 hrs',  durationMin: 120, prices: { sedan: 599, suv: 749, pickup: 899, van: 899 } },
-  { id: 'd4d732ae-11a1-4bb8-b84f-8e8dbdacfb51', name: 'Detallado Total',  description: 'Servicio completo con pulido, descontaminación y sellador',      icon: '🏆', duration: '3 hrs',  durationMin: 180, prices: { sedan: 999, suv: 1299, pickup: 1499, van: 1499 } },
-]
+// Servicios se cargan desde la DB — ver fetchServices() en el componente
+// Formato normalizado desde DB:
+// { id, name, description, icon, color, durationMin, duration, prices: { sedan, suv, pickup, van } }
+function formatDuration(min) {
+  if (!min) return '—'
+  if (min < 60) return `${min} min`
+  const h = Math.floor(min / 60), m = min % 60
+  return m > 0 ? `${h} hrs ${m} min` : `${h} hrs`
+}
+function normalizeService(s) {
+  return {
+    id:          s.id,
+    name:        s.name,
+    description: s.description,
+    icon:        s.icon || '🚗',
+    color:       s.color || '#3b82f6',
+    durationMin: s.duration_min || s.duration_minutes || 45,
+    duration:    formatDuration(s.duration_min || s.duration_minutes),
+    prices: {
+      sedan:  parseFloat(s.price_sedan  || 0),
+      suv:    parseFloat(s.price_suv    || 0),
+      pickup: parseFloat(s.price_truck  || s.price_sedan || 0),
+      van:    parseFloat(s.price_van    || s.price_truck || s.price_sedan || 0),
+    },
+    durations: {
+      sedan:  s.duration_sedan  || s.duration_min || 45,
+      suv:    s.duration_suv    || s.duration_min || 45,
+      pickup: s.duration_pickup || s.duration_min || 45,
+      van:    s.duration_van    || s.duration_min || 45,
+    },
+  }
+}
 
 const VEHICLE_TYPES = [
   { id: 'sedan',  name: 'Sedán / Compacto', icon: '🚗', priceKey: 'sedan'  },
@@ -60,6 +85,28 @@ function haversineKm(lat1, lng1, lat2, lng2) {
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
+
+  // ── Cargar servicios desde DB ──────────────────────────────────────────────
+  useEffect(() => {
+    const fetchServices = async () => {
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/services?is_active=eq.true&order=sort_order.asc&select=*`,
+          { headers: { 'apikey': SUPABASE_ANON_KEY } }
+        )
+        if (res.ok) {
+          const data = await res.json()
+          setServices(data.map(normalizeService))
+        }
+      } catch (err) {
+        console.error('fetchServices:', err)
+      } finally {
+        setLoadingServices(false)
+      }
+    }
+    fetchServices()
+  }, [])
+
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 640)
     window.addEventListener('resize', handler)
@@ -73,6 +120,9 @@ export default function BookingView({ onNavigate }) {
   const isMobile = useIsMobile()
   const [step, setStep]       = useState(1)
   const [loading, setLoading] = useState(false)
+  // Servicios desde DB
+  const [services, setServices]           = useState([])
+  const [loadingServices, setLoadingServices] = useState(true)
   const [success, setSuccess] = useState(false)
   const [error, setError]     = useState('')
   const [mapsLoaded, setMapsLoaded] = useState(false)
@@ -112,12 +162,12 @@ export default function BookingView({ onNavigate }) {
 
   const getPrice = useCallback(() => {
     if (!selectedService || !vehicleType) return null
-    const service = SERVICES.find(s => s.id === selectedService)
+    const service = services.find(s => s.id === selectedService)
     const vehicle = VEHICLE_TYPES.find(v => v.id === vehicleType)
     return service?.prices?.[vehicle?.priceKey] ?? null
   }, [selectedService, vehicleType])
 
-  const getService = () => SERVICES.find(s => s.id === selectedService)
+  const getService = () => services.find(s => s.id === selectedService)
 
   useEffect(() => {
     loadGoogleMapsScript(GOOGLE_MAPS_API_KEY)
@@ -509,7 +559,9 @@ export default function BookingView({ onNavigate }) {
           <div style={{ padding: isMobile ? '16px 12px' : 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Qué servicio necesitas?</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: isMobile ? 8 : 10 }}>
-              {SERVICES.map(s => {
+              {loadingServices ? (
+                <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 32, color: '#9ca3af' }}>Cargando servicios...</div>
+              ) : services.map(s => {
                 const p = vehicleType ? s.prices[VEHICLE_TYPES.find(v=>v.id===vehicleType)?.priceKey] : s.prices.sedan
                 return (
                   <div key={s.id} onClick={() => setSelectedService(s.id)}
