@@ -85,6 +85,25 @@ function haversineKm(lat1, lng1, lat2, lng2) {
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 640)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+  return isMobile
+}
+
+export default function BookingView({ onNavigate }) {
+  const { user } = useAuth()
+  const isMobile = useIsMobile()
+  const [step, setStep]       = useState(1)
+  const [loading, setLoading] = useState(false)
+  // Servicios desde DB
+  const [services, setServices]           = useState([])
+  const [loadingServices, setLoadingServices] = useState(true)
+  const [success, setSuccess] = useState(false)
+  const [error, setError]     = useState('')
+  const [mapsLoaded, setMapsLoaded] = useState(false)
 
   // ── Cargar servicios desde DB ──────────────────────────────────────────────
   useEffect(() => {
@@ -106,26 +125,6 @@ function useIsMobile() {
     }
     fetchServices()
   }, [])
-
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 640)
-    window.addEventListener('resize', handler)
-    return () => window.removeEventListener('resize', handler)
-  }, [])
-  return isMobile
-}
-
-export default function BookingView({ onNavigate }) {
-  const { user } = useAuth()
-  const isMobile = useIsMobile()
-  const [step, setStep]       = useState(1)
-  const [loading, setLoading] = useState(false)
-  // Servicios desde DB
-  const [services, setServices]           = useState([])
-  const [loadingServices, setLoadingServices] = useState(true)
-  const [success, setSuccess] = useState(false)
-  const [error, setError]     = useState('')
-  const [mapsLoaded, setMapsLoaded] = useState(false)
 
   // Step 1
   const [selectedService, setSelectedService] = useState(null)
