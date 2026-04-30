@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
 import RatingSlider from './RatingSlider'
+import { useToast } from './App'
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyA0k4Rg_XowxjDGUsLD3BldhpTINFMihjw'
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 
 const STATUS_INFO = {
   pendiente:  { label: 'Pendiente',  icon: '⏳', color: '#f59e0b', desc: 'Buscando operador disponible...' },
@@ -177,9 +178,9 @@ export default function ClientView() {
         body: JSON.stringify({ membership_status: 'cancelada', updated_at: new Date().toISOString() }),
       })
       setClientProfile(prev => ({ ...prev, membership_status: 'cancelada' }))
-      alert('Membresía cancelada. Sigue activa hasta ' + (clientProfile?.membership_end_at ? new Date(clientProfile.membership_end_at).toLocaleDateString('es-MX') : 'la fecha de vencimiento'))
+      showToast('Membresía cancelada. Sigue activa hasta ' + (clientProfile?.membership_end_at ? new Date(clientProfile.membership_end_at).toLocaleDateString('es-MX') : 'la fecha de vencimiento'), 'info')
     } catch (err) {
-      alert('Error al cancelar: ' + err.message)
+      showToast('Error al cancelar: ' + err.message, 'error')
     } finally {
       setCancellingMembership(false)
     }
@@ -319,7 +320,7 @@ export default function ClientView() {
 
   // ── Guardar calificación ───────────────────────────────────────
   const saveRating = async () => {
-    if (!ratingValue) { alert('Por favor selecciona una calificación.'); return }
+    if (!ratingValue) { showToast('Por favor selecciona una calificación.', 'warning'); return }
     setSavingRating(true)
     try {
       const { error } = await supabase
@@ -349,7 +350,7 @@ export default function ClientView() {
       setRatingReview('')
       setRatingBooking(null)
     } catch (err) {
-      alert(`Error: ${err.message}`)
+      showToast(`Error: ${err.message}`, 'error')
     } finally {
       setSavingRating(false)
     }
