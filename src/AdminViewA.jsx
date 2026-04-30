@@ -90,6 +90,14 @@ const AdminViewA = ({
   const totalBookingPages = Math.max(1, Math.ceil(filteredBookings.length / BOOKINGS_PER_PAGE));
   const paginatedBookings = filteredBookings.slice((bookingsPage - 1) * BOOKINGS_PER_PAGE, bookingsPage * BOOKINGS_PER_PAGE);
 
+  const getToken = () => {
+    try {
+      const stored = localStorage.getItem('mazclean-auth')
+      if (stored) { const p = JSON.parse(stored); return p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY; }
+    } catch {}
+    return SUPABASE_ANON_KEY;
+  };
+
   const getOperatorStatus = (operatorId, forBooking = null) => {
     if (forBooking) {
       const [fH, fM] = (forBooking.scheduled_time || '00:00').split(':').map(Number);
