@@ -9,6 +9,7 @@ import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Star } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { sendWhatsApp } from './lib/whatsapp';
+import { useToast } from './App';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -68,6 +69,7 @@ const AdminViewB = ({
   incidents, setIncidents, pendingOperators, setPendingOperators,
   fetchData,
 }) => {
+  const { showToast } = useToast();
   const [incidentsHistory, setIncidentsHistory] = useState([]);
   const [operatorHistory, setOperatorHistory]   = useState(null);
   const [historyFilter, setHistoryFilter]       = useState({ from: '', to: '' });
@@ -104,6 +106,12 @@ const AdminViewB = ({
   const [commissionReport, setCommissionReport] = useState(null);
 
   const [kpisModal, setKpisModal]   = useState(false);
+  // Solicitudes de deposito bancario
+  const [depositRequests, setDepositRequests]         = useState([]);
+  const [loadingDeposits, setLoadingDeposits]         = useState(false);
+  const [approvingDeposit, setApprovingDeposit]       = useState(null);
+  const [rejectingDeposit, setRejectingDeposit]       = useState(null);
+  const [depositAdminNote, setDepositAdminNote]       = useState('');
   const [kpisOp, setKpisOp]         = useState(null);
   const [kpisData, setKpisData]     = useState(null);
   const [loadingKpis, setLoadingKpis] = useState(false);
@@ -113,7 +121,7 @@ const AdminViewB = ({
   const [operatorError, setOperatorError]       = useState('');
   const [operatorSuccess, setOperatorSuccess]   = useState('');
 
-  useEffect(() => { fetchIncidents(); fetchPendingOperators(); fetchMembershipConfig(); }, []);
+  useEffect(() => { fetchIncidents(); fetchPendingOperators(); fetchMembershipConfig(); fetchDepositRequests(); }, []);
 
   // ── Membresía ─────────────────────────────────────────────────────────────
   const [membershipConfig, setMembershipConfig]     = useState(null);
@@ -121,10 +129,6 @@ const AdminViewB = ({
   const [membershipModal, setMembershipModal]       = useState(false);
   const [membershipOp, setMembershipOp]             = useState(null);
   const [membershipDays, setMembershipDays]         = useState(30);
-  const [membershipHistoryModal, setMembershipHistoryModal] = useState(false);
-  const [membershipHistoryOp, setMembershipHistoryOp]       = useState(null);
-  const [membershipHistoryData, setMembershipHistoryData]   = useState([]);
-  const [loadingMembershipHistory, setLoadingMembershipHistory] = useState(false);
 
   const fetchMembershipConfig = async () => {
     try {
@@ -140,7 +144,7 @@ const AdminViewB = ({
       const { error } = await supabase.from('membership_config').update({ [field]: newVal, updated_at: new Date().toISOString() }).eq('id', membershipConfig.id);
       if (error) throw error;
       setMembershipConfig(prev => ({ ...prev, [field]: newVal }));
-    } catch (err) { alert('Error: ' + err.message); }
+    } catch (err) { showToast('Error: ' + err.message, 'error'); }
   };
 
   const openMembershipModal = (op) => {
@@ -168,7 +172,7 @@ const AdminViewB = ({
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setOperators(prev => prev.map(o => o.id === membershipOp.id ? { ...o, membership_status: 'activa', membership_type: 'operador', membership_start_at: now.toISOString(), membership_end_at: endAt.toISOString() } : o));
       setMembershipModal(false);
-    } catch (err) { alert('Error: ' + err.message); }
+    } catch (err) { showToast('Error: ' + err.message, 'error'); }
     finally { setUpdatingMembership(null); }
   };
 
@@ -188,27 +192,88 @@ const AdminViewB = ({
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setOperators(prev => prev.map(o => o.id === op.id ? { ...o, membership_status: 'vencida' } : o));
-    } catch (err) { alert('Error: ' + err.message); }
+    } catch (err) { showToast('Error: ' + err.message, 'error'); }
     finally { setUpdatingMembership(null); }
   };
 
-  const openMembershipHistoryModal = async (op) => {
-    setMembershipHistoryOp(op);
-    setMembershipHistoryData([]);
-    setMembershipHistoryModal(true);
-    setLoadingMembershipHistory(true);
+  const fetchDepositRequests = async () => {
+    setLoadingDeposits(true);
+    try {
+      const { data } = await supabase
+        .from('membership_requests')
+        .select('*, profile:user_id(full_name, phone, referral_code, role)')
+        .eq('status', 'pendiente')
+        .order('created_at', { ascending: false });
+      setDepositRequests(data || []);
+    } catch (err) { console.error('fetchDepositRequests:', err); }
+    finally { setLoadingDeposits(false); }
+  };
+
+  const approveDepositRequest = async (req) => {
+    if (!confirm(`¿Activar membresía de ${req.profile?.full_name}?`)) return;
+    setApprovingDeposit(req.id);
     try {
       let token = SUPABASE_ANON_KEY;
       try {
         const stored = localStorage.getItem('mazclean-auth');
         if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
       } catch {}
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/membership_history?user_id=eq.${op.id}&order=start_at.desc`, {
-        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY },
+      const now   = new Date();
+      const days  = req.user_type === 'operador' ? (membershipConfig?.operator_duration_days || 30) : (membershipConfig?.client_duration_days || 30);
+      const endAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+      // Activar membresía en profiles
+      const pRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${req.user_id}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ membership_status: 'activa', membership_type: req.user_type, membership_start_at: now.toISOString(), membership_end_at: endAt.toISOString(), updated_at: now.toISOString() }),
       });
-      if (res.ok) setMembershipHistoryData(await res.json());
-    } catch (err) { console.error('fetchMembershipHistory admin:', err); }
-    finally { setLoadingMembershipHistory(false); }
+      if (!pRes.ok) throw new Error(`Profiles HTTP ${pRes.status}`);
+      // Registrar en historial
+      await fetch(`${SUPABASE_URL}/rest/v1/membership_history`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ user_id: req.user_id, membership_type: req.user_type, start_at: now.toISOString(), end_at: endAt.toISOString(), amount: req.amount, status: 'activa' }),
+      });
+      // Marcar solicitud como aprobada
+      await fetch(`${SUPABASE_URL}/rest/v1/membership_requests?id=eq.${req.id}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ status: 'aprobado', updated_at: now.toISOString() }),
+      });
+      // Enviar WA de confirmación al usuario
+      if (req.profile?.phone) {
+        const msg = `✅ *MAZ CLEAN* — ¡Tu membresía ${req.user_type === 'operador' ? 'de Operador' : 'Premium'} ha sido activada! Válida del ${now.toLocaleDateString('es-MX')} al ${endAt.toLocaleDateString('es-MX')}. ¡Bienvenido! 🚗`;
+        await sendWhatsApp({ to: req.profile.phone, message: msg });
+      }
+      setDepositRequests(prev => prev.filter(r => r.id !== req.id));
+      setOperators(prev => prev.map(o => o.id === req.user_id ? { ...o, membership_status: 'activa', membership_end_at: endAt.toISOString() } : o));
+    } catch (err) { showToast('Error: ' + err.message, 'error'); }
+    finally { setApprovingDeposit(null); }
+  };
+
+  const rejectDepositRequest = async (req) => {
+    if (!depositAdminNote.trim()) { showToast('Escribe una nota para el usuario', 'warning'); return; }
+    if (!confirm(`¿Rechazar solicitud de ${req.profile?.full_name}?`)) return;
+    setRejectingDeposit(req.id);
+    try {
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
+      } catch {}
+      await fetch(`${SUPABASE_URL}/rest/v1/membership_requests?id=eq.${req.id}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ status: 'rechazado', admin_note: depositAdminNote, updated_at: new Date().toISOString() }),
+      });
+      if (req.profile?.phone) {
+        const msg = `⚠️ *MAZ CLEAN* — Tu solicitud de membresía fue rechazada. Motivo: ${depositAdminNote}. Contacta al soporte si crees que es un error.`;
+        await sendWhatsApp({ to: req.profile.phone, message: msg });
+      }
+      setDepositRequests(prev => prev.filter(r => r.id !== req.id));
+      setDepositAdminNote('');
+    } catch (err) { showToast('Error: ' + err.message, 'error'); }
+    finally { setRejectingDeposit(null); }
   };
 
   const fetchPendingOperators = async () => {
@@ -356,7 +421,7 @@ const AdminViewB = ({
         setPendingOperators(prev => prev.filter(o => o.id !== deleteModal.id));
       }
       setDeleteModal(null);
-    } catch (err) { alert(`Error: ${err.message}`); }
+    } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
     finally { setDeletingOp(false); }
   };
 
@@ -367,7 +432,7 @@ const AdminViewB = ({
       const { error } = await supabase.from('profiles').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', opId);
       if (error) throw error;
       setOperators(prev => prev.map(o => o.id === opId ? { ...o, status: newStatus } : o));
-    } catch (err) { alert(`Error: ${err.message}`); }
+    } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
     finally { setUpdatingOpStatus(null); }
   };
 
@@ -377,7 +442,7 @@ const AdminViewB = ({
       const { error } = await supabase.from('profiles').update({ assignment_mode: newMode, updated_at: new Date().toISOString() }).eq('id', op.id);
       if (error) throw error;
       setOperators(prev => prev.map(o => o.id === op.id ? { ...o, assignment_mode: newMode } : o));
-    } catch (err) { alert('Error: ' + err.message); }
+    } catch (err) { showToast('Error: ' + err.message, 'error'); }
   };
 
   const resetOnboarding = async (op) => {
@@ -395,8 +460,8 @@ const AdminViewB = ({
       if (error) throw error;
       setOperators(prev => prev.map(o => o.id === op.id ? { ...o, onboarding_done: false, onboarding_step: 1, operator_status: 'pendiente' } : o));
       setResetOnboardingModal(null);
-      alert(`✅ Onboarding reiniciado para ${op.full_name}.`);
-    } catch (err) { alert(`Error: ${err.message}`); }
+      showToast(`✅ Onboarding reiniciado para ${op.full_name}.`, 'success');
+    } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
     finally { setSavingOpAction(false); }
   };
 
@@ -411,7 +476,7 @@ const AdminViewB = ({
   const saveCommission = async () => {
     setSavingCommission(true);
     const { error } = await supabase.from('profiles').update({ commission_pct: parseFloat(commissionPct) }).eq('id', commissionOp.id);
-    if (error) { alert(error.message); setSavingCommission(false); return; }
+    if (error) { showToast(error.message, 'error'); setSavingCommission(false); return; }
     setOperators(prev => prev.map(o => o.id === commissionOp.id ? { ...o, commission_pct: parseFloat(commissionPct) } : o));
     setSavingCommission(false); setCommissionModal(false);
   };
@@ -430,7 +495,7 @@ const AdminViewB = ({
     if (historyFilter.from) query = query.gte('scheduled_date', historyFilter.from);
     if (historyFilter.to)   query = query.lte('scheduled_date', historyFilter.to);
     const { data, error } = await query;
-    if (error) { alert(error.message); return; }
+    if (error) { showToast(error.message, 'error'); return; }
     setOperatorHistory({ operatorId, data });
   };
 
@@ -760,6 +825,50 @@ const AdminViewB = ({
         </div>
       )}
 
+      {/* ── SOLICITUDES DE DEPOSITO BANCARIO ── */}
+      {depositRequests.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1f2937', marginBottom: 12 }}>
+            🏦 Solicitudes de membresía por depósito ({depositRequests.length})
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {depositRequests.map(req => (
+              <div key={req.id} style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #fde68a', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+                <div style={{ background: 'linear-gradient(135deg,#f59e0b,#fbbf24)', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>{req.profile?.full_name || 'Sin nombre'}</span>
+                    <span style={{ color: '#fef3c7', fontSize: 12, marginLeft: 8 }}>({req.user_type === 'operador' ? 'Operador' : 'Cliente'})</span>
+                  </div>
+                  <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '2px 10px', color: '#fff', fontSize: 12, fontWeight: 700 }}>${req.amount} MXN</span>
+                </div>
+                <div style={{ padding: '12px 16px' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 13, color: '#374151', marginBottom: 10 }}>
+                    <span>📱 {req.profile?.phone}</span>
+                    <span>🔖 Ref: <strong style={{ fontFamily: 'monospace' }}>{req.referral_code}</strong></span>
+                    <span>📅 {new Date(req.created_at).toLocaleDateString('es-MX')}</span>
+                  </div>
+                  <textarea
+                    placeholder="Nota para el usuario (requerida para rechazar)"
+                    onChange={e => setDepositAdminNote(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 13, outline: 'none', height: 60, resize: 'none', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', marginBottom: 10 }}
+                  />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => approveDepositRequest(req)} disabled={!!approvingDeposit || !!rejectingDeposit}
+                      style={{ flex: 1, padding: '10px', background: approvingDeposit === req.id ? '#9ca3af' : '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 40 }}>
+                      {approvingDeposit === req.id ? '⏳ Activando...' : '✅ Aprobar y activar'}
+                    </button>
+                    <button onClick={() => rejectDepositRequest(req)} disabled={!!approvingDeposit || !!rejectingDeposit}
+                      style={{ flex: 1, padding: '10px', background: rejectingDeposit === req.id ? '#9ca3af' : '#ef4444', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 40 }}>
+                      {rejectingDeposit === req.id ? '⏳ Rechazando...' : '✕ Rechazar'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Incidencias */}
       {Array.isArray(incidents) && incidents.length > 0 && (
         <div style={{ background: '#fef2f2', borderRadius: 14, border: '2px solid #fecaca', padding: isMobile ? '16px' : '20px 24px' }}>
@@ -834,34 +943,25 @@ const AdminViewB = ({
                         {op.membership_status === 'vencida' && op.membership_end_at && (
                           <div style={{ fontSize: 10, color: '#d97706', marginTop: 2 }}>Venció: {new Date(op.membership_end_at).toLocaleDateString('es-MX')}</div>
                         )}
-                        {op.membership_record_since && (
-                          <div style={{ fontSize: 10, color: '#7c3aed', marginTop: 2 }}>🏅 Miembro desde {new Date(op.membership_record_since).toLocaleDateString('es-MX', { year: 'numeric', month: 'short' })}</div>
-                        )}
                       </div>
-                      <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexDirection: 'column', alignItems: 'flex-end' }}>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          {op.membership_status === 'activa' ? (
-                            <>
-                              <button onClick={() => revokeMembership(op)} disabled={updatingMembership === op.id}
-                                style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
-                                {updatingMembership === op.id ? '⏳' : '✕ Revocar'}
-                              </button>
-                              <button onClick={() => openMembershipModal(op)} disabled={updatingMembership === op.id}
-                                style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
-                                ↻ Extender
-                              </button>
-                            </>
-                          ) : (
-                            <button onClick={() => openMembershipModal(op)} disabled={updatingMembership === op.id}
-                              style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#059669', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
-                              {updatingMembership === op.id ? '⏳' : '+ Activar'}
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        {op.membership_status === 'activa' ? (
+                          <>
+                            <button onClick={() => revokeMembership(op)} disabled={updatingMembership === op.id}
+                              style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                              {updatingMembership === op.id ? '⏳' : '✕ Revocar'}
                             </button>
-                          )}
-                        </div>
-                        <button onClick={() => openMembershipHistoryModal(op)}
-                          style={{ padding: '4px 8px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#f9fafb', color: '#6b7280', fontSize: 10, fontWeight: 600, cursor: 'pointer', minHeight: 26 }}>
-                          📋 Historial
-                        </button>
+                            <button onClick={() => openMembershipModal(op)} disabled={updatingMembership === op.id}
+                              style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                              ↻ Extender
+                            </button>
+                          </>
+                        ) : (
+                          <button onClick={() => openMembershipModal(op)} disabled={updatingMembership === op.id}
+                            style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#059669', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                            {updatingMembership === op.id ? '⏳' : '+ Activar'}
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -1369,58 +1469,6 @@ const AdminViewB = ({
                 style={{ flex: 2, padding: '12px', background: updatingMembership === membershipOp.id ? '#9ca3af' : '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>
                 {updatingMembership === membershipOp.id ? '⏳ Guardando...' : `✅ ${membershipOp.membership_status === 'activa' ? 'Extender' : 'Activar'} por ${membershipDays} días`}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ════ MODAL: HISTORIAL MEMBRESÍAS ════ */}
-      {membershipHistoryModal && membershipHistoryOp && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
-          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, boxShadow: '0 8px 40px rgba(0,0,0,0.2)', width: '100%', maxWidth: isMobile ? '100%' : 480, overflow: 'hidden' }}>
-            <div style={{ background: 'linear-gradient(135deg,#7c3aed,#a78bfa)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>📋 Historial Membresías</h3>
-                <div style={{ color: '#ede9fe', fontSize: 12, marginTop: 2 }}>{membershipHistoryOp.full_name}</div>
-              </div>
-              <button onClick={() => setMembershipHistoryModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#ede9fe', fontSize: 22, borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
-            </div>
-            <div style={{ padding: isMobile ? '16px' : 20, maxHeight: '60vh', overflowY: 'auto' }}>
-              {/* Record de miembro */}
-              {membershipHistoryOp.membership_record_since && (
-                <div style={{ background: '#f5f3ff', borderRadius: 10, padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #e9d5ff' }}>
-                  <span style={{ fontSize: 20 }}>🏅</span>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>Record de miembro</div>
-                    <div style={{ fontSize: 13, color: '#6b21a8' }}>Desde {new Date(membershipHistoryOp.membership_record_since).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
-                  </div>
-                </div>
-              )}
-              {loadingMembershipHistory ? (
-                <div style={{ textAlign: 'center', padding: 32, color: '#9ca3af' }}>⏳ Cargando historial...</div>
-              ) : membershipHistoryData.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 32, color: '#9ca3af', fontStyle: 'italic', fontSize: 14 }}>Sin historial de membresías registrado.</div>
-              ) : (
-                <div style={{ display: 'grid', gap: 8 }}>
-                  {membershipHistoryData.map((h, i) => (
-                    <div key={h.id || i} style={{ background: h.status === 'activa' ? '#f0fdf4' : '#f9fafb', borderRadius: 10, padding: '12px 14px', border: `1.5px solid ${h.status === 'activa' ? '#bbf7d0' : '#e5e7eb'}` }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: h.status === 'activa' ? '#dcfce7' : '#f3f4f6', color: h.status === 'activa' ? '#059669' : '#6b7280' }}>
-                          {h.status === 'activa' ? '✅ Activa' : '⚫ Vencida'}
-                        </span>
-                        {h.amount > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#059669' }}>${h.amount} MXN</span>}
-                      </div>
-                      <div style={{ fontSize: 12, color: '#374151', fontWeight: 600 }}>
-                        {new Date(h.start_at).toLocaleDateString('es-MX')} → {new Date(h.end_at).toLocaleDateString('es-MX')}
-                      </div>
-                      {h.stripe_sub_id && <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2, fontFamily: 'monospace' }}>{h.stripe_sub_id}</div>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', textAlign: 'right' }}>
-              <button onClick={() => setMembershipHistoryModal(false)} style={{ padding: '12px 24px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cerrar</button>
             </div>
           </div>
         </div>

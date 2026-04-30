@@ -2,13 +2,103 @@ import ClientView from './ClientView'
 import OperatorView from './OperatorView'
 import AdminViewC from './AdminViewC'
 import TrackingPublic from './TrackingPublic'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthModal from './components/auth/AuthModal'
 import BookingView from './BookingView'
 import OnboardingView from './OnboardingView'
 import { Menu, X } from 'lucide-react'
 import './App.css'
+
+// ── Toast System ─────────────────────────────────────────────────────────────
+export const ToastContext = createContext(null)
+
+export function useToast() {
+  const ctx = useContext(ToastContext)
+  if (!ctx) return { showToast: () => {} } // fallback silencioso
+  return ctx
+}
+
+const TOAST_ICONS = {
+  success: '✅',
+  error:   '❌',
+  warning: '⚠️',
+  info:    'ℹ️',
+}
+
+const TOAST_COLORS = {
+  success: { bg: '#f0fdf4', border: '#bbf7d0', text: '#065f46' },
+  error:   { bg: '#fef2f2', border: '#fecaca', text: '#991b1b' },
+  warning: { bg: '#fffbeb', border: '#fde68a', text: '#92400e' },
+  info:    { bg: '#eff6ff', border: '#bfdbfe', text: '#1e40af' },
+}
+
+function ToastContainer({ toasts, onRemove }) {
+  if (toasts.length === 0) return null
+  return (
+    <div style={{
+      position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)',
+      zIndex: 99999, display: 'flex', flexDirection: 'column', gap: 8,
+      width: 'calc(100vw - 32px)', maxWidth: 420, pointerEvents: 'none',
+    }}>
+      {toasts.map(toast => {
+        const colors = TOAST_COLORS[toast.type] || TOAST_COLORS.info
+        return (
+          <div key={toast.id} style={{
+            background: colors.bg, border: `1.5px solid ${colors.border}`,
+            borderRadius: 12, padding: '12px 16px',
+            display: 'flex', alignItems: 'flex-start', gap: 10,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+            pointerEvents: 'all',
+            animation: 'toastIn 0.25s ease',
+          }}>
+            <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>
+              {TOAST_ICONS[toast.type] || TOAST_ICONS.info}
+            </span>
+            <span style={{ fontSize: 14, color: colors.text, fontWeight: 600, flex: 1, lineHeight: 1.5 }}>
+              {toast.message}
+            </span>
+            <button onClick={() => onRemove(toast.id)} style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: colors.text, fontSize: 18, lineHeight: 1,
+              opacity: 0.6, flexShrink: 0, padding: 0, minWidth: 24,
+            }}>×</button>
+          </div>
+        )
+      })}
+      <style>{`
+        @keyframes toastIn {
+          from { opacity: 0; transform: translateY(-12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([])
+
+  const showToast = useCallback((message, type = 'info', duration = 4000) => {
+    const id = Date.now() + Math.random()
+    setToasts(prev => [...prev.slice(-4), { id, message, type }]) // max 5 toasts
+    if (duration > 0) {
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration)
+    }
+    return id
+  }, [])
+
+  const removeToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }, [])
+
+  return (
+    <ToastContext.Provider value={{ showToast }}>
+      {children}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+    </ToastContext.Provider>
+  )
+}
 
 function getTrackingId() {
   const path = window.location.pathname
@@ -362,8 +452,10 @@ function AppInner() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppInner />
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <AppInner />
+      </AuthProvider>
+    </ToastProvider>
   )
 }

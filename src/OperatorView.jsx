@@ -6,6 +6,7 @@ import {
 import { supabase } from './lib/supabase';
 import { useAuth } from './context/AuthContext';
 import { sendWhatsApp, updateOperatorLocation } from './lib/whatsapp';
+import { useToast } from './App';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -280,6 +281,7 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
 // ── Componente principal ──────────────────────────────────────────────────────
 const OperatorView = () => {
   const { user, profile, signOut } = useAuth();
+  const { showToast } = useToast();
   const [membershipConfig, setMembershipConfig]           = useState(null);
   const [payingMembership, setPayingMembership]           = useState(false);
   const [payError, setPayError]                           = useState('');
@@ -621,9 +623,9 @@ const OperatorView = () => {
         body: JSON.stringify({ membership_status: 'cancelada', updated_at: new Date().toISOString() }),
       });
       setOperatorMembership(prev => ({ ...(prev || {}), membership_status: 'cancelada' }));
-      alert('Membresía cancelada. Sigue activa hasta ' + new Date(effectiveProfile.membership_end_at).toLocaleDateString('es-MX'));
+      showToast('Membresía cancelada. Sigue activa hasta ' + new Date(effectiveProfile.membership_end_at).toLocaleDateString('es-MX'), 'info');
     } catch (err) {
-      alert('Error al cancelar: ' + err.message);
+      showToast('Error al cancelar: ' + err.message, 'error');
     } finally {
       setCancellingMembership(false);
     }
@@ -766,7 +768,7 @@ const OperatorView = () => {
       );
     }
     setUpdatingId(bookingId);
-    const timeoutId = setTimeout(() => { setUpdatingId(null); alert('La operacion tardo demasiado. Verifica tu conexion.'); }, 12000);
+    const timeoutId = setTimeout(() => { setUpdatingId(null); showToast('La operación tardó demasiado. Verifica tu conexión.', 'warning'); }, 12000);
     try {
       // Usar fetch directo para evitar el lock de Supabase en móvil
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -836,7 +838,7 @@ const OperatorView = () => {
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, status: newStatus }));
     } catch (err) {
       clearTimeout(timeoutId);
-      alert('Error al actualizar estado: ' + err.message);
+      showToast('Error al actualizar estado: ' + err.message, 'error');
     } finally { setUpdatingId(null); }
   };
 
@@ -860,7 +862,7 @@ const OperatorView = () => {
 
   const handleFinalizeClick = (booking) => {
     if (!booking.photo_front_before || !booking.photo_side_before) {
-      alert('Debes subir las fotos ANTES del servicio primero.');
+      showToast('Debes subir las fotos ANTES del servicio primero.', 'warning');
       return;
     }
     const existing = {};
@@ -969,7 +971,7 @@ const OperatorView = () => {
   const toggleCheckItem = (id) => { setChecklist(prev => prev.map(item => item.id === id ? { ...item, checked: !item.checked } : item)); };
 
   const confirmFinalize = async () => {
-    if (!checklist.every(item => item.checked)) { alert('Por favor completa todos los items del checklist.'); return; }
+    if (!checklist.every(item => item.checked)) { showToast('Por favor completa todos los ítems del checklist.', 'warning'); return; }
     const bookingToFinalize = pendingFinalize;
     const bookingData = bookings.find(b => b.id === bookingToFinalize);
     setChecklistModal(false);
@@ -1039,14 +1041,14 @@ const OperatorView = () => {
   };
 
   const sendIncidentReport = async () => {
-    if (!incidentNote.trim()) { alert('Describe el problema antes de enviar.'); return; }
+    if (!incidentNote.trim()) { showToast('Describe el problema antes de enviar.', 'warning'); return; }
     setSendingIncident(true);
     try {
       const { error } = await supabase.from('incidents').insert({ booking_id: incidentBooking.id, operator_id: user.id, description: incidentNote, status: 'abierto', created_at: new Date().toISOString() });
       if (error) throw error;
-      alert('Incidencia reportada al administrador.');
+      showToast('Incidencia reportada al administrador.', 'success');
       setIncidentModal(false); setIncidentNote(''); setIncidentBooking(null);
-    } catch (err) { alert('Error: ' + err.message); }
+    } catch (err) { showToast('Error: ' + err.message, 'error'); }
     finally { setSendingIncident(false); }
   };
 
