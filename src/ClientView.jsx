@@ -29,6 +29,24 @@ function loadGoogleMapsScript(apiKey) {
   })
 }
 
+function ReferralCodeDisplay({ userId }) {
+  const [code, setCode] = useState('')
+  useEffect(() => {
+    if (!userId) return
+    supabase.from('profiles').select('referral_code').eq('id', userId).single()
+      .then(({ data }) => { if (data?.referral_code) setCode(data.referral_code) })
+  }, [userId])
+  return (
+    <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 4 }}>⚠️ Referencia obligatoria en tu depósito:</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: '#1f2937', fontFamily: 'monospace', letterSpacing: 2, textAlign: 'center', padding: '6px 0' }}>
+        {code || '...'}
+      </div>
+      <div style={{ fontSize: 11, color: '#78716c', textAlign: 'center' }}>Escribe exactamente este código en el concepto o referencia de tu transferencia</div>
+    </div>
+  )
+}
+
 export default function ClientView() {
   const { user } = useAuth()
   const [bookings, setBookings]           = useState([])
@@ -55,12 +73,22 @@ export default function ClientView() {
   const [payError, setPayError]                       = useState('')
   const [membershipHistory, setMembershipHistory]     = useState([])
   const [showMembershipHistory, setShowMembershipHistory] = useState(false)
+  // Promo efectiva
+  const [effectivePromo, setEffectivePromo]               = useState(null)
+  // Deposito bancario
+  const [depositModal, setDepositModal]                   = useState(false)
+  const [depositLoading, setDepositLoading]               = useState(false)
+  const [depositSuccess, setDepositSuccess]               = useState(false)
+  const [depositError, setDepositError]                   = useState('')
+  // Cancelar membresia
+  const [cancellingMembership, setCancellingMembership]   = useState(false)
 
   useEffect(() => {
     if (user) {
       fetchBookings()
       loadGoogleMapsScript(GOOGLE_MAPS_API_KEY).then(() => setMapsLoaded(true))
       fetchMembershipData()
+      fetchEffectivePromo()
     }
   }, [user])
 
@@ -84,6 +112,102 @@ export default function ClientView() {
         .order('start_at', { ascending: false })
       setMembershipHistory(data || [])
     } catch (err) { console.error('fetchMembershipHistory:', err) }
+  }
+
+  const fetchEffectivePromo = async () => {
+    if (!user?.id) return
+    try {
+      const { data, error } = await supabase.rpc('get_effective_membership_price', {
+        p_user_id: user.id,
+        p_user_type: 'cliente',
+      })
+      if (!error && data?.[0]) setEffectivePromo(data[0])
+    } catch (err) { console.error('fetchEffectivePromo:', err) }
+  }
+
+  const handleDepositRequest = async () => {
+    setDepositLoading(true)
+    setDepositError('')
+    try {
+      const { data: prof } = await supabase.from('profiles').select('referral_code').eq('id', user.id).single()
+      if (!prof?.referral_code) throw new Error('No se encontró tu código de referencia')
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      let token = supabaseKey
+      try {
+        const stored = localStorage.getItem('mazclean-auth')
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey }
+      } catch {}
+      const amount = effectivePromo?.effective_price || membershipConfig?.client_price || 30
+      const res = await fetch(`${supabaseUrl}/rest/v1/membership_requests`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ user_id: user.id, user_type: 'cliente', referral_code: prof.referral_code, amount }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setDepositSuccess(true)
+    } catch (err) {
+      setDepositError(err.message || 'Error al registrar solicitud')
+    } finally {
+      setDepositLoading(false)
+    }
+  }
+
+  const handleCancelMembership = async () => {
+    if (!confirm('¿Deseas cancelar tu membresía? Se mantendrá activa hasta la fecha de vencimiento.')) return
+    setCancellingMembership(true)
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      let token = supabaseKey
+      try {
+        const stored = localStorage.getItem('mazclean-auth')
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey }
+      } catch {}
+      if (clientProfile?.stripe_subscription_id) {
+        await fetch(`${supabaseUrl}/functions/v1/cancel-subscription`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subscription_id: clientProfile.stripe_subscription_id }),
+        })
+      }
+      await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ membership_status: 'cancelada', updated_at: new Date().toISOString() }),
+      })
+      setClientProfile(prev => ({ ...prev, membership_status: 'cancelada' }))
+      alert('Membresía cancelada. Sigue activa hasta ' + (clientProfile?.membership_end_at ? new Date(clientProfile.membership_end_at).toLocaleDateString('es-MX') : 'la fecha de vencimiento'))
+    } catch (err) {
+      alert('Error al cancelar: ' + err.message)
+    } finally {
+      setCancellingMembership(false)
+    }
+  }
+
+  const handleSubscribeClient = async () => {
+    setPayingMembership(true)
+    setPayError('')
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      let token = supabaseKey
+      try {
+        const stored = localStorage.getItem('mazclean-auth')
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey }
+      } catch {}
+      const res = await fetch(`${supabaseUrl}/functions/v1/create-subscription`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'cliente', user_id: user.id, email: user.email, success_url: `${window.location.origin}?membership=success`, cancel_url: window.location.href }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.url) throw new Error(data?.error || 'No se pudo crear la sesión de pago')
+      window.location.href = data.url
+    } catch (err) {
+      setPayError(err.message)
+      setPayingMembership(false)
+    }
   }
 
   const fetchBookings = async (silent = false) => {
@@ -295,6 +419,10 @@ export default function ClientView() {
                       Período actual: {new Date(clientProfile.membership_start_at).toLocaleDateString('es-MX')} → {clientProfile.membership_end_at ? new Date(clientProfile.membership_end_at).toLocaleDateString('es-MX') : '—'}
                     </div>
                   )}
+                  <button onClick={handleCancelMembership} disabled={cancellingMembership}
+                    style={{ width: '100%', padding: '10px', background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 40, marginBottom: 8 }}>
+                    {cancellingMembership ? '⏳ Cancelando...' : '✕ Cancelar membresía'}
+                  </button>
                   <button onClick={() => { setShowMembershipHistory(!showMembershipHistory); if (!showMembershipHistory) fetchMembershipHistory(); }}
                     style={{ width: '100%', padding: '10px', background: '#f3e8ff', border: '1.5px solid #d8b4fe', borderRadius: 8, color: '#7c3aed', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 40 }}>
                     {showMembershipHistory ? '▲ Ocultar historial' : '📋 Ver historial de pagos'}
@@ -305,15 +433,30 @@ export default function ClientView() {
                   <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 12, lineHeight: 1.6 }}>
                     ⭐ Prioridad en asignación · 📅 Horarios reservados · 🎯 Operador preferente · ❌ Cancelación flexible
                   </div>
+                  {/* Banner de promoción si aplica */}
+                  {effectivePromo?.promo_name && (
+                    <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', marginBottom: 12 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#065f46' }}>🏷️ {effectivePromo.promo_name}</div>
+                      <div style={{ fontSize: 12, color: '#059669', marginTop: 3 }}>
+                        {effectivePromo.discount_type === 'precio_fijo' && `Precio especial: $${effectivePromo.effective_price} MXN (precio normal: $${effectivePromo.base_price})`}
+                        {effectivePromo.discount_type === 'porcentaje' && `${effectivePromo.discount_value}% de descuento → $${effectivePromo.effective_price} MXN/mes`}
+                        {effectivePromo.discount_type === 'dias_gratis' && `¡${effectivePromo.trial_days} días gratis incluidos antes del primer cobro!`}
+                      </div>
+                    </div>
+                  )}
                   {payError && (
                     <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#dc2626' }}>⚠️ {payError}</div>
                   )}
                   <button onClick={handleSubscribeClient} disabled={payingMembership}
                     style={{ width: '100%', padding: '13px', background: payingMembership ? '#9ca3af' : 'linear-gradient(135deg,#7c3aed,#a78bfa)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: payingMembership ? 'not-allowed' : 'pointer', minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                    {payingMembership ? '⏳ Redirigiendo...' : `💳 Suscribirme por $${membershipConfig.client_price} MXN/mes`}
+                    {payingMembership ? '⏳ Redirigiendo...' : `💳 Pagar con tarjeta $${effectivePromo?.effective_price || membershipConfig?.client_price || 30} MXN/mes`}
+                  </button>
+                  <button onClick={() => { setDepositModal(true); setDepositSuccess(false); setDepositError('') }}
+                    style={{ width: '100%', marginTop: 10, padding: '13px', background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 10, fontSize: 14, fontWeight: 700, color: '#059669', cursor: 'pointer', minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                    🏦 Pagar con depósito bancario
                   </button>
                   <div style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 8 }}>
-                    Pago seguro con Stripe · Cancela cuando quieras
+                    Pago seguro · Cancela cuando quieras
                   </div>
                   {membershipHistory.length > 0 && (
                     <button onClick={() => { setShowMembershipHistory(!showMembershipHistory); if (!showMembershipHistory) fetchMembershipHistory(); }}
@@ -394,6 +537,72 @@ export default function ClientView() {
           </>
         )}
       </div>
+
+      {/* ════ MODAL DEPOSITO BANCARIO ════ */}
+      {depositModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 420, overflow: 'hidden', boxShadow: '0 8px 40px rgba(0,0,0,0.25)' }}>
+            <div style={{ background: 'linear-gradient(135deg,#059669,#10b981)', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>🏦 Pago por depósito bancario</div>
+                <div style={{ color: '#d1fae5', fontSize: 12, marginTop: 2 }}>Membresía Premium — ${effectivePromo?.effective_price || membershipConfig?.client_price || 30} MXN</div>
+              </div>
+              <button onClick={() => setDepositModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 32, height: 32, color: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              {!depositSuccess ? (
+                <>
+                  <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#065f46', marginBottom: 10 }}>📋 Datos para tu depósito:</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                      {[
+                        ['Banco', 'BBVA'],
+                        ['Titular', 'Juan Alberto Mazariegos Fernandez'],
+                        ['Cuenta', '261 197 8748'],
+                        ['CLABE', '012 180 02611978748 1'],
+                        ['Monto', `$${effectivePromo?.effective_price || membershipConfig?.client_price || 30} MXN`],
+                      ].map(([label, value]) => (
+                        <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                          <span style={{ color: '#6b7280', fontWeight: 500 }}>{label}</span>
+                          <span style={{ color: '#1f2937', fontWeight: 700, fontFamily: 'monospace' }}>{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <ReferralCodeDisplay userId={user?.id} />
+                  <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 16, lineHeight: 1.6 }}>
+                    Tu membresía se activará en un máximo de <strong>24 horas</strong>. Recibirás una notificación por WhatsApp cuando esté activa.
+                  </div>
+                  {depositError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#dc2626' }}>⚠️ {depositError}</div>}
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={() => setDepositModal(false)}
+                      style={{ flex: 1, padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 46 }}>
+                      Cerrar
+                    </button>
+                    <button onClick={handleDepositRequest} disabled={depositLoading}
+                      style={{ flex: 2, padding: '12px', background: depositLoading ? '#9ca3af' : 'linear-gradient(135deg,#059669,#10b981)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: depositLoading ? 'not-allowed' : 'pointer', minHeight: 46 }}>
+                      {depositLoading ? '⏳ Registrando...' : '✅ Ya realicé el depósito'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '10px 0 20px' }}>
+                  <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
+                  <div style={{ fontSize: 17, fontWeight: 700, color: '#065f46', marginBottom: 8 }}>¡Solicitud registrada!</div>
+                  <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.7, marginBottom: 20 }}>
+                    Tu depósito fue registrado.<br/>
+                    Recibirás una notificación por WhatsApp en cuanto el admin confirme tu pago (máx. 24 hrs).
+                  </div>
+                  <button onClick={() => setDepositModal(false)}
+                    style={{ padding: '12px 32px', background: 'linear-gradient(135deg,#059669,#10b981)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 46 }}>
+                    Entendido
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ════ MODAL CALIFICACIÓN ════ */}
       {ratingModal && ratingBooking && (
