@@ -8,6 +8,18 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY   = import.meta.env.VITE_SUPABASE_ANON_KEY
 
+// Helper token a nivel módulo — accesible por todas las funciones
+function getToken() {
+  try {
+    const stored = localStorage.getItem('mazclean-auth')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      return parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY
+    }
+  } catch {}
+  return SUPABASE_ANON_KEY
+}
+
 const STATUS_INFO = {
   pendiente:  { label: 'Pendiente',  icon: '⏳', color: '#f59e0b', desc: 'Buscando operador disponible...' },
   confirmado: { label: 'Confirmado', icon: '📋', color: '#3b82f6', desc: 'Operador asignado, en espera de inicio' },
@@ -107,17 +119,6 @@ export default function ClientView() {
     }
   }, [user])
 
-  // ── Helper: token desde localStorage — sin getSession() para no romper el lock en móvil ──
-  const getToken = () => {
-    try {
-      const stored = localStorage.getItem('mazclean-auth')
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        return parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY
-      }
-    } catch {}
-    return SUPABASE_ANON_KEY
-  }
 
   const fetchMembershipData = async () => {
     try {
