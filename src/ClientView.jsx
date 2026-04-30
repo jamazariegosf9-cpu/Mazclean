@@ -500,14 +500,14 @@ export default function ClientView() {
         <TrackingCard booking={activeBooking} mapsLoaded={mapsLoaded} eta={eta} setEta={setEta} />
       )}
 
-      {/* Botón chat flotante — solo cuando hay servicio confirmado/en_camino/en_proceso */}
+      {/* Botón chat — visible cuando hay servicio activo */}
       {activeBooking && ['confirmado','en_camino','en_proceso'].includes(activeBooking.status) && (
-        <div style={{ position: 'fixed', bottom: 80, right: 16, zIndex: 90 }}>
+        <div style={{ margin: '0 0 12px', padding: '0 16px' }}>
           <button onClick={() => openChat(activeBooking.id)}
-            style={{ width: 52, height: 52, borderRadius: '50%', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', border: 'none', color: '#fff', fontSize: 22, cursor: 'pointer', boxShadow: '0 4px 16px rgba(30,64,175,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-            💬
+            style={{ width: '100%', padding: '12px 16px', borderRadius: 12, background: 'linear-gradient(135deg,#1e40af,#3b82f6)', border: 'none', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 48, boxShadow: '0 2px 8px rgba(30,64,175,0.3)', position: 'relative' }}>
+            💬 Contactar a mi operador
             {unreadCount > 0 && (
-              <span style={{ position: 'absolute', top: -4, right: -4, background: '#dc2626', color: '#fff', borderRadius: '50%', width: 20, height: 20, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ background: '#dc2626', color: '#fff', borderRadius: '50%', width: 22, height: 22, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: 4 }}>
                 {unreadCount}
               </span>
             )}
