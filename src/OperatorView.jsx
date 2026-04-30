@@ -708,15 +708,23 @@ const OperatorView = () => {
       .channel(`chat-${bookingId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `booking_id=eq.${bookingId}` },
         (payload) => {
-          // Solo notificar mensajes del cliente (no los propios del operador)
-          if (payload.new.sender_role === 'cliente') {
+          const msg = payload.new
+          // Notificar solo mensajes del cliente
+          if (msg.sender_role === 'cliente') {
             playNotificationSound()
             vibrateDevice()
-            showSystemNotification('💬 Mensaje del cliente', payload.new.content)
+            showSystemNotification('💬 Mensaje del cliente', msg.content)
           }
           setChatMessages(prev => {
-            if (prev.find(m => m.id === payload.new.id)) return prev
-            return [...prev, payload.new]
+            // Reemplazar mensaje temporal si existe, o agregar si es nuevo
+            const tempIdx = prev.findIndex(m => m.id?.startsWith('temp-') && m.content === msg.content && m.sender_role === msg.sender_role)
+            if (tempIdx >= 0) {
+              const updated = [...prev]
+              updated[tempIdx] = msg
+              return updated
+            }
+            if (prev.find(m => m.id === msg.id)) return prev
+            return [...prev, msg]
           })
         }
       )

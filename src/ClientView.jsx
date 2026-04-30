@@ -146,6 +146,7 @@ export default function ClientView() {
   const [unreadCount, setUnreadCount]     = useState(0)
   const chatBottomRef                     = useRef(null)
   const chatChannelRef                    = useRef(null)
+  const bgChannelRef                      = useRef(null)
 
   useEffect(() => {
     if (user) {
@@ -311,6 +312,8 @@ export default function ClientView() {
     setChatInput('')
     setChatError('')
     setUnreadCount(0)
+    // Desuscribir canal background para evitar duplicados
+    if (bgChannelRef.current) { supabase.removeChannel(bgChannelRef.current); bgChannelRef.current = null }
     await fetchMessages(bookingId)
     await requestNotificationPermission()
     if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current)
@@ -333,12 +336,28 @@ export default function ClientView() {
       .subscribe()
   }
 
-  const closeChat = () => {
+  const closeChat = (bookingId) => {
     setChatOpen(false)
     setChatMessages([])
     setChatInput('')
     setChatError('')
     if (chatChannelRef.current) { supabase.removeChannel(chatChannelRef.current); chatChannelRef.current = null }
+    // Restaurar canal background para seguir recibiendo notificaciones
+    if (bookingId) {
+      bgChannelRef.current = supabase
+        .channel(`chat-bg-${bookingId}-${Date.now()}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `booking_id=eq.${bookingId}` },
+          (payload) => {
+            if (payload.new.sender_role === 'operador') {
+              setUnreadCount(prev => prev + 1)
+              playNotificationSound()
+              vibrateDevice()
+              showSystemNotification('💬 Tu operador te escribió', payload.new.content)
+            }
+          }
+        )
+        .subscribe()
+    }
   }
 
   const sendMessage = async (bookingId) => {
@@ -380,7 +399,8 @@ export default function ClientView() {
     ).then(r => r.json()).then(rows => setUnreadCount(rows?.length || 0)).catch(() => {})
     // Canal Realtime para notificar cuando chat está cerrado
     requestNotificationPermission()
-    const bgChannel = supabase
+    if (bgChannelRef.current) supabase.removeChannel(bgChannelRef.current)
+    bgChannelRef.current = supabase
       .channel(`chat-bg-${activeBooking.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `booking_id=eq.${activeBooking.id}` },
         (payload) => {
@@ -393,7 +413,7 @@ export default function ClientView() {
         }
       )
       .subscribe()
-    return () => supabase.removeChannel(bgChannel)
+    return () => { if (bgChannelRef.current) { supabase.removeChannel(bgChannelRef.current); bgChannelRef.current = null } }
   }, [activeBooking?.id, activeBooking?.status])
 
   const fetchBookings = async (silent = false) => {
@@ -748,7 +768,7 @@ export default function ClientView() {
                 <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>💬 Chat con tu operador</div>
                 <div style={{ color: '#bfdbfe', fontSize: 11, marginTop: 2 }}>Comunicación directa durante el servicio</div>
               </div>
-              <button onClick={closeChat} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 32, height: 32, color: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+              <button onClick={() => closeChat(activeBooking?.id)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 32, height: 32, color: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, background: '#f8fafc' }}>
               {chatLoading ? (
