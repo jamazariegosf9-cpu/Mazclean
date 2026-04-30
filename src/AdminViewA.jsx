@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
 import { sendWhatsApp } from './lib/whatsapp';
+import { useToast } from './App';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -26,6 +27,8 @@ const AdminViewA = ({
   unattendedBookings, setUnattendedBookings,
   fetchData, fetchUnattendedBookings,
 }) => {
+  const { showToast } = useToast();
+  const [confirmAssign, setConfirmAssign] = useState(null); // { bookingId, operatorId, operatorName }
   const [searchTerm, setSearchTerm]     = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter]     = useState('all');
@@ -114,10 +117,23 @@ const AdminViewA = ({
 
   const assignOperator = async (bookingId, operatorId) => {
     if (!operatorId) return;
+    const operator = operators.find(o => o.id === operatorId);
+    // Mostrar confirmación antes de asignar
+    setConfirmAssign({ bookingId, operatorId, operatorName: operator?.full_name || 'este operador' });
+  };
+
+  const confirmAssignOperator = async () => {
+    if (!confirmAssign) return;
+    const { bookingId, operatorId, operatorName } = confirmAssign;
+    setConfirmAssign(null);
     setAssigning(bookingId);
     try {
-      const { error } = await supabase.from('bookings').update({ operator_id: operatorId, status: 'confirmado', updated_at: new Date().toISOString() }).eq('id', bookingId);
-      if (error) { alert(`Error al asignar: ${error.message}`); return; }
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${bookingId}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ operator_id: operatorId, status: 'confirmado', updated_at: new Date().toISOString() }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, operator_id: operatorId, status: 'confirmado' } : b));
       const booking = bookings.find(b => b.id === bookingId);
       const operator = operators.find(o => o.id === operatorId);
@@ -125,8 +141,9 @@ const AdminViewA = ({
         try { await sendWhatsApp('operator_assigned', booking.customer.phone, { booking_ref: booking.booking_ref, service_name: booking.service_name, scheduled_date: booking.scheduled_date, scheduled_time: booking.scheduled_time, total_price: booking.total_price || booking.service_price, operator_name: operator?.full_name || 'nuestro operador' }); }
         catch (wsErr) { console.warn('WhatsApp omitido:', wsErr.message); }
       }
+      showToast(`✅ ${operatorName} asignado correctamente`, 'success');
       setIsModalOpen(false);
-    } catch (err) { alert('Error inesperado al asignar.'); }
+    } catch (err) { showToast('Error al asignar: ' + err.message, 'error'); }
     finally { setAssigning(null); }
   };
 
@@ -150,7 +167,7 @@ const AdminViewA = ({
       }
       setUnattendedBookings(prev => prev.filter(b => b.id !== bookingId));
       fetchData();
-    } catch (err) { alert('Error al asignar: ' + err.message); }
+    } catch (err) { showToast('Error al asignar: ' + err.message, 'error'); }
     finally { setAssigningManual(null); }
   };
 
@@ -375,6 +392,30 @@ const AdminViewA = ({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal: Confirmar Asignación */}
+      {confirmAssign && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 24, maxWidth: 360, width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.2)', textAlign: 'center' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>👷</div>
+            <h3 style={{ fontSize: 17, fontWeight: 700, color: '#1f2937', margin: '0 0 10px' }}>Confirmar asignación</h3>
+            <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 20px', lineHeight: 1.6 }}>
+              ¿Asignar a <strong style={{ color: '#1e40af' }}>{confirmAssign.operatorName}</strong> a este servicio?<br/>
+              Se le notificará por WhatsApp al cliente.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setConfirmAssign(null)}
+                style={{ flex: 1, padding: '12px', borderRadius: 10, border: '1.5px solid #e5e7eb', background: '#f9fafb', color: '#374151', fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 46 }}>
+                Cancelar
+              </button>
+              <button onClick={confirmAssignOperator}
+                style={{ flex: 1, padding: '12px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 46 }}>
+                ✅ Sí, asignar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
