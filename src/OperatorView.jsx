@@ -289,7 +289,6 @@ const OperatorView = () => {
   const [activeTab, setActiveTab]             = useState('solicitudes');
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [updatingId, setUpdatingId]           = useState(null);
-  const [waLog, setWaLog]                     = useState(null); // log visual móvil
   const fetchingRef                           = useRef(false);
   const bookingsCache                         = useRef([]);
 
@@ -643,28 +642,14 @@ const OperatorView = () => {
 
       if (phone) {
         console.log(`[WA] ${eventName} → ${phone}`);
-        try {
-          const waResult = await sendWhatsApp(eventName, phone, {
-            booking_ref: booking?.booking_ref, service_name: booking?.service_name,
-            booking_id: bookingId, operator_name: profile?.full_name || user?.user_metadata?.full_name || 'tu operador',
-            total_price: booking?.total_price, scheduled_date: booking?.scheduled_date,
-            scheduled_time_from: booking?.scheduled_time_from, scheduled_time_to: booking?.scheduled_time_to,
-          });
-          const logMsg = `WA[${eventName}] → ${phone} | total:${booking?.total_price} | from:${booking?.scheduled_time_from} | resultado:${waResult?.success ? '✅' : '❌'} ${waResult?.error || waResult?.sid || ''}`;
-          console.log(logMsg);
-          setWaLog(logMsg);
-          setTimeout(() => setWaLog(null), 12000);
-        } catch (waErr) {
-          const errMsg = `WA[${eventName}] ERROR: ${waErr.message}`;
-          console.error(errMsg);
-          setWaLog(errMsg);
-          setTimeout(() => setWaLog(null), 12000);
-        }
+        sendWhatsApp(eventName, phone, {
+          booking_ref: booking?.booking_ref, service_name: booking?.service_name,
+          booking_id: bookingId, operator_name: profile?.full_name || user?.user_metadata?.full_name || 'tu operador',
+          total_price: booking?.total_price, scheduled_date: booking?.scheduled_date,
+          scheduled_time_from: booking?.scheduled_time_from, scheduled_time_to: booking?.scheduled_time_to,
+        });
       } else {
-        const noPhoneMsg = `WA[${eventName}]: ❌ sin teléfono | bookingId:${bookingId} | booking:${booking?.id || 'null'}`;
-        console.warn(noPhoneMsg);
-        setWaLog(noPhoneMsg);
-        setTimeout(() => setWaLog(null), 12000);
+        console.warn(`[WA] ${eventName}: no se encontró teléfono`);
       }
       if (selectedBooking?.id === bookingId) setSelectedBooking(prev => ({ ...prev, status: newStatus }));
     } catch (err) {
@@ -702,50 +687,38 @@ const OperatorView = () => {
     setPhotoBooking(booking); setPhotosData(existing); setPhotoStep(3); setPhotoPhase('after');
     setPendingFinalize(booking.id); setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModalSafe(true);
 
-    // ── Enviar WhatsApp done aquí — fetch directo para evitar lock Supabase en móvil ──
-    const sendDoneWhatsApp = async () => {
+    // ── Enviar WhatsApp done con fetch directo — evita lock Supabase en móvil ──
+    const phone = booking?.customer?.phone;
+    if (phone) {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      let token = supabaseKey;
       try {
-        const phone = booking?.customer?.phone;
-        if (!phone) {
-          // Intentar obtener teléfono via fetch directo
-          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-          const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-          let token = supabaseKey;
-          try {
-            const stored = localStorage.getItem('mazclean-auth');
-            if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
-          } catch {}
-          const r = await fetch(`${supabaseUrl}/rest/v1/bookings?id=eq.${booking.id}&select=customer:client_id(phone)`, { headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey } });
-          if (r.ok) {
-            const d = await r.json();
-            const fetchedPhone = d?.[0]?.customer?.phone;
-            if (fetchedPhone) {
-              await sendWhatsApp('done', fetchedPhone, {
-                booking_ref: booking?.booking_ref, service_name: booking?.service_name,
-                total_price: booking?.total_price, scheduled_date: booking?.scheduled_date,
-                scheduled_time_from: booking?.scheduled_time_from, scheduled_time_to: booking?.scheduled_time_to,
-                booking_id: booking?.id,
-              });
-              setWaLog(`✅ WA done → ${fetchedPhone} | ref:${booking?.booking_ref} | $${booking?.total_price}`);
-              setTimeout(() => setWaLog(null), 8000);
-            }
-          }
-          return;
-        }
-        await sendWhatsApp('done', phone, {
-          booking_ref: booking?.booking_ref, service_name: booking?.service_name,
-          total_price: booking?.total_price, scheduled_date: booking?.scheduled_date,
-          scheduled_time_from: booking?.scheduled_time_from, scheduled_time_to: booking?.scheduled_time_to,
-          booking_id: booking?.id,
-        });
-        setWaLog(`✅ WA done → ${phone} | ref:${booking?.booking_ref} | $${booking?.total_price}`);
-        setTimeout(() => setWaLog(null), 8000);
-      } catch (err) {
-        setWaLog(`❌ WA done ERROR: ${err.message}`);
-        setTimeout(() => setWaLog(null), 8000);
-      }
-    };
-    sendDoneWhatsApp();
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
+      } catch {}
+      fetch(`${supabaseUrl}/functions/v1/send-whatsapp`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'done', phone,
+          booking: {
+            booking_ref:         booking?.booking_ref,
+            service_name:        booking?.service_name,
+            total_price:         booking?.total_price,
+            scheduled_date:      booking?.scheduled_date,
+            scheduled_time_from: booking?.scheduled_time_from,
+            scheduled_time_to:   booking?.scheduled_time_to,
+            booking_id:          booking?.id,
+          },
+        }),
+      })
+      .then(r => r.json())
+      .then(d => console.log(`[WA done] ✅ sid:${d?.sid} → ${phone}`))
+      .catch(err => console.error('[WA done] ❌', err.message));
+    } else {
+      console.warn('[WA done] sin teléfono — booking:', booking?.booking_ref);
+    }
   };
 
   const closePhotoModal = async (bookingOverride = null) => {
@@ -814,40 +787,16 @@ const OperatorView = () => {
   const toggleCheckItem = (id) => { setChecklist(prev => prev.map(item => item.id === id ? { ...item, checked: !item.checked } : item)); };
 
   const confirmFinalize = async () => {
+    if (!checklist.every(item => item.checked)) { alert('Por favor completa todos los items del checklist.'); return; }
     const bookingToFinalize = pendingFinalize;
     const bookingData = bookings.find(b => b.id === bookingToFinalize);
-
-    // Log visual inmediato
-    const debugMsg = `confirmFinalize | pendingFinalize:${bookingToFinalize || 'NULL'} | bookingData:${bookingData?.booking_ref || 'NULL'} | checklist:${checklist.length} items | allChecked:${checklist.every(i => i.checked)}`;
-    console.log('[FINALIZE]', debugMsg);
-    setWaLog(debugMsg);
-    setTimeout(() => setWaLog(null), 15000);
-
-    if (!checklist.every(item => item.checked)) { alert('Por favor completa todos los items del checklist.'); return; }
-    if (!bookingToFinalize) { setWaLog('❌ ERROR: pendingFinalize es null'); return; }
-
-    // ── FIX: cerrar modales ANTES de hacer await para no bloquear el re-render,
-    // pero capturar snapshot completo del booking ANTES de limpiar el state ──
-    const bookingSnapshot = {
-      id:                  bookingData?.id,
-      booking_ref:         bookingData?.booking_ref,
-      service_name:        bookingData?.service_name,
-      total_price:         bookingData?.total_price,
-      scheduled_date:      bookingData?.scheduled_date,
-      scheduled_time_from: bookingData?.scheduled_time_from,
-      scheduled_time_to:   bookingData?.scheduled_time_to,
-      customer:            bookingData?.customer,
-    };
-
     setChecklistModal(false);
     setPendingFinalize(null);
     setChecklist([]);
     setPhotoModalSafe(false);
     setPhotosData({});
     setPhotoBooking(null);
-
-    // Pasar snapshot — ya no depende del state de bookings
-    await updateStatus(bookingToFinalize, 'finalizado', 'done', bookingSnapshot);
+    await updateStatus(bookingToFinalize, 'finalizado', 'done', bookingData);
   };
 
 
@@ -960,14 +909,6 @@ const OperatorView = () => {
   // ── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6', paddingBottom: isMobile ? 72 : 80 }}>
-
-      {/* 🛠 LOG VISUAL TEMPORAL — remover después de debug */}
-      {waLog && (
-        <div style={{ position: 'fixed', bottom: 80, left: 12, right: 12, zIndex: 9999, background: waLog.includes('❌') || waLog.includes('ERROR') ? '#fef2f2' : '#f0fdf4', border: `2px solid ${waLog.includes('❌') || waLog.includes('ERROR') ? '#fecaca' : '#bbf7d0'}`, borderRadius: 12, padding: '12px 16px', fontSize: 11, color: '#1f2937', fontFamily: 'monospace', wordBreak: 'break-all', boxShadow: '0 4px 24px rgba(0,0,0,0.15)' }}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>🛠 WA DEBUG</div>
-          {waLog}
-        </div>
-      )}
 
       {/* Header */}
       <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: isMobile ? '20px 16px 16px' : '32px 24px 28px', borderRadius: '0 0 24px 24px', boxShadow: '0 4px 24px rgba(30,64,175,0.3)' }}>
