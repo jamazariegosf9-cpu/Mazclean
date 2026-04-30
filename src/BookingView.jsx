@@ -326,8 +326,39 @@ export default function BookingView({ onNavigate }) {
 
   const initAutocomplete = useCallback(() => {
     if (!inputRef.current || autocompleteRef.current) return
-    const ac = new window.google.maps.places.Autocomplete(inputRef.current, { componentRestrictions: { country: 'mx' }, fields: ['geometry', 'formatted_address'] })
+
+    // Construir autocomplete — sin bounds iniciales, se actualiza con ubicación del usuario
+    const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
+      componentRestrictions: { country: 'mx' },
+      fields:                ['geometry', 'formatted_address'],
+      strictBounds:          false,
+    })
     autocompleteRef.current = ac
+
+    // Priorizar resultados cerca del usuario si da permiso de geolocalización
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const userLat = pos.coords.latitude
+          const userLng = pos.coords.longitude
+          const delta = 0.3 // ~33km alrededor del usuario
+          const userBounds = new window.google.maps.LatLngBounds(
+            new window.google.maps.LatLng(userLat - delta, userLng - delta),
+            new window.google.maps.LatLng(userLat + delta, userLng + delta)
+          )
+          ac.setBounds(userBounds)
+        },
+        () => {
+          // Sin permiso de geolocalización — usar CDMX como fallback
+          const cdmxBounds = new window.google.maps.LatLngBounds(
+            new window.google.maps.LatLng(19.0471, -99.3651),
+            new window.google.maps.LatLng(19.5926, -98.9401)
+          )
+          ac.setBounds(cdmxBounds)
+        },
+        { timeout: 5000, maximumAge: 300000 }
+      )
+    }
     ac.addListener('place_changed', () => {
       const place = ac.getPlace(); if (!place.geometry) return
       const lat = place.geometry.location.lat(); const lng = place.geometry.location.lng()
