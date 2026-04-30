@@ -8,7 +8,8 @@ import { useAuth } from './context/AuthContext';
 import { sendWhatsApp, updateOperatorLocation } from './lib/whatsapp';
 import { useToast } from './App';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
@@ -56,18 +57,16 @@ async function compressImage(file) {
 
 // uploadFile — copia exacta del OnboardingView que funciona en móvil
 async function uploadFile({ file, folder, userId, onProgress, onLog }) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
   // Token desde localStorage — sin getSession() para no romper el lock en móvil
-  let token = supabaseKey
+  let token = SUPABASE_ANON_KEY
   try {
     const stored = localStorage.getItem('mazclean-auth')
     if (stored) {
       const parsed = JSON.parse(stored)
-      token = parsed?.access_token || parsed?.session?.access_token || supabaseKey
+      token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY
     }
-  } catch { token = supabaseKey }
+  } catch { token = SUPABASE_ANON_KEY }
 
   const isVideo = file.type.startsWith('video/')
   const isPdf   = file.type === 'application/pdf'
@@ -79,9 +78,9 @@ async function uploadFile({ file, folder, userId, onProgress, onLog }) {
 
   await new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('POST', `${supabaseUrl}/storage/v1/object/service-photos/${path}`)
+    xhr.open('POST', `${SUPABASE_URL}/storage/v1/object/service-photos/${path}`)
     xhr.setRequestHeader('Authorization', `Bearer ${token}`)
-    xhr.setRequestHeader('apikey', supabaseKey)
+    xhr.setRequestHeader('apikey', SUPABASE_ANON_KEY)
     xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg')
     xhr.setRequestHeader('x-upsert', 'true')
     xhr.timeout = 180000
@@ -362,16 +361,14 @@ const OperatorView = () => {
       // Esperar 3s para que el webhook procese, luego refrescar membresía
       setTimeout(async () => {
         try {
-          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-          const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-          let token = supabaseKey;
+          let token = SUPABASE_ANON_KEY;
           try {
             const stored = localStorage.getItem('mazclean-auth');
-            if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
+            if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
           } catch {}
           const res = await fetch(
-            `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=membership_status,membership_type,membership_end_at,membership_start_at,membership_record_since`,
-            { headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey } }
+            `${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}&select=membership_status,membership_type,membership_end_at,membership_start_at,membership_record_since`,
+            { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
           );
           if (res.ok) {
             const data = await res.json();
@@ -496,15 +493,13 @@ const OperatorView = () => {
   // ── Fetch bookings ────────────────────────────────────────────────────────
   const fetchMembershipConfig = async () => {
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      let token = supabaseKey;
+      let token = SUPABASE_ANON_KEY;
       try {
         const stored = localStorage.getItem('mazclean-auth');
-        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
       } catch {}
-      const res = await fetch(`${supabaseUrl}/rest/v1/membership_config?select=operator_price,operator_duration_days,operator_enabled&limit=1`, {
-        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey },
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/membership_config?select=operator_price,operator_duration_days,operator_enabled&limit=1`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY },
       });
       if (res.ok) {
         const data = await res.json();
@@ -526,15 +521,13 @@ const OperatorView = () => {
 
   const fetchMembershipHistory = async () => {
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      let token = supabaseKey;
+      let token = SUPABASE_ANON_KEY;
       try {
         const stored = localStorage.getItem('mazclean-auth');
-        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
       } catch {}
-      const res = await fetch(`${supabaseUrl}/rest/v1/membership_history?user_id=eq.${user.id}&order=start_at.desc`, {
-        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey },
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/membership_history?user_id=eq.${user.id}&order=start_at.desc`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY },
       });
       if (res.ok) setMembershipHistory(await res.json());
     } catch (err) { console.error('fetchMembershipHistory:', err); }
@@ -544,16 +537,14 @@ const OperatorView = () => {
     setPayingMembership(true);
     setPayError('');
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      let token = supabaseKey;
+      let token = SUPABASE_ANON_KEY;
       try {
         const stored = localStorage.getItem('mazclean-auth');
-        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
       } catch {}
-      const res = await fetch(`${supabaseUrl}/functions/v1/create-subscription`, {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/create-subscription`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'operador', user_id: user.id, email: user.email, success_url: `${window.location.origin}?membership=success`, cancel_url: window.location.href }),
       });
       const data = await res.json();
@@ -571,17 +562,15 @@ const OperatorView = () => {
     setDepositLoading(true);
     setDepositError('');
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      let token = supabaseKey;
+      let token = SUPABASE_ANON_KEY;
       try {
         const stored = localStorage.getItem('mazclean-auth');
-        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
       } catch {}
       const amount = membershipConfig?.operator_price || 200;
-      const res = await fetch(`${supabaseUrl}/rest/v1/membership_requests`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/membership_requests`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({ user_id: user.id, user_type: 'operador', referral_code: profile.referral_code, amount }),
       });
       if (!res.ok) {
@@ -601,25 +590,23 @@ const OperatorView = () => {
     if (!confirm('¿Deseas cancelar tu membresía? Se mantendrá activa hasta la fecha de vencimiento actual.')) return;
     setCancellingMembership(true);
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      let token = supabaseKey;
+      let token = SUPABASE_ANON_KEY;
       try {
         const stored = localStorage.getItem('mazclean-auth');
-        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
       } catch {}
       // Cancelar suscripción en Stripe si existe
       if (effectiveProfile?.stripe_subscription_id) {
-        await fetch(`${supabaseUrl}/functions/v1/cancel-subscription`, {
+        await fetch(`${SUPABASE_URL}/functions/v1/cancel-subscription`, {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json' },
+          headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
           body: JSON.stringify({ subscription_id: effectiveProfile.stripe_subscription_id }),
         });
       }
       // Marcar como cancelada en profiles (sin quitar acceso hasta end_at)
-      await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}`, {
+      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}`, {
         method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({ membership_status: 'cancelada', updated_at: new Date().toISOString() }),
       });
       setOperatorMembership(prev => ({ ...(prev || {}), membership_status: 'cancelada' }));
@@ -771,23 +758,21 @@ const OperatorView = () => {
     const timeoutId = setTimeout(() => { setUpdatingId(null); showToast('La operación tardó demasiado. Verifica tu conexión.', 'warning'); }, 12000);
     try {
       // Usar fetch directo para evitar el lock de Supabase en móvil
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-      let token = supabaseKey
+      let token = SUPABASE_ANON_KEY
       try {
         const stored = localStorage.getItem('mazclean-auth')
         if (stored) {
           const parsed = JSON.parse(stored)
-          token = parsed?.access_token || parsed?.session?.access_token || supabaseKey
+          token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY
         }
       } catch {}
       const res = await fetch(
-        `${supabaseUrl}/rest/v1/bookings?id=eq.${bookingId}`,
+        `${SUPABASE_URL}/rest/v1/bookings?id=eq.${bookingId}`,
         {
           method: 'PATCH',
           headers: {
             'Authorization': `Bearer ${token}`,
-            'apikey': supabaseKey,
+            'apikey': SUPABASE_ANON_KEY,
             'Content-Type': 'application/json',
             'Prefer': 'return=minimal',
           },
@@ -803,19 +788,17 @@ const OperatorView = () => {
       // Si no tiene teléfono, obtenerlo via fetch directo (evita lock en móvil)
       if (!phone) {
         try {
-          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-          const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-          let token = supabaseKey
+          let token = SUPABASE_ANON_KEY
           try {
             const stored = localStorage.getItem('mazclean-auth')
             if (stored) {
               const parsed = JSON.parse(stored)
-              token = parsed?.access_token || parsed?.session?.access_token || supabaseKey
+              token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY
             }
           } catch {}
           const r = await fetch(
-            `${supabaseUrl}/rest/v1/bookings?id=eq.${bookingId}&select=booking_ref,service_name,customer:client_id(phone,full_name)`,
-            { headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey } }
+            `${SUPABASE_URL}/rest/v1/bookings?id=eq.${bookingId}&select=booking_ref,service_name,customer:client_id(phone,full_name)`,
+            { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
           )
           if (r.ok) {
             const d = await r.json()
@@ -907,22 +890,20 @@ const OperatorView = () => {
   const loadChecklist = async (booking) => {
     try {
       // Usar fetch directo para evitar el lock de Supabase en móvil
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-      let token = supabaseKey
+      let token = SUPABASE_ANON_KEY
       try {
         const stored = localStorage.getItem('mazclean-auth')
         if (stored) {
           const parsed = JSON.parse(stored)
-          token = parsed?.access_token || parsed?.session?.access_token || supabaseKey
+          token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY
         }
       } catch {}
       const res = await fetch(
-        `${supabaseUrl}/rest/v1/service_checklist?service_id=eq.${booking.service_id}&order=sort_order.asc`,
+        `${SUPABASE_URL}/rest/v1/service_checklist?service_id=eq.${booking.service_id}&order=sort_order.asc`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
-            'apikey': supabaseKey,
+            'apikey': SUPABASE_ANON_KEY,
             'Content-Type': 'application/json',
           }
         }
