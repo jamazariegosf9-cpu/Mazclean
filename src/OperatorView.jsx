@@ -280,6 +280,9 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
 // ── Componente principal ──────────────────────────────────────────────────────
 const OperatorView = () => {
   const { user, profile, signOut } = useAuth();
+  const [membershipConfig, setMembershipConfig]   = useState(null);
+  const [payingMembership, setPayingMembership]   = useState(false);
+  const [payError, setPayError]                   = useState('');
   const isMobile = useIsMobile();
 
   // ── Estado general ────────────────────────────────────────────────────────
@@ -333,7 +336,7 @@ const OperatorView = () => {
 
     fetchOperatorBookings();
     fetchBookingRequests();
-
+    fetchMembershipConfig();
     // Realtime: cambios en bookings del operador
     const bookingsChannel = supabase
       .channel('operator-bookings')
@@ -447,6 +450,38 @@ const OperatorView = () => {
   }
 
   // ── Fetch bookings ────────────────────────────────────────────────────────
+  const fetchMembershipConfig = async () => {
+    try {
+      const { data } = await supabase.from('membership_config').select('operator_price,operator_duration_days,operator_enabled').single();
+      setMembershipConfig(data);
+    } catch (err) { console.error('fetchMembershipConfig:', err); }
+  };
+
+  const handleSubscribeOperator = async () => {
+    setPayingMembership(true);
+    setPayError('');
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      let token = supabaseKey;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
+      } catch {}
+      const res = await fetch(`${supabaseUrl}/functions/v1/create-subscription`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'operador', user_id: user.id, email: user.email, success_url: `${window.location.origin}?membership=success`, cancel_url: window.location.href }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.url) throw new Error(data?.error || 'No se pudo crear la sesión de pago');
+      window.location.href = data.url;
+    } catch (err) {
+      setPayError(err.message);
+      setPayingMembership(false);
+    }
+  };
+
   const fetchOperatorBookings = async (silent = false) => {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
@@ -928,6 +963,16 @@ const OperatorView = () => {
             {profile?.membership_status === 'vencida' && (
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 20, padding: '3px 10px' }}>
                 <span style={{ fontSize: 11, color: '#fde68a', fontWeight: 700 }}>⚠️ Membresía vencida</span>
+              </div>
+            )}
+            {/* Botón pago membresía — visible si operator_enabled y no tiene activa */}
+            {membershipConfig?.operator_enabled && profile?.membership_status !== 'activa' && (
+              <div style={{ marginTop: 8 }}>
+                {payError && <div style={{ fontSize: 10, color: '#fca5a5', marginBottom: 4 }}>⚠️ {payError}</div>}
+                <button onClick={handleSubscribeOperator} disabled={payingMembership}
+                  style={{ padding: '7px 14px', background: payingMembership ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)', border: '1.5px solid rgba(255,255,255,0.4)', borderRadius: 20, color: '#fff', fontSize: 11, fontWeight: 700, cursor: payingMembership ? 'not-allowed' : 'pointer', minHeight: 34 }}>
+                  {payingMembership ? '⏳ Redirigiendo...' : `💳 Activar membresía $${membershipConfig.operator_price} MXN/mes`}
+                </button>
               </div>
             )}
           </div>

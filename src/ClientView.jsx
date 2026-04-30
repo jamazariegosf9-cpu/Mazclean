@@ -51,6 +51,8 @@ export default function ClientView() {
   // ── Membresía ───────────────────────────────────────────────────
   const [membershipConfig, setMembershipConfig] = useState(null)
   const [clientProfile, setClientProfile]       = useState(null)
+  const [payingMembership, setPayingMembership] = useState(false)
+  const [payError, setPayError]                 = useState('')
 
   useEffect(() => {
     if (user) {
@@ -69,6 +71,31 @@ export default function ClientView() {
       setMembershipConfig(cfg)
       setClientProfile(prof)
     } catch (err) { console.error('fetchMembershipData:', err) }
+  }
+
+  const handleSubscribeClient = async () => {
+    setPayingMembership(true)
+    setPayError('')
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      let token = supabaseKey
+      try {
+        const stored = localStorage.getItem('mazclean-auth')
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey }
+      } catch {}
+      const res = await fetch(`${supabaseUrl}/functions/v1/create-subscription`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'cliente', user_id: user.id, email: user.email, success_url: `${window.location.origin}?membership=success`, cancel_url: window.location.href }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.url) throw new Error(data?.error || 'No se pudo crear la sesión de pago')
+      window.location.href = data.url
+    } catch (err) {
+      setPayError(err.message)
+      setPayingMembership(false)
+    }
   }
 
   const fetchBookings = async (silent = false) => {
@@ -266,11 +293,18 @@ export default function ClientView() {
                 </div>
               ) : (
                 <div>
-                  <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 10, lineHeight: 1.6 }}>
+                  <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 12, lineHeight: 1.6 }}>
                     ⭐ Prioridad en asignación · 📅 Horarios reservados · 🎯 Operador preferente · ❌ Cancelación flexible
                   </div>
-                  <div style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>
-                    Próximamente disponible el pago en línea.
+                  {payError && (
+                    <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#dc2626' }}>⚠️ {payError}</div>
+                  )}
+                  <button onClick={handleSubscribeClient} disabled={payingMembership}
+                    style={{ width: '100%', padding: '13px', background: payingMembership ? '#9ca3af' : 'linear-gradient(135deg,#7c3aed,#a78bfa)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: payingMembership ? 'not-allowed' : 'pointer', minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                    {payingMembership ? '⏳ Redirigiendo...' : `💳 Suscribirme por $${membershipConfig.client_price} MXN/mes`}
+                  </button>
+                  <div style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 8 }}>
+                    Pago seguro con Stripe · Cancela cuando quieras
                   </div>
                 </div>
               )}
