@@ -361,15 +361,15 @@ const AdminViewA = ({
                       </button>
                     )}
                   </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-                    <button onClick={() => { setSelectedBooking(booking); setIsModalOpen(true); }} style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44, flex: isMobile ? 1 : 'none' }}>👥 Asignar</button>
-                    <button onClick={() => { setEditData({ ...booking }); setEditModal(true); }} style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44, flex: isMobile ? 1 : 'none' }}>✏️ Editar</button>
-                    {!['rechazado','cancelado','finalizado'].includes(booking.status) && (
-                      <button onClick={() => rejectBooking(booking)} disabled={rejectingBooking === booking.id} style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #e9d5ff', background: '#faf5ff', color: '#7e22ce', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44, flex: isMobile ? 1 : 'none' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    <button onClick={() => { setSelectedBooking(booking); setIsModalOpen(true); }} style={{ padding: '10px 8px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 12, fontWeight: 600, cursor: 'pointer', minHeight: 40 }}>👥 Asignar</button>
+                    <button onClick={() => { setEditData({ ...booking }); setEditModal(true); }} style={{ padding: '10px 8px', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer', minHeight: 40 }}>✏️ Editar</button>
+                    {!['rechazado','cancelado','finalizado'].includes(booking.status) ? (
+                      <button onClick={() => rejectBooking(booking)} disabled={rejectingBooking === booking.id} style={{ padding: '10px 8px', borderRadius: 8, border: '1.5px solid #e9d5ff', background: '#faf5ff', color: '#7e22ce', fontSize: 12, fontWeight: 600, cursor: 'pointer', minHeight: 40 }}>
                         {rejectingBooking === booking.id ? '⏳...' : '🚫 Rechazar'}
                       </button>
-                    )}
-                    <button onClick={() => deleteBooking(booking.id)} style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#991b1b', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44, flex: isMobile ? 1 : 'none' }}>🗑 Eliminar</button>
+                    ) : <div />}
+                    <button onClick={() => deleteBooking(booking.id)} style={{ padding: '10px 8px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#991b1b', fontSize: 12, fontWeight: 600, cursor: 'pointer', minHeight: 40 }}>🗑 Eliminar</button>
                   </div>
                 </div>
               </div>
