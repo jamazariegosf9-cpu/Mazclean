@@ -280,8 +280,11 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
 // ── Componente principal ──────────────────────────────────────────────────────
 const OperatorView = () => {
   const { user, profile, signOut } = useAuth();
-  const [membershipConfig, setMembershipConfig]   = useState(null);
-  const [payingMembership, setPayingMembership]   = useState(false);
+  const [membershipConfig, setMembershipConfig]       = useState(null);
+  const [payingMembership, setPayingMembership]       = useState(false);
+  const [payError, setPayError]                       = useState('');
+  const [membershipHistory, setMembershipHistory]     = useState([]);
+  const [showMembershipHistory, setShowMembershipHistory] = useState(false);
   const [payError, setPayError]                   = useState('');
   const isMobile = useIsMobile();
 
@@ -467,6 +470,22 @@ const OperatorView = () => {
         setMembershipConfig(data?.[0] || null);
       }
     } catch (err) { console.error('fetchMembershipConfig:', err); }
+  };
+
+  const fetchMembershipHistory = async () => {
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      let token = supabaseKey;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
+      } catch {}
+      const res = await fetch(`${supabaseUrl}/rest/v1/membership_history?user_id=eq.${user.id}&order=start_at.desc`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey },
+      });
+      if (res.ok) setMembershipHistory(await res.json());
+    } catch (err) { console.error('fetchMembershipHistory:', err); }
   };
 
   const handleSubscribeOperator = async () => {
@@ -977,11 +996,15 @@ const OperatorView = () => {
                 <span style={{ fontSize: 11, color: '#fde68a', fontWeight: 700 }}>⚠️ Membresía vencida</span>
               </div>
             )}
-            {/* DEBUG — remover después */}
-            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
-              cfg:{membershipConfig ? `enabled=${membershipConfig.operator_enabled}` : 'null'} | mem:{profile?.membership_status || 'null'}
-            </div>
-            {/* Botón pago membresía — visible si no tiene activa, no depende de membershipConfig */}
+            {/* Record de miembro */}
+            {profile?.membership_record_since && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, marginLeft: 4 }}>
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>
+                  🏅 Miembro desde {new Date(profile.membership_record_since).toLocaleDateString('es-MX', { year: 'numeric', month: 'short' })}
+                </span>
+              </div>
+            )}
+            {/* Botón pago — activa: renovar anticipado (solo si vence en ≤15 días); inactiva/vencida: activar */}
             {profile?.membership_status !== 'activa' && (
               <div style={{ marginTop: 8 }}>
                 {payError && <div style={{ fontSize: 10, color: '#fca5a5', marginBottom: 4 }}>⚠️ {payError}</div>}
@@ -991,11 +1014,51 @@ const OperatorView = () => {
                 </button>
               </div>
             )}
+            {profile?.membership_status === 'activa' && profile?.membership_end_at && (() => {
+              const daysLeft = Math.ceil((new Date(profile.membership_end_at) - new Date()) / (1000 * 60 * 60 * 24));
+              if (daysLeft > 15) return null;
+              return (
+                <div style={{ marginTop: 6 }}>
+                  <button onClick={handleSubscribeOperator} disabled={payingMembership}
+                    style={{ padding: '5px 12px', background: 'rgba(251,191,36,0.25)', border: '1px solid rgba(251,191,36,0.5)', borderRadius: 20, color: '#fde68a', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 28 }}>
+                    {payingMembership ? '⏳...' : `🔄 Renovar anticipado (${daysLeft}d restantes)`}
+                  </button>
+                </div>
+              );
+            })()}
+            {/* Ver historial */}
+            <button onClick={() => { setShowMembershipHistory(!showMembershipHistory); if (!showMembershipHistory) fetchMembershipHistory(); }}
+              style={{ marginTop: 6, padding: '4px 10px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 20, color: 'rgba(255,255,255,0.8)', fontSize: 10, fontWeight: 600, cursor: 'pointer', minHeight: 26 }}>
+              {showMembershipHistory ? '▲ Ocultar' : '📋 Historial membresías'}
+            </button>
           </div>
           <button onClick={() => signOut()} style={{ background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 10, padding: '10px 12px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', minHeight: 44 }}>
             <LogOut size={16} />
           </button>
         </div>
+
+        {/* Panel historial membresías */}
+        {showMembershipHistory && (
+          <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 12, padding: '12px 16px', marginBottom: 12, border: '1px solid rgba(255,255,255,0.2)' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 8 }}>📋 Historial de membresías</div>
+            {membershipHistory.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', fontStyle: 'italic' }}>Sin historial registrado aún.</div>
+            ) : membershipHistory.map((h, i) => (
+              <div key={h.id || i} style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 8, padding: '8px 10px', marginBottom: 6, border: `1px solid ${h.status === 'activa' ? 'rgba(16,185,129,0.4)' : 'rgba(255,255,255,0.1)'}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: h.status === 'activa' ? '#6ee7b7' : 'rgba(255,255,255,0.6)' }}>
+                    {h.status === 'activa' ? '✅ Activa' : '⚫ Vencida'}
+                  </span>
+                  {h.amount > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#6ee7b7' }}>${h.amount} MXN</span>}
+                </div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
+                  {new Date(h.start_at).toLocaleDateString('es-MX')} → {new Date(h.end_at).toLocaleDateString('es-MX')}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {!isMobile && (
           <div style={{ display: 'flex', background: 'rgba(255,255,255,0.15)', padding: 4, borderRadius: 14, gap: 4, marginTop: 16 }}>
             {tabs.map(tab => (

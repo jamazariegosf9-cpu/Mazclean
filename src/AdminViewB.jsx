@@ -121,6 +121,10 @@ const AdminViewB = ({
   const [membershipModal, setMembershipModal]       = useState(false);
   const [membershipOp, setMembershipOp]             = useState(null);
   const [membershipDays, setMembershipDays]         = useState(30);
+  const [membershipHistoryModal, setMembershipHistoryModal] = useState(false);
+  const [membershipHistoryOp, setMembershipHistoryOp]       = useState(null);
+  const [membershipHistoryData, setMembershipHistoryData]   = useState([]);
+  const [loadingMembershipHistory, setLoadingMembershipHistory] = useState(false);
 
   const fetchMembershipConfig = async () => {
     try {
@@ -186,6 +190,25 @@ const AdminViewB = ({
       setOperators(prev => prev.map(o => o.id === op.id ? { ...o, membership_status: 'vencida' } : o));
     } catch (err) { alert('Error: ' + err.message); }
     finally { setUpdatingMembership(null); }
+  };
+
+  const openMembershipHistoryModal = async (op) => {
+    setMembershipHistoryOp(op);
+    setMembershipHistoryData([]);
+    setMembershipHistoryModal(true);
+    setLoadingMembershipHistory(true);
+    try {
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
+      } catch {}
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/membership_history?user_id=eq.${op.id}&order=start_at.desc`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY },
+      });
+      if (res.ok) setMembershipHistoryData(await res.json());
+    } catch (err) { console.error('fetchMembershipHistory admin:', err); }
+    finally { setLoadingMembershipHistory(false); }
   };
 
   const fetchPendingOperators = async () => {
@@ -811,25 +834,34 @@ const AdminViewB = ({
                         {op.membership_status === 'vencida' && op.membership_end_at && (
                           <div style={{ fontSize: 10, color: '#d97706', marginTop: 2 }}>Venció: {new Date(op.membership_end_at).toLocaleDateString('es-MX')}</div>
                         )}
-                      </div>
-                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                        {op.membership_status === 'activa' ? (
-                          <>
-                            <button onClick={() => revokeMembership(op)} disabled={updatingMembership === op.id}
-                              style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
-                              {updatingMembership === op.id ? '⏳' : '✕ Revocar'}
-                            </button>
-                            <button onClick={() => openMembershipModal(op)} disabled={updatingMembership === op.id}
-                              style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
-                              ↻ Extender
-                            </button>
-                          </>
-                        ) : (
-                          <button onClick={() => openMembershipModal(op)} disabled={updatingMembership === op.id}
-                            style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#059669', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
-                            {updatingMembership === op.id ? '⏳' : '+ Activar'}
-                          </button>
+                        {op.membership_record_since && (
+                          <div style={{ fontSize: 10, color: '#7c3aed', marginTop: 2 }}>🏅 Miembro desde {new Date(op.membership_record_since).toLocaleDateString('es-MX', { year: 'numeric', month: 'short' })}</div>
                         )}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexDirection: 'column', alignItems: 'flex-end' }}>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {op.membership_status === 'activa' ? (
+                            <>
+                              <button onClick={() => revokeMembership(op)} disabled={updatingMembership === op.id}
+                                style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                                {updatingMembership === op.id ? '⏳' : '✕ Revocar'}
+                              </button>
+                              <button onClick={() => openMembershipModal(op)} disabled={updatingMembership === op.id}
+                                style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                                ↻ Extender
+                              </button>
+                            </>
+                          ) : (
+                            <button onClick={() => openMembershipModal(op)} disabled={updatingMembership === op.id}
+                              style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#059669', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                              {updatingMembership === op.id ? '⏳' : '+ Activar'}
+                            </button>
+                          )}
+                        </div>
+                        <button onClick={() => openMembershipHistoryModal(op)}
+                          style={{ padding: '4px 8px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#f9fafb', color: '#6b7280', fontSize: 10, fontWeight: 600, cursor: 'pointer', minHeight: 26 }}>
+                          📋 Historial
+                        </button>
                       </div>
                     </div>
 
@@ -1337,6 +1369,58 @@ const AdminViewB = ({
                 style={{ flex: 2, padding: '12px', background: updatingMembership === membershipOp.id ? '#9ca3af' : '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>
                 {updatingMembership === membershipOp.id ? '⏳ Guardando...' : `✅ ${membershipOp.membership_status === 'activa' ? 'Extender' : 'Activar'} por ${membershipDays} días`}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════ MODAL: HISTORIAL MEMBRESÍAS ════ */}
+      {membershipHistoryModal && membershipHistoryOp && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, boxShadow: '0 8px 40px rgba(0,0,0,0.2)', width: '100%', maxWidth: isMobile ? '100%' : 480, overflow: 'hidden' }}>
+            <div style={{ background: 'linear-gradient(135deg,#7c3aed,#a78bfa)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>📋 Historial Membresías</h3>
+                <div style={{ color: '#ede9fe', fontSize: 12, marginTop: 2 }}>{membershipHistoryOp.full_name}</div>
+              </div>
+              <button onClick={() => setMembershipHistoryModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#ede9fe', fontSize: 22, borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+            <div style={{ padding: isMobile ? '16px' : 20, maxHeight: '60vh', overflowY: 'auto' }}>
+              {/* Record de miembro */}
+              {membershipHistoryOp.membership_record_since && (
+                <div style={{ background: '#f5f3ff', borderRadius: 10, padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #e9d5ff' }}>
+                  <span style={{ fontSize: 20 }}>🏅</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>Record de miembro</div>
+                    <div style={{ fontSize: 13, color: '#6b21a8' }}>Desde {new Date(membershipHistoryOp.membership_record_since).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                  </div>
+                </div>
+              )}
+              {loadingMembershipHistory ? (
+                <div style={{ textAlign: 'center', padding: 32, color: '#9ca3af' }}>⏳ Cargando historial...</div>
+              ) : membershipHistoryData.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 32, color: '#9ca3af', fontStyle: 'italic', fontSize: 14 }}>Sin historial de membresías registrado.</div>
+              ) : (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {membershipHistoryData.map((h, i) => (
+                    <div key={h.id || i} style={{ background: h.status === 'activa' ? '#f0fdf4' : '#f9fafb', borderRadius: 10, padding: '12px 14px', border: `1.5px solid ${h.status === 'activa' ? '#bbf7d0' : '#e5e7eb'}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: h.status === 'activa' ? '#dcfce7' : '#f3f4f6', color: h.status === 'activa' ? '#059669' : '#6b7280' }}>
+                          {h.status === 'activa' ? '✅ Activa' : '⚫ Vencida'}
+                        </span>
+                        {h.amount > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#059669' }}>${h.amount} MXN</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#374151', fontWeight: 600 }}>
+                        {new Date(h.start_at).toLocaleDateString('es-MX')} → {new Date(h.end_at).toLocaleDateString('es-MX')}
+                      </div>
+                      {h.stripe_sub_id && <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2, fontFamily: 'monospace' }}>{h.stripe_sub_id}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', textAlign: 'right' }}>
+              <button onClick={() => setMembershipHistoryModal(false)} style={{ padding: '12px 24px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cerrar</button>
             </div>
           </div>
         </div>

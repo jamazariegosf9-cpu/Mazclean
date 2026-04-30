@@ -49,10 +49,12 @@ export default function ClientView() {
   const [savingRating, setSavingRating]   = useState(false)
 
   // ── Membresía ───────────────────────────────────────────────────
-  const [membershipConfig, setMembershipConfig] = useState(null)
-  const [clientProfile, setClientProfile]       = useState(null)
-  const [payingMembership, setPayingMembership] = useState(false)
-  const [payError, setPayError]                 = useState('')
+  const [membershipConfig, setMembershipConfig]       = useState(null)
+  const [clientProfile, setClientProfile]             = useState(null)
+  const [payingMembership, setPayingMembership]       = useState(false)
+  const [payError, setPayError]                       = useState('')
+  const [membershipHistory, setMembershipHistory]     = useState([])
+  const [showMembershipHistory, setShowMembershipHistory] = useState(false)
 
   useEffect(() => {
     if (user) {
@@ -66,36 +68,22 @@ export default function ClientView() {
     try {
       const [{ data: cfg }, { data: prof }] = await Promise.all([
         supabase.from('membership_config').select('*').single(),
-        supabase.from('profiles').select('membership_status,membership_type,membership_end_at').eq('id', user.id).single(),
+        supabase.from('profiles').select('membership_status,membership_type,membership_end_at,membership_start_at,membership_record_since').eq('id', user.id).single(),
       ])
       setMembershipConfig(cfg)
       setClientProfile(prof)
     } catch (err) { console.error('fetchMembershipData:', err) }
   }
 
-  const handleSubscribeClient = async () => {
-    setPayingMembership(true)
-    setPayError('')
+  const fetchMembershipHistory = async () => {
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-      let token = supabaseKey
-      try {
-        const stored = localStorage.getItem('mazclean-auth')
-        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey }
-      } catch {}
-      const res = await fetch(`${supabaseUrl}/functions/v1/create-subscription`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'cliente', user_id: user.id, email: user.email, success_url: `${window.location.origin}?membership=success`, cancel_url: window.location.href }),
-      })
-      const data = await res.json()
-      if (!res.ok || !data?.url) throw new Error(data?.error || 'No se pudo crear la sesión de pago')
-      window.location.href = data.url
-    } catch (err) {
-      setPayError(err.message)
-      setPayingMembership(false)
-    }
+      const { data } = await supabase
+        .from('membership_history')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('start_at', { ascending: false })
+      setMembershipHistory(data || [])
+    } catch (err) { console.error('fetchMembershipHistory:', err) }
   }
 
   const fetchBookings = async (silent = false) => {
@@ -280,16 +268,37 @@ export default function ClientView() {
               }
             </div>
             <div style={{ background: '#faf5ff', padding: '12px 16px' }}>
+
+              {/* Record de miembro */}
+              {clientProfile?.membership_record_since && (
+                <div style={{ background: '#f3e8ff', borderRadius: 8, padding: '8px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 14 }}>🏅</span>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed' }}>Miembro desde</div>
+                    <div style={{ fontSize: 12, color: '#6b21a8' }}>{new Date(clientProfile.membership_record_since).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                  </div>
+                </div>
+              )}
+
               {clientProfile?.membership_status === 'activa' ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                  <div style={{ fontSize: 13, color: '#6b21a8', fontWeight: 600 }}>
-                    💳 Tu membresía está activa
+                <div>
+                  <div style={{ fontSize: 13, color: '#6b21a8', fontWeight: 600, marginBottom: 8 }}>
+                    💳 Membresía activa
                     {clientProfile.membership_end_at && (
                       <span style={{ fontWeight: 400, color: '#7c3aed', marginLeft: 6 }}>
                         — vence el {new Date(clientProfile.membership_end_at).toLocaleDateString('es-MX')}
                       </span>
                     )}
                   </div>
+                  {clientProfile.membership_start_at && (
+                    <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 10 }}>
+                      Período actual: {new Date(clientProfile.membership_start_at).toLocaleDateString('es-MX')} → {clientProfile.membership_end_at ? new Date(clientProfile.membership_end_at).toLocaleDateString('es-MX') : '—'}
+                    </div>
+                  )}
+                  <button onClick={() => { setShowMembershipHistory(!showMembershipHistory); if (!showMembershipHistory) fetchMembershipHistory(); }}
+                    style={{ width: '100%', padding: '10px', background: '#f3e8ff', border: '1.5px solid #d8b4fe', borderRadius: 8, color: '#7c3aed', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 40 }}>
+                    {showMembershipHistory ? '▲ Ocultar historial' : '📋 Ver historial de pagos'}
+                  </button>
                 </div>
               ) : (
                 <div>
@@ -306,6 +315,34 @@ export default function ClientView() {
                   <div style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 8 }}>
                     Pago seguro con Stripe · Cancela cuando quieras
                   </div>
+                  {membershipHistory.length > 0 && (
+                    <button onClick={() => { setShowMembershipHistory(!showMembershipHistory); if (!showMembershipHistory) fetchMembershipHistory(); }}
+                      style={{ width: '100%', padding: '10px', background: '#f3e8ff', border: '1.5px solid #d8b4fe', borderRadius: 8, color: '#7c3aed', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 40, marginTop: 10 }}>
+                      {showMembershipHistory ? '▲ Ocultar historial' : '📋 Ver historial de pagos'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Historial de membresías */}
+              {showMembershipHistory && (
+                <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 0.5 }}>Historial de membresías</div>
+                  {membershipHistory.length === 0 ? (
+                    <div style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>Sin historial registrado aún.</div>
+                  ) : membershipHistory.map((h, i) => (
+                    <div key={h.id || i} style={{ background: h.status === 'activa' ? '#f0fdf4' : '#f9fafb', borderRadius: 8, padding: '10px 12px', border: `1px solid ${h.status === 'activa' ? '#bbf7d0' : '#e5e7eb'}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: h.status === 'activa' ? '#059669' : '#6b7280', background: h.status === 'activa' ? '#dcfce7' : '#f3f4f6', padding: '2px 8px', borderRadius: 20 }}>
+                          {h.status === 'activa' ? '✅ Activa' : '⚫ Vencida'}
+                        </span>
+                        {h.amount > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: '#059669' }}>${h.amount} MXN</span>}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#6b7280' }}>
+                        {new Date(h.start_at).toLocaleDateString('es-MX')} → {new Date(h.end_at).toLocaleDateString('es-MX')}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
