@@ -315,8 +315,13 @@ export default function BookingView({ onNavigate }) {
 
   const initMap = useCallback(() => {
     if (!mapRef.current || mapInstanceRef.current) return
-    const center = { lat: 19.4326, lng: -99.1332 }
-    const map = new window.google.maps.Map(mapRef.current, { center, zoom: 13, mapTypeControl: false, streetViewControl: false, fullscreenControl: false })
+    // Si ya hay una dirección seleccionada, centrar ahí; si no, usar CDMX como default
+    const savedDetails = addressDetailsRef.current
+    const center = savedDetails
+      ? { lat: savedDetails.lat, lng: savedDetails.lng }
+      : { lat: 19.4326, lng: -99.1332 }
+    const zoom = savedDetails ? 16 : 13
+    const map = new window.google.maps.Map(mapRef.current, { center, zoom, mapTypeControl: false, streetViewControl: false, fullscreenControl: false })
     mapInstanceRef.current = map
     const marker = new window.google.maps.Marker({ position: center, map, draggable: true, animation: window.google.maps.Animation.DROP })
     markerRef.current = marker
