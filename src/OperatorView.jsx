@@ -11,6 +11,45 @@ import { useToast } from './App';
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// ── Notificaciones de chat ────────────────────────────────────────────────────
+let chatAudio = null
+function playNotificationSound() {
+  try {
+    // Tono simple usando Web Audio API — sin archivo externo
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const oscillator = ctx.createOscillator()
+    const gainNode   = ctx.createGain()
+    oscillator.connect(gainNode)
+    gainNode.connect(ctx.destination)
+    oscillator.frequency.setValueAtTime(880, ctx.currentTime)
+    oscillator.frequency.setValueAtTime(660, ctx.currentTime + 0.1)
+    gainNode.gain.setValueAtTime(0.3, ctx.currentTime)
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
+    oscillator.start(ctx.currentTime)
+    oscillator.stop(ctx.currentTime + 0.3)
+  } catch {}
+}
+
+function vibrateDevice() {
+  try { if (navigator.vibrate) navigator.vibrate([100, 50, 100]) } catch {}
+}
+
+async function requestNotificationPermission() {
+  try {
+    if ('Notification' in window && Notification.permission === 'default') {
+      await Notification.requestPermission()
+    }
+  } catch {}
+}
+
+function showSystemNotification(title, body) {
+  try {
+    if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+      new Notification(title, { body, icon: '/favicon.ico', badge: '/favicon.ico' })
+    }
+  } catch {}
+}
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
   useEffect(() => {
@@ -662,12 +701,19 @@ const OperatorView = () => {
     setChatInput('')
     setChatError('')
     await fetchMessages(bookingId)
+    await requestNotificationPermission()
     // Suscripción Realtime
     if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current)
     chatChannelRef.current = supabase
       .channel(`chat-${bookingId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `booking_id=eq.${bookingId}` },
         (payload) => {
+          // Solo notificar mensajes del cliente (no los propios del operador)
+          if (payload.new.sender_role === 'cliente') {
+            playNotificationSound()
+            vibrateDevice()
+            showSystemNotification('💬 Mensaje del cliente', payload.new.content)
+          }
           setChatMessages(prev => {
             if (prev.find(m => m.id === payload.new.id)) return prev
             return [...prev, payload.new]

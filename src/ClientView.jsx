@@ -5,6 +5,43 @@ import RatingSlider from './RatingSlider'
 import { useToast } from './App'
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+
+// ── Notificaciones de chat ────────────────────────────────────────────────────
+function playNotificationSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const oscillator = ctx.createOscillator()
+    const gainNode   = ctx.createGain()
+    oscillator.connect(gainNode)
+    gainNode.connect(ctx.destination)
+    oscillator.frequency.setValueAtTime(880, ctx.currentTime)
+    oscillator.frequency.setValueAtTime(660, ctx.currentTime + 0.1)
+    gainNode.gain.setValueAtTime(0.3, ctx.currentTime)
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
+    oscillator.start(ctx.currentTime)
+    oscillator.stop(ctx.currentTime + 0.3)
+  } catch {}
+}
+
+function vibrateDevice() {
+  try { if (navigator.vibrate) navigator.vibrate([100, 50, 100]) } catch {}
+}
+
+async function requestNotificationPermission() {
+  try {
+    if ('Notification' in window && Notification.permission === 'default') {
+      await Notification.requestPermission()
+    }
+  } catch {}
+}
+
+function showSystemNotification(title, body) {
+  try {
+    if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+      new Notification(title, { body, icon: '/favicon.ico', badge: '/favicon.ico' })
+    }
+  } catch {}
+}
 const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY   = import.meta.env.VITE_SUPABASE_ANON_KEY
 
@@ -275,11 +312,18 @@ export default function ClientView() {
     setChatError('')
     setUnreadCount(0)
     await fetchMessages(bookingId)
+    await requestNotificationPermission()
     if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current)
     chatChannelRef.current = supabase
       .channel(`chat-client-${bookingId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `booking_id=eq.${bookingId}` },
         (payload) => {
+          // Solo notificar mensajes del operador (no los propios del cliente)
+          if (payload.new.sender_role === 'operador') {
+            playNotificationSound()
+            vibrateDevice()
+            showSystemNotification('💬 Mensaje de tu operador', payload.new.content)
+          }
           setChatMessages(prev => {
             if (prev.find(m => m.id === payload.new.id)) return prev
             return [...prev, payload.new]
@@ -325,7 +369,7 @@ export default function ClientView() {
     if (chatBottomRef.current) chatBottomRef.current.scrollIntoView({ behavior: 'smooth' })
   }, [chatMessages])
 
-  // Suscribir al chat cuando hay booking activo confirmado/en_camino/en_proceso
+  // Suscribir al chat cuando hay booking activo — notificar mensajes sin abrir chat
   useEffect(() => {
     if (!activeBooking?.id) return
     if (!['confirmado','en_camino','en_proceso'].includes(activeBooking.status)) return
@@ -334,6 +378,22 @@ export default function ClientView() {
       `${SUPABASE_URL}/rest/v1/messages?booking_id=eq.${activeBooking.id}&sender_role=eq.operador&read_at=is.null&select=id`,
       { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
     ).then(r => r.json()).then(rows => setUnreadCount(rows?.length || 0)).catch(() => {})
+    // Canal Realtime para notificar cuando chat está cerrado
+    requestNotificationPermission()
+    const bgChannel = supabase
+      .channel(`chat-bg-${activeBooking.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `booking_id=eq.${activeBooking.id}` },
+        (payload) => {
+          if (payload.new.sender_role === 'operador') {
+            setUnreadCount(prev => prev + 1)
+            playNotificationSound()
+            vibrateDevice()
+            showSystemNotification('💬 Tu operador te escribió', payload.new.content)
+          }
+        }
+      )
+      .subscribe()
+    return () => supabase.removeChannel(bgChannel)
   }, [activeBooking?.id, activeBooking?.status])
 
   const fetchBookings = async (silent = false) => {
