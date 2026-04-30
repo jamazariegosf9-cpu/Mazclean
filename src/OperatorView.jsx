@@ -977,6 +977,10 @@ const OperatorView = () => {
                 <span style={{ fontSize: 11, color: '#fde68a', fontWeight: 700 }}>⚠️ Membresía vencida</span>
               </div>
             )}
+            {/* DEBUG — remover después */}
+            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
+              cfg:{membershipConfig ? `enabled=${membershipConfig.operator_enabled}` : 'null'} | mem:{profile?.membership_status || 'null'}
+            </div>
             {/* Botón pago membresía — visible si operator_enabled y no tiene activa */}
             {membershipConfig?.operator_enabled && profile?.membership_status !== 'activa' && (
               <div style={{ marginTop: 8 }}>
