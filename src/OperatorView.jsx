@@ -287,6 +287,15 @@ const OperatorView = () => {
   const [showMembershipHistory, setShowMembershipHistory] = useState(false);
   // Estado local de membresía — se refresca tras regresar de Stripe
   const [operatorMembership, setOperatorMembership]       = useState(null);
+  // Promo efectiva del operador
+  const [effectivePromo, setEffectivePromo]               = useState(null);
+  // Deposito bancario
+  const [depositModal, setDepositModal]                   = useState(false);
+  const [depositLoading, setDepositLoading]               = useState(false);
+  const [depositSuccess, setDepositSuccess]               = useState(false);
+  const [depositError, setDepositError]                   = useState('');
+  // Cancelar membresia Stripe
+  const [cancellingMembership, setCancellingMembership]   = useState(false);
   const isMobile = useIsMobile();
 
   // ── Estado general ────────────────────────────────────────────────────────
@@ -341,6 +350,7 @@ const OperatorView = () => {
     fetchOperatorBookings();
     fetchBookingRequests();
     fetchMembershipConfig();
+    fetchEffectivePromo();
 
     // ── Detectar regreso desde Stripe con pago exitoso ────────────────────
     const params = new URLSearchParams(window.location.search);
@@ -501,6 +511,17 @@ const OperatorView = () => {
     } catch (err) { console.error('fetchMembershipConfig:', err); }
   };
 
+  const fetchEffectivePromo = async () => {
+    if (!user?.id) return;
+    try {
+      const { data, error } = await supabase.rpc('get_effective_membership_price', {
+        p_user_id: user.id,
+        p_user_type: 'operador',
+      });
+      if (!error && data?.[0]) setEffectivePromo(data[0]);
+    } catch (err) { console.error('fetchEffectivePromo:', err); }
+  };
+
   const fetchMembershipHistory = async () => {
     try {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -539,6 +560,72 @@ const OperatorView = () => {
     } catch (err) {
       setPayError(err.message);
       setPayingMembership(false);
+    }
+  };
+
+  // ── Solicitar membresía por depósito bancario ────────────────────────────
+  const handleDepositRequest = async () => {
+    if (!profile?.referral_code) return;
+    setDepositLoading(true);
+    setDepositError('');
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      let token = supabaseKey;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
+      } catch {}
+      const amount = membershipConfig?.operator_price || 200;
+      const res = await fetch(`${supabaseUrl}/rest/v1/membership_requests`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ user_id: user.id, user_type: 'operador', referral_code: profile.referral_code, amount }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err || `HTTP ${res.status}`);
+      }
+      setDepositSuccess(true);
+    } catch (err) {
+      setDepositError(err.message || 'Error al registrar solicitud');
+    } finally {
+      setDepositLoading(false);
+    }
+  };
+
+  // ── Cancelar membresía activa ─────────────────────────────────────────────
+  const handleCancelMembership = async () => {
+    if (!confirm('¿Deseas cancelar tu membresía? Se mantendrá activa hasta la fecha de vencimiento actual.')) return;
+    setCancellingMembership(true);
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      let token = supabaseKey;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
+      } catch {}
+      // Cancelar suscripción en Stripe si existe
+      if (effectiveProfile?.stripe_subscription_id) {
+        await fetch(`${supabaseUrl}/functions/v1/cancel-subscription`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subscription_id: effectiveProfile.stripe_subscription_id }),
+        });
+      }
+      // Marcar como cancelada en profiles (sin quitar acceso hasta end_at)
+      await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ membership_status: 'cancelada', updated_at: new Date().toISOString() }),
+      });
+      setOperatorMembership(prev => ({ ...(prev || {}), membership_status: 'cancelada' }));
+      alert('Membresía cancelada. Sigue activa hasta ' + new Date(effectiveProfile.membership_end_at).toLocaleDateString('es-MX'));
+    } catch (err) {
+      alert('Error al cancelar: ' + err.message);
+    } finally {
+      setCancellingMembership(false);
     }
   };
 
@@ -1038,15 +1125,37 @@ const OperatorView = () => {
                 </span>
               </div>
             )}
-            {/* Botón pago — activa: renovar anticipado (solo si vence en ≤15 días); inactiva/vencida: activar */}
+            {/* Botones pago — inactiva/vencida: activar con Stripe o depósito */}
             {effectiveProfile?.membership_status !== 'activa' && (
-              <div style={{ marginTop: 8 }}>
-                {payError && <div style={{ fontSize: 10, color: '#fca5a5', marginBottom: 4 }}>⚠️ {payError}</div>}
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {payError && <div style={{ fontSize: 10, color: '#fca5a5', marginBottom: 2 }}>⚠️ {payError}</div>}
+                {/* Mostrar promo si aplica */}
+                {effectivePromo?.promo_name && (
+                  <div style={{ background: 'rgba(16,185,129,0.25)', border: '1px solid rgba(16,185,129,0.5)', borderRadius: 12, padding: '6px 10px', marginBottom: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#6ee7b7' }}>🏷️ {effectivePromo.promo_name}</div>
+                    <div style={{ fontSize: 10, color: '#d1fae5' }}>
+                      {effectivePromo.discount_type === 'precio_fijo' && `Precio especial: $${effectivePromo.effective_price} MXN (normal: $${effectivePromo.base_price})`}
+                      {effectivePromo.discount_type === 'porcentaje' && `${effectivePromo.discount_value}% de descuento → $${effectivePromo.effective_price} MXN`}
+                      {effectivePromo.discount_type === 'dias_gratis' && `${effectivePromo.trial_days} días gratis incluidos`}
+                    </div>
+                  </div>
+                )}
                 <button onClick={handleSubscribeOperator} disabled={payingMembership}
                   style={{ padding: '7px 14px', background: payingMembership ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)', border: '1.5px solid rgba(255,255,255,0.4)', borderRadius: 20, color: '#fff', fontSize: 11, fontWeight: 700, cursor: payingMembership ? 'not-allowed' : 'pointer', minHeight: 34 }}>
-                  {payingMembership ? '⏳ Redirigiendo...' : `💳 Activar membresía $${membershipConfig?.operator_price || 200} MXN/mes`}
+                  {payingMembership ? '⏳ Redirigiendo...' : `💳 Pagar con tarjeta $${effectivePromo?.effective_price || membershipConfig?.operator_price || 200} MXN/mes`}
+                </button>
+                <button onClick={() => { setDepositModal(true); setDepositSuccess(false); setDepositError(''); }}
+                  style={{ padding: '7px 14px', background: 'rgba(16,185,129,0.2)', border: '1.5px solid rgba(16,185,129,0.5)', borderRadius: 20, color: '#6ee7b7', fontSize: 11, fontWeight: 700, cursor: 'pointer', minHeight: 34 }}>
+                  🏦 Pagar con depósito bancario
                 </button>
               </div>
+            )}
+            {/* Cancelar membresía activa */}
+            {effectiveProfile?.membership_status === 'activa' && (
+              <button onClick={handleCancelMembership} disabled={cancellingMembership}
+                style={{ marginTop: 6, padding: '4px 10px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 20, color: '#fca5a5', fontSize: 10, fontWeight: 600, cursor: 'pointer', minHeight: 26 }}>
+                {cancellingMembership ? '⏳...' : '✕ Cancelar membresía'}
+              </button>
             )}
             {effectiveProfile?.membership_status === 'activa' && effectiveProfile?.membership_end_at && (() => {
               const daysLeft = Math.ceil((new Date(effectiveProfile.membership_end_at) - new Date()) / (1000 * 60 * 60 * 24));
@@ -1446,6 +1555,78 @@ const OperatorView = () => {
               <button onClick={confirmFinalize} style={{ flex: 2, padding: '12px 0', background: checklist.every(i => i.checked) ? '#10b981' : '#9ca3af', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>
                 {checklist.every(i => i.checked) ? 'Confirmar y Finalizar' : 'Completa el checklist'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DEPOSITO BANCARIO */}
+      {depositModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 420, overflow: 'hidden', boxShadow: '0 8px 40px rgba(0,0,0,0.25)' }}>
+            <div style={{ background: 'linear-gradient(135deg,#059669,#10b981)', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>🏦 Pago por depósito bancario</div>
+                <div style={{ color: '#d1fae5', fontSize: 12, marginTop: 2 }}>Membresía Operador — ${membershipConfig?.operator_price || 200} MXN</div>
+              </div>
+              <button onClick={() => setDepositModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 32, height: 32, color: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              {!depositSuccess ? (
+                <>
+                  <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#065f46', marginBottom: 10 }}>📋 Datos para tu depósito:</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                      {[
+                        ['Banco', 'BBVA'],
+                        ['Titular', 'Juan Alberto Mazariegos Fernandez'],
+                        ['Cuenta', '261 197 8748'],
+                        ['CLABE', '012 180 02611978748 1'],
+                        ['Monto', `$${membershipConfig?.operator_price || 200} MXN`],
+                      ].map(([label, value]) => (
+                        <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                          <span style={{ color: '#6b7280', fontWeight: 500 }}>{label}</span>
+                          <span style={{ color: '#1f2937', fontWeight: 700, fontFamily: 'monospace' }}>{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 4 }}>⚠️ Referencia obligatoria:</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: '#1f2937', fontFamily: 'monospace', letterSpacing: 2, textAlign: 'center', padding: '6px 0' }}>
+                      {profile?.referral_code}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#78716c', textAlign: 'center' }}>Escribe exactamente este código en el concepto o referencia de tu transferencia</div>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 16, lineHeight: 1.6 }}>
+                    Tu membresía se activará en un máximo de <strong>24 horas</strong> después de confirmar el depósito. Recibirás una notificación por WhatsApp cuando esté activa.
+                  </div>
+                  {depositError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#dc2626' }}>⚠️ {depositError}</div>}
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={() => setDepositModal(false)}
+                      style={{ flex: 1, padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 46 }}>
+                      Cerrar
+                    </button>
+                    <button onClick={handleDepositRequest} disabled={depositLoading}
+                      style={{ flex: 2, padding: '12px', background: depositLoading ? '#9ca3af' : 'linear-gradient(135deg,#059669,#10b981)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: depositLoading ? 'not-allowed' : 'pointer', minHeight: 46 }}>
+                      {depositLoading ? '⏳ Registrando...' : '✅ Ya realicé el depósito'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '10px 0 20px' }}>
+                  <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
+                  <div style={{ fontSize: 17, fontWeight: 700, color: '#065f46', marginBottom: 8 }}>¡Solicitud registrada!</div>
+                  <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.7, marginBottom: 20 }}>
+                    Tu depósito con referencia <strong>{profile?.referral_code}</strong> fue registrado.<br/>
+                    Recibirás una notificación por WhatsApp en cuanto el admin confirme tu pago (máx. 24 hrs).
+                  </div>
+                  <button onClick={() => setDepositModal(false)}
+                    style={{ padding: '12px 32px', background: 'linear-gradient(135deg,#059669,#10b981)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 46 }}>
+                    Entendido
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

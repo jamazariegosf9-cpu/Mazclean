@@ -307,6 +307,7 @@ const AdminViewC = () => {
 
   useEffect(() => {
     if (activeTab === 'catalog') fetchServices();
+    if (activeTab === 'membresias') fetchPromotions();
   }, [activeTab]);
 
   useEffect(() => {
@@ -480,6 +481,144 @@ const AdminViewC = () => {
   const inputStyle = { padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 };
   const labelStyle = { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 5, display: 'block' };
 
+  // ── Promociones ──────────────────────────────────────────────────────────
+  const [promotions, setPromotions]           = useState([]);
+  const [loadingPromos, setLoadingPromos]     = useState(false);
+  const [promoModal, setPromoModal]           = useState(false);
+  const [editingPromo, setEditingPromo]       = useState(null);
+  const [savingPromo, setSavingPromo]         = useState(false);
+  const [promoError, setPromoError]           = useState('');
+  const [promoForm, setPromoForm]             = useState({
+    name: '', user_type: 'operador', discount_type: 'precio_fijo',
+    discount_value: '', valid_from: '', valid_until: '',
+    zone_keywords: '', min_rating: '', max_rating: '',
+    auto_trigger_min_operators: '', is_active: true, priority: 0,
+  });
+
+  const fetchPromotions = async () => {
+    setLoadingPromos(true);
+    try {
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
+      } catch {}
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/membership_promotions?select=*&order=priority.desc,created_at.desc`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
+      );
+      if (res.ok) setPromotions(await res.json());
+    } catch (err) { console.error('fetchPromotions:', err); }
+    finally { setLoadingPromos(false); }
+  };
+
+  const openNewPromo = () => {
+    setEditingPromo(null);
+    const today = new Date().toISOString().slice(0, 16);
+    const nextMonth = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
+    setPromoForm({ name: '', user_type: 'operador', discount_type: 'precio_fijo', discount_value: '', valid_from: today, valid_until: nextMonth, zone_keywords: '', min_rating: '', max_rating: '', auto_trigger_min_operators: '', is_active: true, priority: 0 });
+    setPromoError('');
+    setPromoModal(true);
+  };
+
+  const openEditPromo = (promo) => {
+    setEditingPromo(promo.id);
+    setPromoForm({
+      name: promo.name || '',
+      user_type: promo.user_type || 'operador',
+      discount_type: promo.discount_type || 'precio_fijo',
+      discount_value: promo.discount_value || '',
+      valid_from: promo.valid_from ? promo.valid_from.slice(0, 16) : '',
+      valid_until: promo.valid_until ? promo.valid_until.slice(0, 16) : '',
+      zone_keywords: (promo.zone_keywords || []).join(', '),
+      min_rating: promo.min_rating || '',
+      max_rating: promo.max_rating || '',
+      auto_trigger_min_operators: promo.auto_trigger_min_operators || '',
+      is_active: promo.is_active ?? true,
+      priority: promo.priority || 0,
+    });
+    setPromoError('');
+    setPromoModal(true);
+  };
+
+  const savePromo = async () => {
+    if (!promoForm.name.trim()) { setPromoError('El nombre es requerido.'); return; }
+    if (!promoForm.discount_value) { setPromoError('El valor del descuento es requerido.'); return; }
+    if (!promoForm.valid_from || !promoForm.valid_until) { setPromoError('Las fechas son requeridas.'); return; }
+    if (new Date(promoForm.valid_until) <= new Date(promoForm.valid_from)) { setPromoError('La fecha de fin debe ser posterior a la de inicio.'); return; }
+    setSavingPromo(true); setPromoError('');
+    try {
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
+      } catch {}
+      const keywords = promoForm.zone_keywords
+        ? promoForm.zone_keywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean)
+        : null;
+      const body = {
+        name:                       promoForm.name.trim(),
+        user_type:                  promoForm.user_type,
+        discount_type:              promoForm.discount_type,
+        discount_value:             parseFloat(promoForm.discount_value),
+        valid_from:                 new Date(promoForm.valid_from).toISOString(),
+        valid_until:                new Date(promoForm.valid_until).toISOString(),
+        zone_keywords:              keywords?.length ? keywords : null,
+        min_rating:                 promoForm.min_rating ? parseFloat(promoForm.min_rating) : null,
+        max_rating:                 promoForm.max_rating ? parseFloat(promoForm.max_rating) : null,
+        auto_trigger_min_operators: promoForm.auto_trigger_min_operators ? parseInt(promoForm.auto_trigger_min_operators) : null,
+        is_active:                  promoForm.is_active,
+        priority:                   parseInt(promoForm.priority) || 0,
+        updated_at:                 new Date().toISOString(),
+      };
+      const url = editingPromo
+        ? `${SUPABASE_URL}/rest/v1/membership_promotions?id=eq.${editingPromo}`
+        : `${SUPABASE_URL}/rest/v1/membership_promotions`;
+      const method = editingPromo ? 'PATCH' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await fetchPromotions();
+      setPromoModal(false);
+    } catch (err) { setPromoError(err.message); }
+    finally { setSavingPromo(false); }
+  };
+
+  const deletePromo = async (id) => {
+    if (!confirm('¿Eliminar esta promoción?')) return;
+    try {
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
+      } catch {}
+      await fetch(`${SUPABASE_URL}/rest/v1/membership_promotions?id=eq.${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY },
+      });
+      setPromotions(prev => prev.filter(p => p.id !== id));
+    } catch (err) { alert('Error: ' + err.message); }
+  };
+
+  const togglePromoActive = async (promo) => {
+    try {
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
+      } catch {}
+      await fetch(`${SUPABASE_URL}/rest/v1/membership_promotions?id=eq.${promo.id}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ is_active: !promo.is_active, updated_at: new Date().toISOString() }),
+      });
+      setPromotions(prev => prev.map(p => p.id === promo.id ? { ...p, is_active: !p.is_active } : p));
+    } catch (err) { alert('Error: ' + err.message); }
+  };
+
   const membresíasActivas = operators.filter(o => o.membership_status === 'activa').length;
 
   const statCards = [
@@ -527,6 +666,7 @@ const AdminViewC = () => {
             { id: 'operators', label: `👷 Operadores${incidents.length > 0 || pendingOperators.length > 0 ? ` ⚠️${incidents.length + pendingOperators.length}` : ''}` },
             { id: 'catalog',   label: '🛎 Catálogo' },
             { id: 'membresias', label: '💳 Membresías' },
+            { id: 'promociones', label: `🏷️ Promociones${promotions.filter(p => p.is_active && new Date(p.valid_until) > new Date()).length > 0 ? ` (${promotions.filter(p => p.is_active && new Date(p.valid_until) > new Date()).length})` : ''}` },
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               style={{ padding: isMobile ? '8px 12px' : '8px 20px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: isMobile ? 12 : 14, fontWeight: 600, whiteSpace: 'nowrap', background: activeTab === tab.id ? '#fff' : 'transparent', color: activeTab === tab.id ? '#1e40af' : '#6b7280', boxShadow: activeTab === tab.id ? '0 2px 8px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.2s', minHeight: 44 }}>
@@ -620,7 +760,198 @@ const AdminViewC = () => {
         {activeTab === 'membresias' && (
           <MembresiaConfig isMobile={isMobile} />
         )}
+
+        {/* Tab: Promociones */}
+        {activeTab === 'promociones' && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1f2937', margin: 0 }}>🏷️ Promociones de Membresía</h2>
+                <p style={{ fontSize: 13, color: '#9ca3af', margin: '4px 0 0' }}>Gestiona descuentos, períodos de prueba y promos por zona o calificación</p>
+              </div>
+              <button onClick={openNewPromo} style={{ padding: '10px 16px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, minHeight: 44 }}>
+                <Plus size={15} /> Nueva Promo
+              </button>
+            </div>
+
+            {loadingPromos ? (
+              <div style={{ textAlign: 'center', padding: 48, color: '#9ca3af', background: '#fff', borderRadius: 14 }}>Cargando promociones...</div>
+            ) : promotions.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 48, color: '#9ca3af', background: '#fff', borderRadius: 14, border: '2px dashed #e5e7eb' }}>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>🏷️</div>
+                <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>Sin promociones creadas</div>
+                <div style={{ fontSize: 13 }}>Crea tu primera promoción para operadores o clientes</div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 12 }}>
+                {promotions.map(promo => {
+                  const now = new Date();
+                  const isExpired = new Date(promo.valid_until) < now;
+                  const isNotStarted = new Date(promo.valid_from) > now;
+                  const isRunning = promo.is_active && !isExpired && !isNotStarted;
+                  const statusColor = isExpired ? '#9ca3af' : isNotStarted ? '#3b82f6' : isRunning ? '#10b981' : '#f59e0b';
+                  const statusLabel = isExpired ? '⚫ Vencida' : isNotStarted ? '🕐 Programada' : isRunning ? '✅ Activa' : '⏸ Pausada';
+                  const discountLabel = promo.discount_type === 'precio_fijo' ? `$${promo.discount_value} MXN/mes` : promo.discount_type === 'porcentaje' ? `${promo.discount_value}% descuento` : `${promo.discount_value} días gratis`;
+                  return (
+                    <div key={promo.id} style={{ background: '#fff', borderRadius: 14, border: `2px solid ${isRunning ? '#bbf7d0' : '#e5e7eb'}`, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+                      <div style={{ background: isRunning ? 'linear-gradient(135deg,#059669,#10b981)' : '#f9fafb', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 15, color: isRunning ? '#fff' : '#1f2937' }}>{promo.name}</div>
+                          <div style={{ fontSize: 12, color: isRunning ? '#d1fae5' : '#6b7280', marginTop: 2 }}>
+                            {promo.user_type === 'operador' ? '👷 Operadores' : promo.user_type === 'cliente' ? '⭐ Clientes' : '👥 Ambos'} · {discountLabel}
+                            {promo.auto_triggered && <span style={{ marginLeft: 6, background: 'rgba(255,255,255,0.2)', borderRadius: 20, padding: '1px 6px', fontSize: 11 }}>🤖 Auto-activada</span>}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <span style={{ background: statusColor + '20', color: statusColor, borderRadius: 20, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>{statusLabel}</span>
+                          {!isExpired && (
+                            <button onClick={() => togglePromoActive(promo)}
+                              style={{ padding: '4px 10px', borderRadius: 8, border: 'none', background: promo.is_active ? '#fef2f2' : '#f0fdf4', color: promo.is_active ? '#dc2626' : '#059669', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                              {promo.is_active ? 'Pausar' : 'Activar'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ padding: '12px 16px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 13, color: '#374151', marginBottom: 10 }}>
+                          <span>📅 {new Date(promo.valid_from).toLocaleDateString('es-MX')} → {new Date(promo.valid_until).toLocaleDateString('es-MX')}</span>
+                          {promo.zone_keywords?.length > 0 && <span>📍 Zona: {promo.zone_keywords.join(', ')}</span>}
+                          {promo.min_rating && <span>⭐ Rating: {promo.min_rating}{promo.max_rating ? `–${promo.max_rating}` : '+'}</span>}
+                          {promo.auto_trigger_min_operators && <span>🤖 Auto: &lt;{promo.auto_trigger_min_operators} ops en zona</span>}
+                          <span>🎯 Prioridad: {promo.priority}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button onClick={() => openEditPromo(promo)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 40 }}>✏️ Editar</button>
+                          <button onClick={() => deletePromo(promo.id)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#991b1b', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 40 }}>🗑 Eliminar</button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Modal: Crear/Editar Promoción */}
+      {promoModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, width: '100%', maxWidth: isMobile ? '100%' : 560, overflow: 'hidden', maxHeight: isMobile ? '92vh' : '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ background: 'linear-gradient(135deg,#7c3aed,#a78bfa)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 16, margin: 0 }}>{editingPromo ? '✏️ Editar Promoción' : '➕ Nueva Promoción'}</h3>
+              <button onClick={() => setPromoModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', fontSize: 20, borderRadius: 8, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+            <div style={{ padding: isMobile ? '16px' : '20px 24px', overflowY: 'auto', display: 'grid', gap: 14 }}>
+              {/* Nombre */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block' }}>Nombre de la promoción *</label>
+                <input type="text" value={promoForm.name} onChange={e => setPromoForm(p => ({ ...p, name: e.target.value }))} placeholder="ej. Lanzamiento Naucalpan" style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, width: '100%', boxSizing: 'border-box', outline: 'none', minHeight: 44 }} />
+              </div>
+              {/* Tipo de usuario y descuento */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block' }}>Aplica a</label>
+                  <select value={promoForm.user_type} onChange={e => setPromoForm(p => ({ ...p, user_type: e.target.value }))} style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, width: '100%', outline: 'none', minHeight: 44, background: '#fff' }}>
+                    <option value="operador">👷 Operadores</option>
+                    <option value="cliente">⭐ Clientes</option>
+                    <option value="ambos">👥 Ambos</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block' }}>Tipo de descuento</label>
+                  <select value={promoForm.discount_type} onChange={e => setPromoForm(p => ({ ...p, discount_type: e.target.value }))} style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, width: '100%', outline: 'none', minHeight: 44, background: '#fff' }}>
+                    <option value="precio_fijo">💰 Precio fijo (MXN)</option>
+                    <option value="porcentaje">% Porcentaje de descuento</option>
+                    <option value="dias_gratis">🎁 Días gratis</option>
+                  </select>
+                </div>
+              </div>
+              {/* Valor */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block' }}>
+                    {promoForm.discount_type === 'precio_fijo' ? 'Precio con promo (MXN)' : promoForm.discount_type === 'porcentaje' ? '% de descuento' : 'Días gratis'}
+                  </label>
+                  <input type="number" min="0" value={promoForm.discount_value} onChange={e => setPromoForm(p => ({ ...p, discount_value: e.target.value }))}
+                    placeholder={promoForm.discount_type === 'precio_fijo' ? 'ej. 150' : promoForm.discount_type === 'porcentaje' ? 'ej. 25' : 'ej. 30'}
+                    style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, width: '100%', boxSizing: 'border-box', outline: 'none', minHeight: 44 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block' }}>Prioridad (mayor = gana)</label>
+                  <input type="number" min="0" value={promoForm.priority} onChange={e => setPromoForm(p => ({ ...p, priority: e.target.value }))} style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, width: '100%', boxSizing: 'border-box', outline: 'none', minHeight: 44 }} />
+                </div>
+              </div>
+              {/* Fechas */}
+              <div style={{ background: '#f0fdf4', borderRadius: 10, padding: '12px 14px', border: '1px solid #bbf7d0' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#065f46', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>📅 Vigencia — se activa/desactiva automáticamente</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block' }}>Inicio</label>
+                    <input type="datetime-local" value={promoForm.valid_from} onChange={e => setPromoForm(p => ({ ...p, valid_from: e.target.value }))} style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #d1fae5', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none', minHeight: 44 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block' }}>Fin</label>
+                    <input type="datetime-local" value={promoForm.valid_until} onChange={e => setPromoForm(p => ({ ...p, valid_until: e.target.value }))} style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #d1fae5', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none', minHeight: 44 }} />
+                  </div>
+                </div>
+              </div>
+              {/* Zona */}
+              <div style={{ background: '#eff6ff', borderRadius: 10, padding: '12px 14px', border: '1px solid #bfdbfe' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#1e40af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>📍 Segmentación por zona (opcional)</div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block' }}>Palabras clave de zona (separadas por coma)</label>
+                <input type="text" value={promoForm.zone_keywords} onChange={e => setPromoForm(p => ({ ...p, zone_keywords: e.target.value }))} placeholder="ej. naucalpan, estado de mexico" style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #bfdbfe', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none', minHeight: 44 }} />
+                <div style={{ marginTop: 10 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block' }}>🤖 Auto-activar si hay menos de N operadores en zona</label>
+                  <input type="number" min="0" value={promoForm.auto_trigger_min_operators} onChange={e => setPromoForm(p => ({ ...p, auto_trigger_min_operators: e.target.value }))} placeholder="ej. 3 (dejar vacío para manual)" style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #bfdbfe', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none', minHeight: 44 }} />
+                  {promoForm.auto_trigger_min_operators > 0 && promoForm.zone_keywords && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: '#1e40af' }}>
+                      🤖 Se activará automáticamente si hay menos de {promoForm.auto_trigger_min_operators} operadores activos en "{promoForm.zone_keywords}". El cron revisa cada 6 horas.
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* Calificación — solo renovaciones */}
+              {(promoForm.user_type === 'operador' || promoForm.user_type === 'ambos') && (
+                <div style={{ background: '#fefce8', borderRadius: 10, padding: '12px 14px', border: '1px solid #fde68a' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>⭐ Premio por calificación (solo renovaciones)</div>
+                  <div style={{ fontSize: 12, color: '#78716c', marginBottom: 10 }}>Solo aplica a operadores que ya tuvieron membresía. Deja vacío para aplicar a todos.</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block' }}>Rating mínimo</label>
+                      <input type="number" min="0" max="5" step="0.1" value={promoForm.min_rating} onChange={e => setPromoForm(p => ({ ...p, min_rating: e.target.value }))} placeholder="ej. 4.5" style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #fde68a', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none', minHeight: 44 }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block' }}>Rating máximo</label>
+                      <input type="number" min="0" max="5" step="0.1" value={promoForm.max_rating} onChange={e => setPromoForm(p => ({ ...p, max_rating: e.target.value }))} placeholder="ej. 5.0" style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #fde68a', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none', minHeight: 44 }} />
+                    </div>
+                  </div>
+                  {promoForm.min_rating && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: '#92400e' }}>
+                      ⭐ Aplica a operadores con rating {promoForm.min_rating}{promoForm.max_rating ? `–${promoForm.max_rating}` : ' o más'} que renueven su membresía.
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* Toggle activo */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button onClick={() => setPromoForm(p => ({ ...p, is_active: !p.is_active }))}
+                  style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: promoForm.is_active ? '#10b981' : '#e5e7eb', color: promoForm.is_active ? '#fff' : '#6b7280', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 40 }}>
+                  {promoForm.is_active ? '✅ Activa al guardar' : '⏸ Pausada al guardar'}
+                </button>
+                <span style={{ fontSize: 12, color: '#9ca3af' }}>También se activa/pausa automáticamente según las fechas</span>
+              </div>
+              {promoError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', color: '#dc2626', fontSize: 13 }}>⚠️ {promoError}</div>}
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, flexShrink: 0 }}>
+              <button onClick={() => setPromoModal(false)} style={{ flex: 1, padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cancelar</button>
+              <button onClick={savePromo} disabled={savingPromo} style={{ flex: 2, padding: '12px', background: savingPromo ? '#9ca3af' : 'linear-gradient(135deg,#7c3aed,#a78bfa)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>
+                {savingPromo ? '⏳ Guardando...' : editingPromo ? '💾 Actualizar' : '✅ Crear Promoción'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Crear/Editar Servicio */}
       {serviceModal && (
