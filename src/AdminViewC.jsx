@@ -47,13 +47,30 @@ const MembresiaConfig = ({ isMobile }) => {
 
   const fetchConfig = async () => {
     try {
-      const { data } = await supabase.from('membership_config').select('*').single();
+      let token = supabaseAnonKey;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseAnonKey; }
+      } catch {}
+      const res = await fetch(`${supabaseUrl}/rest/v1/membership_config?select=*&limit=1`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseAnonKey },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const rows = await res.json();
+      if (!rows || rows.length === 0) throw new Error('Sin configuración en DB');
+      const data = rows[0];
       setConfig(data);
-      setForm({ ...data });
-    } catch (err) { setError('Error cargando configuración'); }
+      setForm({
+        ...data,
+        // Detectar si hay promo activa al cargar
+        operator_promo_active: !!data.operator_promo_price,
+        client_promo_active:   !!data.client_promo_price,
+      });
+    } catch (err) { setError('Error cargando configuración: ' + err.message); }
   };
 
   const saveConfig = async () => {
+    if (!config?.id) { setError('Configuración no cargada, recarga la página.'); return; }
     setSaving(true); setSuccess(''); setError('');
     try {
       let token = supabaseAnonKey;
