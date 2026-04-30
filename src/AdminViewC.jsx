@@ -247,23 +247,27 @@ const AdminViewC = () => {
         fetch(`${SUPABASE_URL}/rest/v1/profiles?role=eq.operador&select=*`, { headers }),
       ]);
 
-      const bookingsData  = bRes.ok ? await bRes.json() : [];
-      const operatorsData = oRes.ok ? await oRes.json() : [];
+      // Si el fetch falla, preservar estado anterior — no vaciar el panel
+      const bookingsData  = bRes.ok  ? await bRes.json() : null;
+      const operatorsData = oRes.ok  ? await oRes.json() : null;
 
-      setBookings(bookingsData || []);
-      setOperators(operatorsData || []);
+      if (bookingsData  !== null) setBookings(bookingsData);
+      if (operatorsData !== null) setOperators(operatorsData);
 
-      const total     = (bookingsData || []).length;
-      const completed = (bookingsData || []).filter(b => b.status === 'finalizado').length;
-      const cancelled = (bookingsData || []).filter(b => b.status === 'cancelado').length;
-      const revenue   = (bookingsData || []).filter(b => b.status === 'finalizado').reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
-      setStats({
-        total, completed, cancelled,
-        pending:        (bookingsData || []).filter(b => b.status === 'pendiente').length,
-        active:         (bookingsData || []).filter(b => ['confirmado','en_camino','en_proceso'].includes(b.status)).length,
-        revenue,
-        completionRate: total > 0 ? Math.round((completed / total) * 100) : 0
-      });
+      // Para stats usar los datos disponibles (anteriores si fetch falló)
+      if (bookingsData !== null) {
+        const total     = bookingsData.length;
+        const completed = bookingsData.filter(b => b.status === 'finalizado').length;
+        const cancelled = bookingsData.filter(b => b.status === 'cancelado').length;
+        const revenue   = bookingsData.filter(b => b.status === 'finalizado').reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
+        setStats({
+          total, completed, cancelled,
+          pending:        bookingsData.filter(b => b.status === 'pendiente').length,
+          active:         bookingsData.filter(b => ['confirmado','en_camino','en_proceso'].includes(b.status)).length,
+          revenue,
+          completionRate: total > 0 ? Math.round((completed / total) * 100) : 0
+        });
+      }
     } catch (err) { console.error('fetchData:', err); }
     finally { setLoading(false); }
   };
