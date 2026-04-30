@@ -315,6 +315,10 @@ const AdminViewB = ({
     activos:     operators.filter(o => o.status === 'activo' && o.operator_status === 'aprobado').length,
   };
 
+  // Reset páginas al cambiar filtros — deben estar antes de los renders
+  useEffect(() => { setOperatorsPage(1); }, [activeChip, zoneSearch, radiusFilter]);
+  useEffect(() => { setPendingPage(1); }, [zoneSearch]);
+
   // ── Filtro de zona sobre operadores activos ───────────────────────────────
   const filteredOperators = operators.filter(op => {
     if (activeChip === 'aprobados') return op.operator_status === 'aprobado' && op.reviewed_at > thirtyDaysAgo;
@@ -332,10 +336,6 @@ const AdminViewB = ({
     return true;
   });
 
-  // Reset páginas al cambiar filtros
-  useEffect(() => { setOperatorsPage(1); }, [activeChip, zoneSearch, radiusFilter]);
-  useEffect(() => { setPendingPage(1); }, [zoneSearch]);
-
   const filteredPending = pendingOperators.filter(op => {
     if (activeChip === 'sin_revisar')  return ['pendiente','pending_review'].includes(op.operator_status);
     if (activeChip === 'correcciones') return op.operator_status === 'docs_requeridos';
@@ -351,6 +351,12 @@ const AdminViewB = ({
     }
     return true;
   });
+
+  // ── Variables paginadas ──────────────────────────────────────────────────
+  const totalOperatorsPages = Math.max(1, Math.ceil(filteredOperators.length / OPERATORS_PER_PAGE));
+  const totalPendingPages   = Math.max(1, Math.ceil(filteredPending.length / PENDING_PER_PAGE));
+  const paginatedOperators  = filteredOperators.slice((operatorsPage - 1) * OPERATORS_PER_PAGE, operatorsPage * OPERATORS_PER_PAGE);
+  const paginatedPending    = filteredPending.slice((pendingPage - 1) * PENDING_PER_PAGE, pendingPage * PENDING_PER_PAGE);
 
   // ── Review ────────────────────────────────────────────────────────────────
   const openReviewModal = (op) => {
