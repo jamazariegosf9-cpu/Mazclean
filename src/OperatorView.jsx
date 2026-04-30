@@ -871,38 +871,7 @@ const OperatorView = () => {
     setPhotoBooking(booking); setPhotosData(existing); setPhotoStep(3); setPhotoPhase('after');
     setPendingFinalize(booking.id); setUploadError(''); setUploadProgress(''); setUploadingPhoto(false); setPhotoModalSafe(true);
 
-    // ── Enviar WhatsApp done con fetch directo — evita lock Supabase en móvil ──
-    const phone = booking?.customer?.phone;
-    if (phone) {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      let token = supabaseKey;
-      try {
-        const stored = localStorage.getItem('mazclean-auth');
-        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || supabaseKey; }
-      } catch {}
-      fetch(`${supabaseUrl}/functions/v1/send-whatsapp`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          event: 'done', phone,
-          booking: {
-            booking_ref:         booking?.booking_ref,
-            service_name:        booking?.service_name,
-            total_price:         booking?.total_price,
-            scheduled_date:      booking?.scheduled_date,
-            scheduled_time_from: booking?.scheduled_time_from,
-            scheduled_time_to:   booking?.scheduled_time_to,
-            booking_id:          booking?.id,
-          },
-        }),
-      })
-      .then(r => r.json())
-      .then(d => console.log(`[WA done] ✅ sid:${d?.sid} → ${phone}`))
-      .catch(err => console.error('[WA done] ❌', err.message));
-    } else {
-      console.warn('[WA done] sin teléfono — booking:', booking?.booking_ref);
-    }
+    // WA 'done' se envía una sola vez al finalizar en updateStatus — no aquí
   };
 
   const closePhotoModal = async (bookingOverride = null) => {
