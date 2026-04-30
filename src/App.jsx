@@ -76,6 +76,57 @@ function ToastContainer({ toasts, onRemove }) {
   )
 }
 
+// ── Offline Indicator ────────────────────────────────────────────────────────
+function useOnlineStatus() {
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
+  useEffect(() => {
+    const goOnline  = () => setIsOnline(true)
+    const goOffline = () => setIsOnline(false)
+    window.addEventListener('online',  goOnline)
+    window.addEventListener('offline', goOffline)
+    return () => {
+      window.removeEventListener('online',  goOnline)
+      window.removeEventListener('offline', goOffline)
+    }
+  }, [])
+  return isOnline
+}
+
+function OfflineBanner() {
+  const isOnline = useOnlineStatus()
+  const [wasOffline, setWasOffline] = useState(false)
+  const [showReconnected, setShowReconnected] = useState(false)
+
+  useEffect(() => {
+    if (!isOnline) {
+      setWasOffline(true)
+      setShowReconnected(false)
+    } else if (wasOffline) {
+      setShowReconnected(true)
+      const t = setTimeout(() => { setShowReconnected(false); setWasOffline(false); }, 3000)
+      return () => clearTimeout(t)
+    }
+  }, [isOnline, wasOffline])
+
+  if (isOnline && !showReconnected) return null
+
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 99998,
+      background: isOnline ? '#059669' : '#dc2626',
+      color: '#fff', textAlign: 'center',
+      padding: '10px 16px', fontSize: 14, fontWeight: 700,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+      transition: 'background 0.3s ease',
+    }}>
+      {isOnline
+        ? '✅ Conexión restaurada'
+        : '📵 Sin conexión — verifica tu internet'}
+    </div>
+  )
+}
+
 function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([])
 
@@ -94,6 +145,7 @@ function ToastProvider({ children }) {
 
   return (
     <ToastContext.Provider value={{ showToast }}>
+      <OfflineBanner />
       {children}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </ToastContext.Provider>

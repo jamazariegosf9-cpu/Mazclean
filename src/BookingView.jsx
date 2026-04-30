@@ -500,6 +500,7 @@ export default function BookingView({ onNavigate }) {
   }
 
   const resetForm = () => {
+    try { sessionStorage.removeItem('booking-draft') } catch {}
     setStep(1); setSuccess(false); setError('')
     setSelectedService(null); setVehicleType(''); setVehicleBrand(''); setVehicleColor('')
     setAddress(''); setAddressDetails(null)
@@ -509,6 +510,36 @@ export default function BookingView({ onNavigate }) {
     if (inputRef.current) inputRef.current.value = ''
     setMapKey(k => k + 1) // Fuerza remontaje completo del mapa
   }
+
+  // ── Draft en sessionStorage — persiste si el usuario pierde conexión ────────
+  // Guardar draft cada vez que cambian los datos del formulario
+  useEffect(() => {
+    if (step === 1 && !selectedService) return // no guardar si no empezó
+    try {
+      sessionStorage.setItem('booking-draft', JSON.stringify({
+        step, selectedService, vehicleType, vehicleBrand, vehicleColor,
+        address, date, timeFrom, timeTo, notes,
+      }))
+    } catch {}
+  }, [step, selectedService, vehicleType, vehicleBrand, vehicleColor, address, date, timeFrom, timeTo, notes])
+
+  // Restaurar draft al montar — solo si el usuario tiene sesión activa
+  useEffect(() => {
+    if (!user) return
+    try {
+      const draft = sessionStorage.getItem('booking-draft')
+      if (!draft) return
+      const d = JSON.parse(draft)
+      if (!d?.selectedService) return
+      // Solo restaurar paso 1 — los pasos con mapa/slots requieren reinicio
+      if (d.step === 1) {
+        setSelectedService(d.selectedService)
+        setVehicleType(d.vehicleType || '')
+        setVehicleBrand(d.vehicleBrand || '')
+        setVehicleColor(d.vehicleColor || '')
+      }
+    } catch {}
+  }, [user])
 
   const price   = getPrice()
   const service = getService()
