@@ -692,17 +692,28 @@ const OperatorView = () => {
       setChatError('No está permitido compartir números de contacto en el chat.')
       return
     }
+    const msgContent = chatInput.trim()
     setChatSending(true)
     setChatError('')
+    setChatInput('')
+    // Agregar mensaje optimísticamente al state local
+    const tempMsg = { id: `temp-${Date.now()}`, booking_id: chatBookingId, sender_id: user.id, sender_role: 'operador', content: msgContent, created_at: new Date().toISOString() }
+    setChatMessages(prev => [...prev, tempMsg])
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ booking_id: chatBookingId, sender_id: user.id, sender_role: 'operador', content: chatInput.trim() }),
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+        body: JSON.stringify({ booking_id: chatBookingId, sender_id: user.id, sender_role: 'operador', content: msgContent }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setChatInput('')
-    } catch (err) { setChatError('Error al enviar: ' + err.message) }
+      const [saved] = await res.json()
+      // Reemplazar mensaje temporal con el real
+      if (saved?.id) setChatMessages(prev => prev.map(m => m.id === tempMsg.id ? saved : m))
+    } catch (err) {
+      // Revertir mensaje temporal si falla
+      setChatMessages(prev => prev.filter(m => m.id !== tempMsg.id))
+      setChatError('Error al enviar: ' + err.message)
+    }
     finally { setChatSending(false) }
   }
 

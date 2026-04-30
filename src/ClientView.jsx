@@ -85,6 +85,16 @@ export default function ClientView() {
   const [depositError, setDepositError]                   = useState('')
   // Cancelar membresia
   const [cancellingMembership, setCancellingMembership]   = useState(false)
+  // Chat interno
+  const [chatOpen, setChatOpen]           = useState(false)
+  const [chatMessages, setChatMessages]   = useState([])
+  const [chatInput, setChatInput]         = useState('')
+  const [chatLoading, setChatLoading]     = useState(false)
+  const [chatSending, setChatSending]     = useState(false)
+  const [chatError, setChatError]         = useState('')
+  const [unreadCount, setUnreadCount]     = useState(0)
+  const chatBottomRef                     = useRef(null)
+  const chatChannelRef                    = useRef(null)
 
   useEffect(() => {
     if (user) {
@@ -287,16 +297,24 @@ export default function ClientView() {
   const sendMessage = async (bookingId) => {
     if (!chatInput.trim() || chatSending) return
     if (containsPhone(chatInput)) { setChatError('No está permitido compartir números de contacto en el chat.'); return }
-    setChatSending(true); setChatError('')
+    const msgContent = chatInput.trim()
+    setChatSending(true); setChatError(''); setChatInput('')
+    // Agregar mensaje optimísticamente
+    const tempMsg = { id: `temp-${Date.now()}`, booking_id: bookingId, sender_id: user.id, sender_role: 'cliente', content: msgContent, created_at: new Date().toISOString() }
+    setChatMessages(prev => [...prev, tempMsg])
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ booking_id: bookingId, sender_id: user.id, sender_role: 'cliente', content: chatInput.trim() }),
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+        body: JSON.stringify({ booking_id: bookingId, sender_id: user.id, sender_role: 'cliente', content: msgContent }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setChatInput('')
-    } catch (err) { setChatError('Error al enviar: ' + err.message) }
+      const [saved] = await res.json()
+      if (saved?.id) setChatMessages(prev => prev.map(m => m.id === tempMsg.id ? saved : m))
+    } catch (err) {
+      setChatMessages(prev => prev.filter(m => m.id !== tempMsg.id))
+      setChatError('Error al enviar: ' + err.message)
+    }
     finally { setChatSending(false) }
   }
 
