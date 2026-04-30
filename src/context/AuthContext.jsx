@@ -17,6 +17,18 @@ function getTokenFromStorage() {
   } catch { return null }
 }
 
+// Verifica si el token en localStorage está expirado
+function isTokenExpired() {
+  try {
+    const stored = localStorage.getItem('mazclean-auth')
+    if (!stored) return true
+    const parsed = JSON.parse(stored)
+    const expiresAt = parsed?.expires_at || parsed?.session?.expires_at
+    if (!expiresAt) return false // sin expires_at, asumir válido
+    return Math.floor(Date.now() / 1000) > expiresAt
+  } catch { return false }
+}
+
 export function AuthProvider({ children }) {
   const [authState, setAuthState] = useState({
     user:    null,
@@ -169,6 +181,12 @@ export function AuthProvider({ children }) {
           if (!authState.user) return
           const tokenRetry = getTokenFromStorage()
           if (!tokenRetry) await handleExpiredSession('expirada (watcher periódico)')
+          return
+        }
+        // Verificar si el token existe pero ya expiró
+        if (isTokenExpired()) {
+          console.warn('[AuthContext] Token expirado detectado por watcher')
+          await handleExpiredSession('expirada (token vencido en watcher)')
         }
       } catch {
         // silencioso
