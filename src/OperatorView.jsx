@@ -981,13 +981,13 @@ const OperatorView = () => {
             <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
               cfg:{membershipConfig ? `enabled=${membershipConfig.operator_enabled}` : 'null'} | mem:{profile?.membership_status || 'null'}
             </div>
-            {/* Botón pago membresía — visible si operator_enabled y no tiene activa */}
-            {membershipConfig?.operator_enabled && profile?.membership_status !== 'activa' && (
+            {/* Botón pago membresía — visible si no tiene activa, no depende de membershipConfig */}
+            {profile?.membership_status !== 'activa' && (
               <div style={{ marginTop: 8 }}>
                 {payError && <div style={{ fontSize: 10, color: '#fca5a5', marginBottom: 4 }}>⚠️ {payError}</div>}
                 <button onClick={handleSubscribeOperator} disabled={payingMembership}
                   style={{ padding: '7px 14px', background: payingMembership ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)', border: '1.5px solid rgba(255,255,255,0.4)', borderRadius: 20, color: '#fff', fontSize: 11, fontWeight: 700, cursor: payingMembership ? 'not-allowed' : 'pointer', minHeight: 34 }}>
-                  {payingMembership ? '⏳ Redirigiendo...' : `💳 Activar membresía $${membershipConfig.operator_price} MXN/mes`}
+                  {payingMembership ? '⏳ Redirigiendo...' : `💳 Activar membresía $${membershipConfig?.operator_price || 200} MXN/mes`}
                 </button>
               </div>
             )}
