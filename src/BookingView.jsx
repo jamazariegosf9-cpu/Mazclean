@@ -104,6 +104,8 @@ export default function BookingView({ onNavigate }) {
   const [success, setSuccess] = useState(false)
   const [error, setError]     = useState('')
   const [mapsLoaded, setMapsLoaded] = useState(false)
+  // Direcciones recientes del cliente
+  const [recentAddresses, setRecentAddresses] = useState([])
 
   // ── Cargar servicios desde DB ──────────────────────────────────────────────
   useEffect(() => {
@@ -125,6 +127,66 @@ export default function BookingView({ onNavigate }) {
     }
     fetchServices()
   }, [])
+
+  // ── Direcciones recientes ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user?.id) return
+    const fetchRecentAddresses = async () => {
+      try {
+        const stored = localStorage.getItem('mazclean-auth')
+        let token = SUPABASE_ANON_KEY
+        try { if (stored) { const p = JSON.parse(stored); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY } } catch {}
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}&select=recent_addresses&limit=1`,
+          { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
+        )
+        if (res.ok) {
+          const rows = await res.json()
+          setRecentAddresses(rows?.[0]?.recent_addresses || [])
+        }
+      } catch (err) { console.error('fetchRecentAddresses:', err) }
+    }
+    fetchRecentAddresses()
+  }, [user])
+
+  const saveRecentAddress = async (addressDetail) => {
+    if (!user?.id || !addressDetail?.formatted) return
+    try {
+      const stored = localStorage.getItem('mazclean-auth')
+      let token = SUPABASE_ANON_KEY
+      try { if (stored) { const p = JSON.parse(stored); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY } } catch {}
+      // Agregar al inicio, eliminar duplicados, mantener solo las últimas 3
+      const newAddr = { formatted: addressDetail.formatted, lat: addressDetail.lat, lng: addressDetail.lng }
+      const updated = [newAddr, ...recentAddresses.filter(a => a.formatted !== newAddr.formatted)].slice(0, 3)
+      setRecentAddresses(updated)
+      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ recent_addresses: updated, updated_at: new Date().toISOString() }),
+      })
+    } catch (err) { console.error('saveRecentAddress:', err) }
+  }
+
+  const deleteRecentAddress = async (indexToRemove) => {
+    try {
+      const stored = localStorage.getItem('mazclean-auth')
+      let token = SUPABASE_ANON_KEY
+      try { if (stored) { const p = JSON.parse(stored); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY } } catch {}
+      const updated = recentAddresses.filter((_, i) => i !== indexToRemove)
+      setRecentAddresses(updated)
+      // Si la dirección eliminada era la seleccionada, limpiar selección
+      if (addressDetails?.formatted === recentAddresses[indexToRemove]?.formatted) {
+        setAddressDetails(null)
+        setAddress('')
+        if (inputRef.current) inputRef.current.value = ''
+      }
+      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ recent_addresses: updated, updated_at: new Date().toISOString() }),
+      })
+    } catch (err) { console.error('deleteRecentAddress:', err) }
+  }
 
   // Step 1
   const [selectedService, setSelectedService] = useState(null)
@@ -510,6 +572,9 @@ export default function BookingView({ onNavigate }) {
 
       clearTimeout(timeoutId)
 
+      // Guardar dirección en historial del cliente
+      if (addressDetails) await saveRecentAddress(addressDetails)
+
       try {
         await fetch(`${SUPABASE_URL}/functions/v1/process-booking-request`, {
           method:  'POST',
@@ -677,6 +742,37 @@ export default function BookingView({ onNavigate }) {
         {/* STEP 2 — siempre montado para preservar el mapa de Google */}
         <div style={{ display: step === 2 ? 'block' : 'none', padding: isMobile ? '16px 12px' : 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Dónde está tu vehículo?</h3>
+
+            {/* Direcciones recientes */}
+            {recentAddresses.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>📍 Direcciones recientes:</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {recentAddresses.map((addr, i) => (
+                    <button key={i} onClick={() => {
+                      setAddress(addr.formatted)
+                      setAddressDetails({ lat: addr.lat, lng: addr.lng, formatted: addr.formatted })
+                      setMapError('')
+                      if (inputRef.current) inputRef.current.value = addr.formatted
+                      if (mapInstanceRef.current && markerRef.current) {
+                        mapInstanceRef.current.setCenter({ lat: addr.lat, lng: addr.lng })
+                        mapInstanceRef.current.setZoom(16)
+                        markerRef.current.setPosition({ lat: addr.lat, lng: addr.lng })
+                      }
+                    }}
+                      style={{ textAlign: 'left', padding: '10px 14px', borderRadius: 8, border: `1.5px solid ${addressDetails?.formatted === addr.formatted ? '#3b82f6' : '#e5e7eb'}`, background: addressDetails?.formatted === addr.formatted ? '#eff6ff' : '#f9fafb', cursor: 'pointer', fontSize: 13, color: '#374151', fontWeight: addressDetails?.formatted === addr.formatted ? 700 : 400, display: 'flex', alignItems: 'center', gap: 8, minHeight: 42, width: '100%' }}>
+                      <span style={{ flexShrink: 0 }}>🏠</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{addr.formatted}</span>
+                      <span onClick={e => { e.stopPropagation(); deleteRecentAddress(i) }}
+                        style={{ flexShrink: 0, fontSize: 16, color: '#9ca3af', padding: '2px 4px', borderRadius: 4, cursor: 'pointer', lineHeight: 1 }}
+                        title="Eliminar dirección">✕</span>
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>O busca una nueva dirección:</div>
+              </div>
+            )}
+
             <div style={{ position: 'relative', marginBottom: 12 }}>
               <input ref={inputRef} style={{ padding: '12px 12px 12px 40px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 }} placeholder="Busca tu dirección..." defaultValue={address} onChange={e => { if (!e.target.value) { setAddress(''); setAddressDetails(null) } }} />
               <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 16 }}>🔍</span>
