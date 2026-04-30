@@ -5,6 +5,8 @@ import RatingSlider from './RatingSlider'
 import { useToast } from './App'
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_ANON_KEY   = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 const STATUS_INFO = {
   pendiente:  { label: 'Pendiente',  icon: '⏳', color: '#f59e0b', desc: 'Buscando operador disponible...' },
