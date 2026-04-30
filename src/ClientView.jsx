@@ -34,8 +34,10 @@ function ReferralCodeDisplay({ userId }) {
   const [code, setCode] = useState('')
   useEffect(() => {
     if (!userId) return
-    supabase.from('profiles').select('referral_code').eq('id', userId).single()
-      .then(({ data }) => { if (data?.referral_code) setCode(data.referral_code) })
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+    fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=referral_code&limit=1`, {
+      headers: { 'apikey': key }
+    }).then(r => r.json()).then(rows => { if (rows?.[0]?.referral_code) setCode(rows[0].referral_code) })
   }, [userId])
   return (
     <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
@@ -93,36 +95,55 @@ export default function ClientView() {
     }
   }, [user])
 
+  // ── Helper: token desde localStorage — sin getSession() para no romper el lock en móvil ──
+  const getToken = () => {
+    try {
+      const stored = localStorage.getItem('mazclean-auth')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        return parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY
+      }
+    } catch {}
+    return SUPABASE_ANON_KEY
+  }
+
   const fetchMembershipData = async () => {
     try {
-      const [{ data: cfg }, { data: prof }] = await Promise.all([
-        supabase.from('membership_config').select('*').single(),
-        supabase.from('profiles').select('membership_status,membership_type,membership_end_at,membership_start_at,membership_record_since').eq('id', user.id).single(),
+      const token = getToken()
+      const headers = { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY }
+      const [cfgRes, profRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/membership_config?select=*&limit=1`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}&select=membership_status,membership_type,membership_end_at,membership_start_at,membership_record_since,stripe_subscription_id,referral_code&limit=1`, { headers }),
       ])
-      setMembershipConfig(cfg)
-      setClientProfile(prof)
+      if (cfgRes.ok) { const rows = await cfgRes.json(); if (rows?.[0]) setMembershipConfig(rows[0]) }
+      if (profRes.ok) { const rows = await profRes.json(); if (rows?.[0]) setClientProfile(rows[0]) }
     } catch (err) { console.error('fetchMembershipData:', err) }
   }
 
   const fetchMembershipHistory = async () => {
     try {
-      const { data } = await supabase
-        .from('membership_history')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('start_at', { ascending: false })
-      setMembershipHistory(data || [])
+      const token = getToken()
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/membership_history?user_id=eq.${user.id}&order=start_at.desc&select=*`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (res.ok) setMembershipHistory(await res.json())
     } catch (err) { console.error('fetchMembershipHistory:', err) }
   }
 
   const fetchEffectivePromo = async () => {
     if (!user?.id) return
     try {
-      const { data, error } = await supabase.rpc('get_effective_membership_price', {
-        p_user_id: user.id,
-        p_user_type: 'cliente',
+      const token = getToken()
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_effective_membership_price`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_user_id: user.id, p_user_type: 'cliente' }),
       })
-      if (!error && data?.[0]) setEffectivePromo(data[0])
+      if (res.ok) {
+        const data = await res.json()
+        if (data?.[0]) setEffectivePromo(data[0])
+      }
     } catch (err) { console.error('fetchEffectivePromo:', err) }
   }
 
@@ -130,7 +151,11 @@ export default function ClientView() {
     setDepositLoading(true)
     setDepositError('')
     try {
-      const { data: prof } = await supabase.from('profiles').select('referral_code').eq('id', user.id).single()
+      const profRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}&select=referral_code&limit=1`, {
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY }
+      })
+      const profRows = profRes.ok ? await profRes.json() : []
+      const prof = profRows?.[0]
       if (!prof?.referral_code) throw new Error('No se encontró tu código de referencia')
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -746,7 +771,12 @@ function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
   }, [booking.id, mapsLoaded])
 
   const loadLastLocation = async () => {
-    const { data } = await supabase.from('operator_locations').select('*').eq('booking_id', booking.id).single()
+    const locRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/operator_locations?booking_id=eq.${booking.id}&select=*&limit=1`,
+      { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+    )
+    const locRows = locRes.ok ? await locRes.json() : []
+    const data = locRows?.[0] || null
     if (data && mapsLoaded) {
       updateOperatorMarker(data.lat, data.lng)
       if (booking.address_lat && booking.address_lng) calculateETA(data.lat, data.lng, booking.address_lat, booking.address_lng)
