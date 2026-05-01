@@ -700,35 +700,43 @@ const OperatorView = () => {
     setChatBookingId(bookingId)
     setChatInput('')
     setChatError('')
+    if (chatChannelRef.current) { supabase.removeChannel(chatChannelRef.current); chatChannelRef.current = null }
     await fetchMessages(bookingId)
     await requestNotificationPermission()
-    // Suscripción Realtime
-    if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current)
+    // Canal con nombre único para evitar conflictos
+    const channelName = `chat-op-${bookingId}-${Date.now()}`
     chatChannelRef.current = supabase
-      .channel(`chat-${bookingId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `booking_id=eq.${bookingId}` },
-        (payload) => {
-          const msg = payload.new
-          // Notificar solo mensajes del cliente
-          if (msg.sender_role === 'cliente') {
-            playNotificationSound()
-            vibrateDevice()
-            showSystemNotification('💬 Mensaje del cliente', msg.content)
-          }
-          setChatMessages(prev => {
-            // Reemplazar mensaje temporal si existe, o agregar si es nuevo
-            const tempIdx = prev.findIndex(m => m.id?.startsWith('temp-') && m.content === msg.content && m.sender_role === msg.sender_role)
-            if (tempIdx >= 0) {
-              const updated = [...prev]
-              updated[tempIdx] = msg
-              return updated
-            }
-            if (prev.find(m => m.id === msg.id)) return prev
-            return [...prev, msg]
-          })
+      .channel(channelName)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `booking_id=eq.${bookingId}`
+      }, (payload) => {
+        const msg = payload.new
+        if (msg.sender_role === 'cliente') {
+          playNotificationSound()
+          vibrateDevice()
+          showSystemNotification('💬 Mensaje del cliente', msg.content)
         }
-      )
-      .subscribe()
+        setChatMessages(prev => {
+          const tempIdx = prev.findIndex(m =>
+            m.id?.toString().startsWith('temp-') &&
+            m.content === msg.content &&
+            m.sender_role === msg.sender_role
+          )
+          if (tempIdx >= 0) {
+            const updated = [...prev]
+            updated[tempIdx] = msg
+            return updated
+          }
+          if (prev.find(m => m.id === msg.id)) return prev
+          return [...prev, msg]
+        })
+      })
+      .subscribe((status) => {
+        console.log('[Chat Op] Realtime status:', status)
+      })
   }
 
   const closeChat = () => {
