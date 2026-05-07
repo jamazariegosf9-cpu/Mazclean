@@ -380,9 +380,6 @@ export default function OnboardingView({ onComplete }) {
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
 
-      // Refrescar perfil en AuthContext para que la UI refleje los cambios
-      await updateProfile(body).catch(() => {})
-
       setStep(next); setSubStep(1)
     } catch (e) { setError(e.message) }
     finally { setSaving(false) }
@@ -547,7 +544,7 @@ export default function OnboardingView({ onComplete }) {
         body: JSON.stringify(profileData),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
-      await updateProfile(profileData).catch(() => {})
+
       setStep(6); setSubStep(1)
     } catch (e) { setError(e.message) }
     finally { setSaving(false) }
