@@ -455,7 +455,6 @@ const OperatorView = () => {
   // Cancelar membresia Stripe
   const [cancellingMembership, setCancellingMembership]   = useState(false);
   const isMobile = useIsMobile();
-  if (showAcademia) return <AcademiaView onBack={() => setShowAcademia(false)} />;
 
   // ── Estado general ────────────────────────────────────────────────────────
   const [bookings, setBookings]               = useState([]);
@@ -1330,6 +1329,9 @@ const OperatorView = () => {
   ];
 
   // ── RENDER ────────────────────────────────────────────────────────────────
+  // Academia — aquí ya están declaradas todas las variables
+  if (showAcademia) return <AcademiaView onBack={() => setShowAcademia(false)} />;
+
   // Pantalla de activación — aquí ya están declaradas todas las variables
   const needsCertification = !profile?.is_certified
   const needsMembership    = operatorMembership?.membership_status !== 'activa' && profile?.membership_status !== 'activa'
