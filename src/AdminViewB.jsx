@@ -361,7 +361,12 @@ const AdminViewB = ({
   // ── Review ────────────────────────────────────────────────────────────────
   const openReviewModal = (op) => {
     setReviewingOp(op); setReviewAction(null); setRejectionReason('');
-    setRejectedDocs([]); setReviewError(''); setReviewDocTab('personal'); setReviewModal(true);
+    // Pre-cargar docs que ya estaban rechazados para mostrar historial
+    const prevRejected = (op.rejected_documents || []).filter(d => d.status !== 'corregido')
+    setRejectedDocs(prevRejected.length > 0 ? prevRejected : []);
+    // Si había docs rechazados, pre-seleccionar acción de correcciones
+    if (prevRejected.length > 0) setReviewAction('reject_docs');
+    setReviewError(''); setReviewDocTab('personal'); setReviewModal(true);
   };
 
   // Docs que el operador acaba de corregir (status = 'corregido')
@@ -372,7 +377,14 @@ const AdminViewB = ({
   const getCorrectedDocs = (op) => (op?.rejected_documents || []).filter(d => d.status === 'corregido');
 
   const toggleRejectedDoc = (doc) => {
-    setRejectedDocs(prev => prev.find(d => d.key === doc.key) ? prev.filter(d => d.key !== doc.key) : [...prev, { ...doc, reason: '' }]);
+    const isCurrentlySelected = rejectedDocs.some(d => d.key === doc.key)
+    if (isCurrentlySelected) {
+      // Desmarcar — quitar de la lista sin confirmación
+      setRejectedDocs(prev => prev.filter(d => d.key !== doc.key))
+    } else {
+      // Marcar para corrección
+      setRejectedDocs(prev => [...prev, { ...doc, reason: '' }])
+    }
   };
 
   const updateDocReason = (key, reason) => setRejectedDocs(prev => prev.map(d => d.key === key ? { ...d, reason } : d));
@@ -1297,7 +1309,9 @@ const AdminViewB = ({
                                 <span style={{ fontSize: 16 }}>{doc.icon}</span>
                                 <div style={{ flex: 1 }}>
                                   <div style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>{doc.label}</div>
-                                  <div style={{ fontSize: 11, color: reviewingOp[doc.key] ? '#10b981' : '#9ca3af' }}>{reviewingOp[doc.key] ? '✅ Subido' : '⚠️ Sin documento'}</div>
+                                  <div style={{ fontSize: 11, color: isSelected ? '#dc2626' : reviewingOp[doc.key] ? '#10b981' : '#9ca3af' }}>
+                                    {isSelected ? '⚠️ Marcado para corrección' : reviewingOp[doc.key] ? '✅ Aprobado' : '⚠️ Sin documento'}
+                                  </div>
                                 </div>
                               </div>
                               {isSelected && (
