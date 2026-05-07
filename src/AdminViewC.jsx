@@ -7,6 +7,7 @@ import {
   Plus, ToggleLeft, ToggleRight, Save, CheckSquare, AlertTriangle, Star
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
+import AdminAcademia from './AdminAcademia';
 import { sendWhatsApp } from './lib/whatsapp';
 import AdminViewA from './AdminViewA';
 import AdminViewB from './AdminViewB';
@@ -666,6 +667,7 @@ const AdminViewC = () => {
             { id: 'operators', label: `👷 Operadores${incidents.length > 0 || pendingOperators.length > 0 ? ` ⚠️${incidents.length + pendingOperators.length}` : ''}` },
             { id: 'catalog',   label: '🛎 Catálogo' },
             { id: 'membresias', label: '💳 Membresías' },
+            { id: 'academia', label: '🎓 Academia' },
             { id: 'promociones', label: `🏷️ Promociones${promotions.filter(p => p.is_active && new Date(p.valid_until) > new Date()).length > 0 ? ` (${promotions.filter(p => p.is_active && new Date(p.valid_until) > new Date()).length})` : ''}` },
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
@@ -759,6 +761,11 @@ const AdminViewC = () => {
         {/* Tab: Membresías */}
         {activeTab === 'membresias' && (
           <MembresiaConfig isMobile={isMobile} />
+        )}
+
+        {/* Tab: Academia */}
+        {activeTab === 'academia' && (
+          <AdminAcademia isMobile={isMobile} />
         )}
 
         {/* Tab: Promociones */}

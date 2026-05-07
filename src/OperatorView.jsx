@@ -7,6 +7,7 @@ import { supabase } from './lib/supabase';
 import { useAuth } from './context/AuthContext';
 import { sendWhatsApp, updateOperatorLocation } from './lib/whatsapp';
 import { useToast } from './App';
+import AcademiaView from './AcademiaView';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -320,6 +321,7 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
 const OperatorView = () => {
   const { user, profile, signOut } = useAuth();
   const { showToast } = useToast();
+  const [showAcademia, setShowAcademia] = useState(false);
   const [membershipConfig, setMembershipConfig]           = useState(null);
   const [payingMembership, setPayingMembership]           = useState(false);
   const [payError, setPayError]                           = useState('');
@@ -346,6 +348,7 @@ const OperatorView = () => {
   // Cancelar membresia Stripe
   const [cancellingMembership, setCancellingMembership]   = useState(false);
   const isMobile = useIsMobile();
+  if (showAcademia) return <AcademiaView onBack={() => setShowAcademia(false)} />;
 
   // ── Estado general ────────────────────────────────────────────────────────
   const [bookings, setBookings]               = useState([]);
