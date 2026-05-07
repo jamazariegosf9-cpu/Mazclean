@@ -341,13 +341,11 @@ export default function OnboardingView({ onComplete }) {
     setSaving(true); setError('')
     try {
       // Si el operador está en modo corrección, marcar como 'corregido' los docs
-      // que acaba de subir — el admin verá cuáles fueron revisados recientemente
       let extraData = {}
       if (profile?.operator_status === 'docs_requeridos' &&
           Array.isArray(profile?.rejected_documents) &&
           profile.rejected_documents.length > 0) {
         const keysBeingSaved = Object.keys(data)
-        // Marcar como corregidos los que se acaban de guardar
         const updatedDocs = profile.rejected_documents.map(doc =>
           keysBeingSaved.includes(doc.key)
             ? { ...doc, status: 'corregido', corrected_at: new Date().toISOString() }
@@ -356,25 +354,35 @@ export default function OnboardingView({ onComplete }) {
         const stillPending = updatedDocs.filter(d => d.status !== 'corregido')
         extraData = {
           rejected_documents: updatedDocs,
-          // Si ya no quedan docs pendientes → volver a pending_review para que admin revise
           ...(stillPending.length === 0 ? {
             operator_status: 'pending_review',
             onboarding_done: true,
             onboarding_step: 6,
           } : {}),
         }
-        // Si quedan docs pendientes, mantener en pantalla de corrección
-        if (stillPending.length > 0) {
-          next = 6
-        }
+        if (stillPending.length > 0) next = 6
       }
-      const { error: e } = await updateProfile({
-        ...data,
-        ...extraData,
-        onboarding_step: next,
-        updated_at: new Date().toISOString(),
+
+      // Fetch directo — evita el lock de Supabase que se bloquea en móvil
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const token = getTokenFromStorage()
+      const body = { ...data, ...extraData, onboarding_step: next, updated_at: new Date().toISOString() }
+      const res = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}`, {
+        method:  'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'apikey':        supabaseKey,
+          'Content-Type':  'application/json',
+          'Prefer':        'return=minimal',
+        },
+        body: JSON.stringify(body),
       })
-      if (e) throw e
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
+
+      // Refrescar perfil en AuthContext para que la UI refleje los cambios
+      await updateProfile(body).catch(() => {})
+
       setStep(next); setSubStep(1)
     } catch (e) { setError(e.message) }
     finally { setSaving(false) }
@@ -514,18 +522,32 @@ export default function OnboardingView({ onComplete }) {
         setUploadingSignature(false)
       }
 
-      // 2. Guardar en profiles
-      const { error: e } = await updateProfile({
-        experience_years:   experienceYears ? parseInt(experienceYears) : null,
-        experience_notes:   experienceNotes.trim() || null,
-        terms_accepted_at:  new Date().toISOString(),
-        signature_url:      signatureUrl || null,
-        operator_status:    'pendiente',
-        onboarding_done:    true,
-        onboarding_step:    6,
-        updated_at:         new Date().toISOString(),
+      // 2. Guardar en profiles — fetch directo para móvil
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const token = getTokenFromStorage()
+      const profileData = {
+        experience_years:  experienceYears ? parseInt(experienceYears) : null,
+        experience_notes:  experienceNotes.trim() || null,
+        terms_accepted_at: new Date().toISOString(),
+        signature_url:     signatureUrl || null,
+        operator_status:   'pendiente',
+        onboarding_done:   true,
+        onboarding_step:   6,
+        updated_at:        new Date().toISOString(),
+      }
+      const res = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}`, {
+        method:  'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'apikey':        supabaseKey,
+          'Content-Type':  'application/json',
+          'Prefer':        'return=minimal',
+        },
+        body: JSON.stringify(profileData),
       })
-      if (e) throw e
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
+      await updateProfile(profileData).catch(() => {})
       setStep(6); setSubStep(1)
     } catch (e) { setError(e.message) }
     finally { setSaving(false) }
