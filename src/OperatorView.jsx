@@ -541,7 +541,61 @@ const OperatorView = () => {
     );
   }
 
-  // ── Perfil efectivo: usa refresco local si existe (post-pago Stripe) ────
+  const handleSubscribeOperator = async () => {
+    setPayingMembership(true);
+    setPayError('');
+    try {
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
+      } catch {}
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/create-subscription`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'operador', user_id: user.id, email: user.email, success_url: `${window.location.origin}?membership=success`, cancel_url: window.location.href }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.url) throw new Error(data?.error || 'No se pudo crear la sesión de pago');
+      window.location.href = data.url;
+    } catch (err) {
+      setPayError(err.message);
+      setPayingMembership(false);
+    }
+  };
+
+  // ── Solicitar membresía por depósito bancario ────────────────────────────
+  const handleDepositRequest = async () => {
+    if (!profile?.referral_code) return;
+    setDepositLoading(true);
+    setDepositError('');
+    try {
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
+      } catch {}
+      const amount = membershipConfig?.operator_price || 200;
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/membership_requests`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ user_id: user.id, user_type: 'operador', referral_code: profile.referral_code, amount }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err || `HTTP ${res.status}`);
+      }
+      setDepositSuccess(true);
+    } catch (err) {
+      setDepositError(err.message || 'Error al registrar solicitud');
+    } finally {
+      setDepositLoading(false);
+    }
+  };
+
+  // ── Cancelar membresía activa ─────────────────────────────────────────────
+
+    // ── Perfil efectivo: usa refresco local si existe (post-pago Stripe) ────
   const effectiveProfile = operatorMembership
     ? { ...profile, ...operatorMembership }
     : profile;
@@ -646,9 +700,9 @@ const OperatorView = () => {
             </div>
             {!memDone && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <button onClick={handleSubscribeOperator} disabled={payingMembership}
+                <button onClick={() => handleSubscribeOperator && handleSubscribeOperator()} disabled={payingMembership}
                   style={{ width: '100%', padding: '13px', background: payingMembership ? 'rgba(255,255,255,0.1)' : 'linear-gradient(135deg,#059669,#10b981)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: payingMembership ? 'not-allowed' : 'pointer', minHeight: 50 }}>
-                  {payingMembership ? '⏳ Redirigiendo...' : `💳 Pagar con tarjeta $${effectiveMembershipPrice || 200} MXN/mes`}
+                  {payingMembership ? '⏳ Redirigiendo...' : `💳 Pagar con tarjeta $${membershipConfig?.operator_price || 200} MXN/mes`}
                 </button>
                 <button onClick={() => setDepositModal(true)}
                   style={{ width: '100%', padding: '13px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, fontSize: 14, fontWeight: 600, color: '#8CA0BF', cursor: 'pointer', minHeight: 46 }}>
@@ -718,59 +772,7 @@ const OperatorView = () => {
     } catch (err) { console.error('fetchMembershipHistory:', err); }
   };
 
-  const handleSubscribeOperator = async () => {
-    setPayingMembership(true);
-    setPayError('');
-    try {
-      let token = SUPABASE_ANON_KEY;
-      try {
-        const stored = localStorage.getItem('mazclean-auth');
-        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
-      } catch {}
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/create-subscription`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'operador', user_id: user.id, email: user.email, success_url: `${window.location.origin}?membership=success`, cancel_url: window.location.href }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.url) throw new Error(data?.error || 'No se pudo crear la sesión de pago');
-      window.location.href = data.url;
-    } catch (err) {
-      setPayError(err.message);
-      setPayingMembership(false);
-    }
-  };
 
-  // ── Solicitar membresía por depósito bancario ────────────────────────────
-  const handleDepositRequest = async () => {
-    if (!profile?.referral_code) return;
-    setDepositLoading(true);
-    setDepositError('');
-    try {
-      let token = SUPABASE_ANON_KEY;
-      try {
-        const stored = localStorage.getItem('mazclean-auth');
-        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
-      } catch {}
-      const amount = membershipConfig?.operator_price || 200;
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/membership_requests`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ user_id: user.id, user_type: 'operador', referral_code: profile.referral_code, amount }),
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(err || `HTTP ${res.status}`);
-      }
-      setDepositSuccess(true);
-    } catch (err) {
-      setDepositError(err.message || 'Error al registrar solicitud');
-    } finally {
-      setDepositLoading(false);
-    }
-  };
-
-  // ── Cancelar membresía activa ─────────────────────────────────────────────
   const handleCancelMembership = async () => {
     if (!confirm('¿Deseas cancelar tu membresía? Se mantendrá activa hasta la fecha de vencimiento actual.')) return;
     setCancellingMembership(true);
