@@ -37,7 +37,7 @@ export async function sendWhatsApp(event, phone, booking) {
         'apikey':        SUPABASE_KEY,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify({ event, phone, booking }),
+      body: JSON.stringify({ event, phone, booking, extra: booking }),
     })
 
     const data = await res.json()
