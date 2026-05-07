@@ -318,6 +318,113 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
 }
 
 // ── Componente principal ──────────────────────────────────────────────────────
+// ── Pantalla de Activación — componente separado para evitar problemas de scope ──
+function ActivationScreen({ profile, membershipStatus, membershipPrice, payingMembership, onSubscribe, onDeposit, onAcademia, onSignOut }) {
+  const certDone = !!profile?.is_certified
+  const memDone  = membershipStatus === 'activa'
+  return (
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg,#050A14 0%,#0d1f3c 100%)', overflowY: 'auto', paddingBottom: 40 }}>
+      <div style={{ padding: '28px 20px 20px', textAlign: 'center' }}>
+        <div style={{ fontSize: 52, marginBottom: 10 }}>🚗</div>
+        <h1 style={{ fontSize: 22, fontWeight: 800, color: '#F0F6FF', margin: '0 0 8px' }}>
+          ¡Ya estás dentro, {profile?.full_name?.split(' ')[0]}!
+        </h1>
+        <p style={{ fontSize: 14, color: '#8CA0BF', margin: '0 auto', lineHeight: 1.6, maxWidth: 320 }}>
+          Solo faltan 2 pasos para empezar a recibir servicios y generar ingresos.
+        </p>
+      </div>
+
+      {/* Progreso */}
+      <div style={{ margin: '0 16px 24px', background: 'rgba(255,255,255,0.04)', borderRadius: 16, padding: '16px 20px', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#8CA0BF', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>Tu progreso</div>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ flex: 1, textAlign: 'center' }}>
+            <div style={{ width: 44, height: 44, borderRadius: '50%', background: certDone ? 'linear-gradient(135deg,#059669,#10b981)' : 'rgba(59,130,246,0.2)', border: `2px solid ${certDone ? '#10b981' : '#3b82f6'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontSize: 20 }}>
+              {certDone ? '✅' : '🎓'}
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: certDone ? '#10b981' : '#F0F6FF' }}>Certificación</div>
+            <div style={{ fontSize: 11, color: certDone ? '#10b981' : '#8CA0BF', marginTop: 2 }}>{certDone ? '¡Completada!' : 'Pendiente'}</div>
+          </div>
+          <div style={{ width: 40, height: 2, background: certDone && memDone ? '#10b981' : 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
+          <div style={{ flex: 1, textAlign: 'center' }}>
+            <div style={{ width: 44, height: 44, borderRadius: '50%', background: memDone ? 'linear-gradient(135deg,#059669,#10b981)' : 'rgba(59,130,246,0.2)', border: `2px solid ${memDone ? '#10b981' : '#3b82f6'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontSize: 20 }}>
+              {memDone ? '✅' : '💳'}
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: memDone ? '#10b981' : '#F0F6FF' }}>Membresía</div>
+            <div style={{ fontSize: 11, color: memDone ? '#10b981' : '#8CA0BF', marginTop: 2 }}>{memDone ? '¡Activa!' : 'Pendiente'}</div>
+          </div>
+          <div style={{ width: 40, height: 2, background: certDone && memDone ? '#10b981' : 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
+          <div style={{ flex: 1, textAlign: 'center' }}>
+            <div style={{ width: 44, height: 44, borderRadius: '50%', background: certDone && memDone ? 'linear-gradient(135deg,#059669,#10b981)' : 'rgba(255,255,255,0.05)', border: `2px solid ${certDone && memDone ? '#10b981' : 'rgba(255,255,255,0.1)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontSize: 20 }}>
+              🚀
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: certDone && memDone ? '#10b981' : '#4b6a8a' }}>¡A generar!</div>
+            <div style={{ fontSize: 11, color: certDone && memDone ? '#10b981' : '#4b6a8a', marginTop: 2 }}>Primer servicio</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* Paso 1 — Certificación */}
+        <div style={{ background: certDone ? 'rgba(16,185,129,0.08)' : 'rgba(59,130,246,0.08)', border: `1.5px solid ${certDone ? 'rgba(16,185,129,0.3)' : 'rgba(59,130,246,0.4)'}`, borderRadius: 16, padding: '18px 20px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: certDone ? 0 : 14 }}>
+            <div style={{ fontSize: 36, flexShrink: 0 }}>{certDone ? '✅' : '🎓'}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#F0F6FF' }}>Certificación Pro</div>
+                {!certDone && <span style={{ background: '#3b82f6', color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>RECOMENDADO PRIMERO</span>}
+              </div>
+              <div style={{ fontSize: 13, color: '#8CA0BF', lineHeight: 1.6 }}>
+                {certDone ? '¡Listo! Ya tienes tu Certificación Pro. Los clientes verán tu badge de calidad certificada. 🏆' : '4 módulos de estética automotriz profesional. Menos de 30 minutos. El badge que te diferencia ante los clientes.'}
+              </div>
+            </div>
+          </div>
+          {!certDone && (
+            <button onClick={onAcademia} style={{ width: '100%', padding: '13px', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer', minHeight: 50 }}>
+              🎓 Iniciar Certificación Pro →
+            </button>
+          )}
+        </div>
+
+        {/* Paso 2 — Membresía */}
+        <div style={{ background: memDone ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.04)', border: `1.5px solid ${memDone ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 16, padding: '18px 20px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: memDone ? 0 : 14 }}>
+            <div style={{ fontSize: 36, flexShrink: 0 }}>{memDone ? '✅' : '💳'}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: '#F0F6FF', marginBottom: 4 }}>Membresía Mensual</div>
+              <div style={{ fontSize: 13, color: '#8CA0BF', lineHeight: 1.6 }}>
+                {memDone ? '¡Membresía activa! Estás listo para recibir servicios.' : `Activa tu membresía de $${membershipPrice} MXN/mes para acceder a la plataforma y empezar a generar ingresos.`}
+              </div>
+            </div>
+          </div>
+          {!memDone && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button onClick={onSubscribe} disabled={payingMembership} style={{ width: '100%', padding: '13px', background: payingMembership ? 'rgba(255,255,255,0.1)' : 'linear-gradient(135deg,#059669,#10b981)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: payingMembership ? 'not-allowed' : 'pointer', minHeight: 50 }}>
+                {payingMembership ? '⏳ Redirigiendo...' : `💳 Pagar con tarjeta $${membershipPrice} MXN/mes`}
+              </button>
+              <button onClick={onDeposit} style={{ width: '100%', padding: '13px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, fontSize: 14, fontWeight: 600, color: '#8CA0BF', cursor: 'pointer', minHeight: 46 }}>
+                🏦 Pagar con depósito bancario
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Tip motivador */}
+        <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 12, padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <span style={{ fontSize: 20, flexShrink: 0 }}>💡</span>
+          <div style={{ fontSize: 13, color: '#fbbf24', lineHeight: 1.6 }}>
+            <strong>Consejo:</strong> Te recomendamos completar primero la Certificación y luego activar la membresía. ¡Así llegas listo desde el día uno!
+          </div>
+        </div>
+
+        <button onClick={onSignOut} style={{ width: '100%', padding: '12px', background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, color: '#4b6a8a', fontWeight: 600, fontSize: 13, cursor: 'pointer', marginTop: 8 }}>
+          Cerrar sesión
+        </button>
+      </div>
+    </div>
+  )
+}
+
 const OperatorView = () => {
   const { user, profile, signOut } = useAuth();
   const { showToast } = useToast();
@@ -604,130 +711,27 @@ const OperatorView = () => {
   const effectiveMembershipPrice = effectivePromo?.effective_price || membershipConfig?.operator_price || 200;
 
   // ── Pantalla de activación — aparece hasta completar certificación + membresía ──
+  // Pantalla de activación — renderizada como componente separado
   const needsCertification = !profile?.is_certified
-  const needsMembership    = effectiveProfile?.membership_status !== 'activa'
+  const needsMembership    = operatorMembership?.membership_status !== 'activa' && profile?.membership_status !== 'activa'
   const isApproved         = profile?.operator_status === 'aprobado'
 
   if (isApproved && (needsCertification || needsMembership) && !showAcademia) {
-    const certDone = !!profile?.is_certified
-    const memDone  = effectiveProfile?.membership_status === 'activa'
     return (
-      <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg,#050A14 0%,#0d1f3c 100%)', overflowY: 'auto', paddingBottom: 40 }}>
-        {/* Header */}
-        <div style={{ padding: '28px 20px 20px', textAlign: 'center' }}>
-          <div style={{ fontSize: 52, marginBottom: 10 }}>🚗</div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: '#F0F6FF', margin: '0 0 8px' }}>
-            ¡Ya estás dentro, {profile?.full_name?.split(' ')[0]}!
-          </h1>
-          <p style={{ fontSize: 14, color: '#8CA0BF', margin: 0, lineHeight: 1.6, maxWidth: 320, margin: '0 auto' }}>
-            Solo faltan 2 pasos para empezar a recibir servicios y generar ingresos.
-          </p>
-        </div>
-
-        {/* Progreso */}
-        <div style={{ margin: '0 16px 24px', background: 'rgba(255,255,255,0.04)', borderRadius: 16, padding: '16px 20px', border: '1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#8CA0BF', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>Tu progreso</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-            {/* Paso 1 */}
-            <div style={{ flex: 1, textAlign: 'center' }}>
-              <div style={{ width: 44, height: 44, borderRadius: '50%', background: certDone ? 'linear-gradient(135deg,#059669,#10b981)' : 'rgba(59,130,246,0.2)', border: `2px solid ${certDone ? '#10b981' : '#3b82f6'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontSize: 20 }}>
-                {certDone ? '✅' : '🎓'}
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: certDone ? '#10b981' : '#F0F6FF' }}>Certificación</div>
-              <div style={{ fontSize: 11, color: certDone ? '#10b981' : '#8CA0BF', marginTop: 2 }}>{certDone ? '¡Completada!' : 'Pendiente'}</div>
-            </div>
-            {/* Línea */}
-            <div style={{ width: 40, height: 2, background: certDone && memDone ? '#10b981' : 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
-            {/* Paso 2 */}
-            <div style={{ flex: 1, textAlign: 'center' }}>
-              <div style={{ width: 44, height: 44, borderRadius: '50%', background: memDone ? 'linear-gradient(135deg,#059669,#10b981)' : 'rgba(59,130,246,0.2)', border: `2px solid ${memDone ? '#10b981' : '#3b82f6'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontSize: 20 }}>
-                {memDone ? '✅' : '💳'}
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: memDone ? '#10b981' : '#F0F6FF' }}>Membresía</div>
-              <div style={{ fontSize: 11, color: memDone ? '#10b981' : '#8CA0BF', marginTop: 2 }}>{memDone ? '¡Activa!' : 'Pendiente'}</div>
-            </div>
-            {/* Línea */}
-            <div style={{ width: 40, height: 2, background: certDone && memDone ? '#10b981' : 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
-            {/* Meta */}
-            <div style={{ flex: 1, textAlign: 'center' }}>
-              <div style={{ width: 44, height: 44, borderRadius: '50%', background: certDone && memDone ? 'linear-gradient(135deg,#059669,#10b981)' : 'rgba(255,255,255,0.05)', border: `2px solid ${certDone && memDone ? '#10b981' : 'rgba(255,255,255,0.1)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontSize: 20 }}>
-                🚀
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: certDone && memDone ? '#10b981' : '#4b6a8a' }}>¡A generar!</div>
-              <div style={{ fontSize: 11, color: certDone && memDone ? '#10b981' : '#4b6a8a', marginTop: 2 }}>Primer servicio</div>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-          {/* Paso 1 — Certificación */}
-          <div style={{ background: certDone ? 'rgba(16,185,129,0.08)' : 'rgba(59,130,246,0.08)', border: `1.5px solid ${certDone ? 'rgba(16,185,129,0.3)' : 'rgba(59,130,246,0.4)'}`, borderRadius: 16, padding: '18px 20px' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: certDone ? 0 : 14 }}>
-              <div style={{ fontSize: 36, flexShrink: 0 }}>{certDone ? '✅' : '🎓'}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: '#F0F6FF' }}>Certificación Pro</div>
-                  {!certDone && <span style={{ background: '#3b82f6', color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>RECOMENDADO PRIMERO</span>}
-                </div>
-                <div style={{ fontSize: 13, color: '#8CA0BF', lineHeight: 1.6 }}>
-                  {certDone
-                    ? '¡Listo! Ya tienes tu Certificación Pro. Los clientes verán tu badge de calidad certificada. 🏆'
-                    : '4 módulos de estética automotriz profesional. Menos de 30 minutos. El badge que te diferencia ante los clientes.'}
-                </div>
-              </div>
-            </div>
-            {!certDone && (
-              <button onClick={() => setShowAcademia(true)}
-                style={{ width: '100%', padding: '13px', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer', minHeight: 50 }}>
-                🎓 Iniciar Certificación Pro →
-              </button>
-            )}
-          </div>
-
-          {/* Paso 2 — Membresía */}
-          <div style={{ background: memDone ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.04)', border: `1.5px solid ${memDone ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 16, padding: '18px 20px' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: memDone ? 0 : 14 }}>
-              <div style={{ fontSize: 36, flexShrink: 0 }}>{memDone ? '✅' : '💳'}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: '#F0F6FF', marginBottom: 4 }}>Membresía Mensual</div>
-                <div style={{ fontSize: 13, color: '#8CA0BF', lineHeight: 1.6 }}>
-                  {memDone
-                    ? '¡Membresía activa! Estás listo para recibir servicios.'
-                    : 'Activa tu membresía de $200 MXN/mes para acceder a la plataforma y empezar a generar ingresos.'}
-                </div>
-              </div>
-            </div>
-            {!memDone && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <button onClick={() => handleSubscribeOperator && handleSubscribeOperator()} disabled={payingMembership}
-                  style={{ width: '100%', padding: '13px', background: payingMembership ? 'rgba(255,255,255,0.1)' : 'linear-gradient(135deg,#059669,#10b981)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: payingMembership ? 'not-allowed' : 'pointer', minHeight: 50 }}>
-                  {payingMembership ? '⏳ Redirigiendo...' : `💳 Pagar con tarjeta $${membershipConfig?.operator_price || 200} MXN/mes`}
-                </button>
-                <button onClick={() => setDepositModal(true)}
-                  style={{ width: '100%', padding: '13px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, fontSize: 14, fontWeight: 600, color: '#8CA0BF', cursor: 'pointer', minHeight: 46 }}>
-                  🏦 Pagar con depósito bancario
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Tip motivador */}
-          <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 12, padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 20, flexShrink: 0 }}>💡</span>
-            <div style={{ fontSize: 13, color: '#fbbf24', lineHeight: 1.6 }}>
-              <strong>Consejo:</strong> Te recomendamos completar primero la Certificación y luego activar la membresía. ¡Así llegas listo desde el día uno!
-            </div>
-          </div>
-
-          {/* Cerrar sesión */}
-          <button onClick={() => signOut()} style={{ width: '100%', padding: '12px', background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, color: '#4b6a8a', fontWeight: 600, fontSize: 13, cursor: 'pointer', marginTop: 8 }}>
-            Cerrar sesión
-          </button>
-        </div>
-      </div>
+      <ActivationScreen
+        profile={profile}
+        membershipStatus={operatorMembership?.membership_status || profile?.membership_status}
+        membershipPrice={membershipConfig?.operator_price || 200}
+        payingMembership={payingMembership}
+        onSubscribe={handleSubscribeOperator}
+        onDeposit={() => setDepositModal(true)}
+        onAcademia={() => setShowAcademia(true)}
+        onSignOut={() => signOut()}
+      />
     )
   }
+
+
 
   // ── Fetch bookings ────────────────────────────────────────────────────────
   const fetchMembershipConfig = async () => {
