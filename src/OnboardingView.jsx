@@ -304,6 +304,20 @@ export default function OnboardingView({ onComplete }) {
   const [termsAccepted, setTermsAccepted]     = useState(!!profile?.terms_accepted_at)
   const [signature, setSignature]             = useState(null)
   const [uploadingSignature, setUploadingSignature] = useState(false)
+  const [membershipConfig, setMembershipConfig] = useState({ operator_price: 200, client_price: 30 })
+
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/membership_config?select=operator_price,client_price&limit=1`,
+          { headers: { 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY } }
+        )
+        if (res.ok) { const rows = await res.json(); if (rows?.[0]) setMembershipConfig(rows[0]) }
+      } catch {}
+    }
+    fetchConfig()
+  }, [])
 
   useEffect(() => {
     if (!profile) return
@@ -961,20 +975,39 @@ export default function OnboardingView({ onComplete }) {
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>📋 Contrato de Operador</h2>
                 <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Lee el contrato con tus datos y fírmalo digitalmente.</p>
-                <div style={{ background: '#f9fafb', border: '1.5px solid #e5e7eb', borderRadius: 12, padding: '16px 18px', marginBottom: 16, maxHeight: 280, overflowY: 'auto', fontSize: 13, color: '#374151', lineHeight: 1.7 }}>
-                  <div style={{ textAlign: 'center', marginBottom: 12 }}>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: '#1f2937' }}>CONTRATO DE PRESTACIÓN DE SERVICIOS</div>
-                    <div style={{ fontSize: 12, color: '#6b7280' }}>Maz Clean — Operador de Campo</div>
+                <div style={{ background: '#f9fafb', border: '1.5px solid #e5e7eb', borderRadius: 12, padding: '16px 18px', marginBottom: 16, maxHeight: 320, overflowY: 'auto', fontSize: 13, color: '#374151', lineHeight: 1.7 }}>
+                  <div style={{ textAlign: 'center', marginBottom: 14 }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: '#1a3a6e' }}>💧 MAZ CLEAN</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#1f2937', marginTop: 6 }}>CONTRATO DE ACCESO A PLATAFORMA Y PRESTACIÓN DE SERVICIOS INDEPENDIENTES</div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>Operador de Estética Automotriz · Versión 1.0</div>
                     <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>Fecha: {new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
                   </div>
-                  <p><strong>PARTES:</strong> Maz Clean (en adelante "la Empresa") y <strong>{profile?.full_name || fullName}</strong> con CURP <strong>{profile?.curp || curp}</strong> (en adelante "el Operador").</p>
-                  <p><strong>OBJETO:</strong> El Operador se compromete a prestar servicios de lavado de automóviles a domicilio en representación de la Empresa, dentro de la zona de cobertura declarada de <strong>{profile?.coverage_radius || radius} km</strong> desde <strong>{profile?.base_address || baseAddress}</strong>.</p>
-                  <p><strong>DISPONIBILIDAD:</strong> El Operador estará disponible los días <strong>{(profile?.work_days || selectedDays).join(', ')}</strong> en horario de <strong>{profile?.work_start || workStart}</strong> a <strong>{profile?.work_end || workEnd}</strong> hrs.</p>
-                  <p><strong>COMISIÓN:</strong> La Empresa pagará al Operador el <strong>85%</strong> del valor de cada servicio completado. Los pagos se realizarán cada lunes por la semana anterior vía transferencia SPEI a la cuenta registrada.</p>
-                  <p><strong>OBLIGACIONES DEL OPERADOR:</strong> Mantener el kit de materiales completo y en buen estado. Presentarse puntualmente a los servicios asignados. Tratar a los clientes con respeto y profesionalismo. No compartir información de clientes con terceros. Notificar con al menos 24 horas de anticipación cualquier imposibilidad de atender servicios.</p>
-                  <p><strong>CAUSAS DE RESCISIÓN:</strong> Incumplimiento repetido de servicios, calificación promedio menor a 3.0 por 3 semanas consecutivas, conducta inapropiada con clientes, o falsedad en la información proporcionada durante el registro.</p>
-                  <p><strong>VIGENCIA:</strong> El presente contrato tiene vigencia indefinida a partir de la fecha de aprobación del Operador, y puede ser rescindido por cualquiera de las partes con 7 días de anticipación.</p>
-                  <p style={{ fontSize: 12, color: '#6b7280' }}>Al firmar este contrato, el Operador declara que toda la información proporcionada durante el proceso de registro es verídica y acepta los términos y condiciones aquí establecidos.</p>
+
+                  <p><strong>I. PARTES.</strong> MAZ CLEAN, plataforma digital operada por <strong>Juan Alberto Mazariegos Fernandez</strong> (en adelante "MAZ CLEAN" o "la Plataforma"), y <strong>{profile?.full_name || fullName}</strong> con CURP <strong>{profile?.curp || curp}</strong> (en adelante "el Operador").</p>
+
+                  <p><strong>II. OBJETO.</strong> El presente contrato regula los términos bajo los cuales el Operador accede a la plataforma tecnológica MAZ CLEAN para ofrecer servicios de estética automotriz a domicilio de manera <strong>independiente</strong>, sin que exista relación laboral alguna con MAZ CLEAN. MAZ CLEAN actúa exclusivamente como intermediario tecnológico.</p>
+
+                  <p><strong>III. MEMBRESÍA.</strong> Para acceder a la plataforma, el Operador pagará una <strong>membresía mensual de ${membershipConfig?.operator_price || 200} MXN</strong>, renovable automáticamente. Este monto podrá modificarse con al menos 30 días de anticipación. La membresía no garantiza un número mínimo de servicios.</p>
+
+                  <p><strong>IV. COMISIONES FUTURAS.</strong> Actualmente MAZ CLEAN no cobra comisión por servicio. La Plataforma se reserva el derecho de implementar un esquema de comisión en el futuro, notificando al Operador con mínimo 30 días de anticipación. El Operador podrá aceptar o cancelar sin penalización.</p>
+
+                  <p><strong>V. PRECIOS.</strong> Los precios de cada servicio son establecidos exclusivamente por MAZ CLEAN. El Operador se compromete a respetar los precios publicados en la App.</p>
+
+                  <p><strong>VI. ZONA Y DISPONIBILIDAD.</strong> El Operador declara una zona de cobertura de <strong>{profile?.coverage_radius || radius} km</strong> desde <strong>{profile?.base_address || baseAddress}</strong>, con disponibilidad los días <strong>{(profile?.work_days || selectedDays).join(', ')}</strong> en horario de <strong>{profile?.work_start || workStart}</strong> a <strong>{profile?.work_end || workEnd}</strong> hrs. No existe exclusividad de zona.</p>
+
+                  <p><strong>VII. OBLIGACIONES.</strong> Mantener membresía y kit de materiales activos. Presentarse puntualmente. Tratar a clientes con respeto. Usar la App durante todo el servicio (fotos obligatorias). No contactar clientes fuera de la plataforma. Notificar cancelaciones con mínimo 2 horas de anticipación.</p>
+
+                  <p><strong>VIII. CANCELACIONES Y PENALIZACIONES.</strong> Las cancelaciones injustificadas resultarán en reducción de calificación de forma escalonada: primera cancelación −0.5 puntos; segunda en 30 días −1.0 punto y suspensión 48 horas; tercera en 30 días, revisión y posible suspensión definitiva. Calificación sostenida menor a 3.5 estrellas podrá resultar en suspensión temporal.</p>
+
+                  <p><strong>IX. RESPONSABILIDAD.</strong> El Operador presta sus servicios de forma independiente y bajo su propia responsabilidad. MAZ CLEAN no responde por daños a vehículos u objetos durante el servicio. Ante reclamaciones, MAZ CLEAN actuará como mediador.</p>
+
+                  <p><strong>X. VERACIDAD DE LA INFORMACIÓN.</strong> El Operador manifiesta bajo protesta de decir verdad que toda la información, documentación y datos personales o profesionales proporcionados a MAZ CLEAN son completos y verídicos. Se obliga a mantener actualizados dichos datos y a notificar oportunamente cualquier modificación. En caso de detectarse falsedad, omisión o inexactitud, MAZ CLEAN podrá dar por terminado el contrato de manera inmediata sin responsabilidad alguna, reservándose el derecho de ejercer las acciones legales correspondientes.</p>
+
+                  <p><strong>XI. VIGENCIA.</strong> Vigencia indefinida. Puede rescindirse por el Operador cancelando su membresía sin penalización, o por MAZ CLEAN por incumplimiento grave, conducta inapropiada, información falsa o calificación sostenidamente baja.</p>
+
+                  <p><strong>XII. PROTECCIÓN DE DATOS.</strong> Los datos del Operador son tratados conforme a la LFPDPPP. MAZ CLEAN no comparte datos personales con terceros sin consentimiento, salvo requerimiento de autoridad competente.</p>
+
+                  <p style={{ fontSize: 12, color: '#6b7280', marginTop: 8, fontStyle: 'italic' }}>Al firmar digitalmente este contrato, el Operador declara haber leído, entendido y aceptado íntegramente los términos aquí establecidos.</p>
                 </div>
 
                 <div style={{ background: termsAccepted ? '#f0fdf4' : '#f9fafb', border: `1.5px solid ${termsAccepted ? '#bbf7d0' : '#e5e7eb'}`, borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>

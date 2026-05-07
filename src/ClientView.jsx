@@ -137,6 +137,9 @@ export default function ClientView() {
   // Cancelar membresia
   const [cancellingMembership, setCancellingMembership]   = useState(false)
   // Chat interno
+  // Contrato de membresía cliente
+  const [showClientTerms, setShowClientTerms] = useState(false)
+  const [clientTermsAccepted, setClientTermsAccepted] = useState(false)
   const [chatOpen, setChatOpen]           = useState(false)
   const [chatMessages, setChatMessages]   = useState([])
   const [chatInput, setChatInput]         = useState('')
@@ -672,6 +675,21 @@ export default function ClientView() {
                   <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 12, lineHeight: 1.6 }}>
                     ⭐ Prioridad en asignación · 📅 Horarios reservados · 🎯 Operador preferente · ❌ Cancelación flexible
                   </div>
+                  {/* Términos y condiciones membresía */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <button onClick={() => setClientTermsAccepted(!clientTermsAccepted)}
+                        style={{ width: 22, height: 22, borderRadius: 5, border: `2px solid ${clientTermsAccepted ? '#10b981' : '#d1d5db'}`, background: clientTermsAccepted ? '#10b981' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {clientTermsAccepted && <span style={{ color: '#fff', fontSize: 13 }}>✓</span>}
+                      </button>
+                      <span style={{ fontSize: 13, color: '#374151' }}>
+                        He leído y acepto los{' '}
+                        <button onClick={() => setShowClientTerms(true)} style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: 13, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+                          Términos y Condiciones de Membresía
+                        </button>
+                      </span>
+                    </div>
+                  </div>
                   {/* Banner de promoción si aplica */}
                   {effectivePromo?.promo_name && (
                     <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', marginBottom: 12 }}>
@@ -686,11 +704,11 @@ export default function ClientView() {
                   {payError && (
                     <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#dc2626' }}>⚠️ {payError}</div>
                   )}
-                  <button onClick={handleSubscribeClient} disabled={payingMembership}
+                  <button onClick={handleSubscribeClient} disabled={payingMembership || !clientTermsAccepted}
                     style={{ width: '100%', padding: '13px', background: payingMembership ? '#9ca3af' : 'linear-gradient(135deg,#7c3aed,#a78bfa)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: payingMembership ? 'not-allowed' : 'pointer', minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                     {payingMembership ? '⏳ Redirigiendo...' : `💳 Pagar con tarjeta $${effectivePromo?.effective_price || membershipConfig?.client_price || 30} MXN/mes`}
                   </button>
-                  <button onClick={() => { setDepositModal(true); setDepositSuccess(false); setDepositError('') }}
+                  <button onClick={() => { if (!clientTermsAccepted) { showToast('Debes aceptar los términos y condiciones', 'warning'); return } setDepositModal(true); setDepositSuccess(false); setDepositError('') }}
                     style={{ width: '100%', marginTop: 10, padding: '13px', background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 10, fontSize: 14, fontWeight: 700, color: '#059669', cursor: 'pointer', minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                     🏦 Pagar con depósito bancario
                   </button>
@@ -776,6 +794,69 @@ export default function ClientView() {
           </>
         )}
       </div>
+
+      {/* ════ MODAL TÉRMINOS MEMBRESÍA CLIENTE ════ */}
+      {showClientTerms && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 130, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 500, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ background: 'linear-gradient(135deg,#1a3a6e,#3b82f6)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <div style={{ color: '#fff', fontWeight: 800, fontSize: 16 }}>💧 MAZ CLEAN</div>
+                <div style={{ color: '#bfdbfe', fontSize: 12, marginTop: 2 }}>Términos y Condiciones de Membresía Premium</div>
+              </div>
+              <button onClick={() => setShowClientTerms(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 32, height: 32, color: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+            <div style={{ overflowY: 'auto', padding: '20px', fontSize: 13, color: '#374151', lineHeight: 1.8 }}>
+              <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#1a3a6e' }}>TÉRMINOS Y CONDICIONES DE MEMBRESÍA PREMIUM</div>
+                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>Versión 1.0 — Ciudad de México, 2026</div>
+              </div>
+
+              <p style={{ marginBottom: 10 }}><strong>I. PARTES.</strong> MAZ CLEAN, plataforma digital operada por <strong>Juan Alberto Mazariegos Fernandez</strong>, y el Cliente suscriptor (en adelante "el Cliente").</p>
+
+              <p style={{ marginBottom: 10 }}><strong>II. DESCRIPCIÓN.</strong> MAZ CLEAN es una plataforma tecnológica que conecta clientes con operadores independientes certificados en estética automotriz a domicilio. MAZ CLEAN actúa como intermediario tecnológico y garante del estándar de calidad de sus operadores.</p>
+
+              <p style={{ marginBottom: 10 }}><strong>III. MEMBRESÍA PREMIUM — BENEFICIOS.</strong> Al suscribirse a la Membresía Premium por <strong>${membershipConfig?.client_price || 30} MXN mensuales</strong>, el Cliente obtiene:</p>
+              <ul style={{ paddingLeft: 20, marginBottom: 10 }}>
+                <li>Prioridad en asignación de servicios sobre clientes sin membresía</li>
+                <li>Acceso a descuentos y promociones exclusivas para miembros</li>
+                <li>Operadores verificados con identidad comprobada y Certificación Pro activa</li>
+                <li>Historial de servicios con fotos de antes y después</li>
+                <li>Seguimiento del operador en tiempo real durante el servicio</li>
+                <li>Comunicación directa con el operador a través de la App durante el servicio</li>
+              </ul>
+
+              <p style={{ marginBottom: 10 }}><strong>IV. PRECIO Y RENOVACIÓN.</strong> La membresía tiene un costo de <strong>${membershipConfig?.client_price || 30} MXN al mes</strong> y se renueva automáticamente. MAZ CLEAN notificará cambios de precio con al menos 30 días de anticipación.</p>
+
+              <p style={{ marginBottom: 10 }}><strong>V. CANCELACIÓN.</strong> El Cliente puede cancelar en cualquier momento desde su perfil, sin penalización ni permanencia mínima. La membresía permanece activa hasta el último día del período pagado. No se realizan reembolsos por períodos parciales salvo lo previsto por PROFECO.</p>
+
+              <p style={{ marginBottom: 10 }}><strong>VI. RESERVACIONES.</strong> El Cliente puede cancelar sin cargo hasta 1 hora antes del servicio confirmado. Cancelaciones tardías reiteradas podrán resultar en suspensión temporal de la cuenta.</p>
+
+              <p style={{ marginBottom: 10 }}><strong>VII. RESPONSABILIDAD.</strong> Los servicios son prestados por operadores independientes. MAZ CLEAN no es responsable por daños a vehículos u objetos durante el servicio. MAZ CLEAN garantiza que todos sus operadores han pasado verificación de identidad y cuentan con Certificación Pro activa. Ante cualquier incidencia, MAZ CLEAN actuará como mediador.</p>
+
+              <p style={{ marginBottom: 10 }}><strong>VIII. SEGURIDAD.</strong> MAZ CLEAN verifica: identificación oficial con selfie, comprobante de domicilio, video de prueba de vida, CURP validada, firma digital de contrato y Certificación Pro. Esta verificación brinda seguridad al Cliente sobre la identidad de cada operador.</p>
+
+              <p style={{ marginBottom: 10 }}><strong>IX. PRIVACIDAD.</strong> Los datos del Cliente son tratados conforme a la LFPDPPP. MAZ CLEAN comparte con el operador asignado únicamente nombre y dirección del servicio. Toda comunicación entre Cliente y Operador se realiza exclusivamente a través de la App — MAZ CLEAN no comparte números telefónicos.</p>
+
+              <p style={{ marginBottom: 10 }}><strong>X. CONDUCTA.</strong> El Cliente se compromete a tratar a los operadores con respeto. MAZ CLEAN podrá suspender cuentas con conductas abusivas, reportes falsos o uso indebido de la plataforma.</p>
+
+              <p style={{ marginBottom: 10 }}><strong>XI. JURISDICCIÓN.</strong> Para cualquier controversia, las partes se someten a los tribunales competentes de la Ciudad de México.</p>
+
+              <p style={{ fontSize: 12, color: '#6b7280', fontStyle: 'italic', marginTop: 12 }}>Al activar su Membresía Premium, el Cliente acepta íntegramente los presentes términos y condiciones.</p>
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, flexShrink: 0 }}>
+              <button onClick={() => setShowClientTerms(false)}
+                style={{ flex: 1, padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 46 }}>
+                Cerrar
+              </button>
+              <button onClick={() => { setClientTermsAccepted(true); setShowClientTerms(false) }}
+                style={{ flex: 2, padding: '12px', background: 'linear-gradient(135deg,#1a3a6e,#3b82f6)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 46 }}>
+                ✅ Aceptar términos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ════ MODAL CHAT ════ */}
       {chatOpen && activeBooking && (
