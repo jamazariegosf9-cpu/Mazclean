@@ -247,7 +247,7 @@ function SignaturePad({ onSign, signed }) {
 
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function OnboardingView({ onComplete }) {
-  const { user, profile, updateProfile } = useAuth()
+  const { user, profile, updateProfile, loadProfile } = useAuth()
   const isMobile = useIsMobile()
 
   const [step, setStep] = useState(() => {
@@ -393,6 +393,9 @@ export default function OnboardingView({ onComplete }) {
         body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
+
+      // Refrescar perfil en memoria para que la UI refleje los cambios
+      if (loadProfile) await loadProfile().catch(() => {})
 
       setStep(next); setSubStep(1)
     } catch (e) { setError(e.message) }
@@ -558,6 +561,9 @@ export default function OnboardingView({ onComplete }) {
         body: JSON.stringify(profileData),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
+
+      // Refrescar perfil en memoria para que estado final muestre todo correcto
+      if (loadProfile) await loadProfile().catch(() => {})
 
       setStep(6); setSubStep(1)
     } catch (e) { setError(e.message) }
