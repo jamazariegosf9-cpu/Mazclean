@@ -23,39 +23,7 @@ function useIsMobile() {
   return isMobile
 }
 
-async function compressImage(file) {
-  if (!file.type.startsWith('image/') || file.size < 500 * 1024) return file
-  const MAX = 1000; const QUALITY = 0.78
-  try {
-    const blob = await new Promise((resolve) => {
-      const safeTimer = setTimeout(() => resolve(file), 10000)
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const img = new Image()
-        img.onload = () => {
-          try {
-            let w = img.width, h = img.height
-            if (w > MAX || h > MAX) {
-              if (w > h) { h = Math.round(h * MAX / w); w = MAX }
-              else       { w = Math.round(w * MAX / h); h = MAX }
-            }
-            const canvas = document.createElement('canvas')
-            canvas.width = w; canvas.height = h
-            const ctx = canvas.getContext('2d')
-            if (!ctx) { clearTimeout(safeTimer); resolve(file); return }
-            ctx.drawImage(img, 0, 0, w, h)
-            canvas.toBlob((b) => { clearTimeout(safeTimer); resolve(b && b.size > 0 ? b : file) }, 'image/jpeg', QUALITY)
-          } catch { clearTimeout(safeTimer); resolve(file) }
-        }
-        img.onerror = () => { clearTimeout(safeTimer); resolve(file) }
-        img.src = e.target.result
-      }
-      reader.onerror = () => { clearTimeout(safeTimer); resolve(file) }
-      reader.readAsDataURL(file)
-    })
-    return blob
-  } catch { return file }
-}
+
 
 const getStorageUrl = (path) => {
   if (!path) return null
@@ -63,17 +31,29 @@ const getStorageUrl = (path) => {
   return `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/service-photos/${path}`
 }
 
-// ── Upload genérico ───────────────────────────────────────────────────────────
+// ── Upload genérico — sin getSession() ni compressImage() para móvil ─────────
+function getTokenFromStorage() {
+  try {
+    const stored = localStorage.getItem('mazclean-auth')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      return parsed?.access_token || parsed?.session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY
+    }
+  } catch {}
+  return import.meta.env.VITE_SUPABASE_ANON_KEY
+}
+
 async function uploadFile({ file, folder, userId, onProgress }) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token || supabaseKey
+  // Lee token directo de localStorage — evita bloqueo del lock en móvil
+  const token   = getTokenFromStorage()
   const isVideo = file.type.startsWith('video/')
   const isPdf   = file.type === 'application/pdf'
   const ext     = isVideo ? (file.name?.endsWith('.mov') ? 'mov' : 'mp4') : isPdf ? 'pdf' : 'jpg'
   const path    = `${folder}/${userId}/${folder}_${Date.now()}.${ext}`
-  const fileToUpload = (!isVideo && !isPdf) ? await compressImage(file) : file
+  // Sin compresión — compressImage() congela el canvas en móvil
+  const fileToUpload = file
 
   await new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
@@ -92,12 +72,11 @@ async function uploadFile({ file, folder, userId, onProgress }) {
   return path
 }
 
-// ── Upload firma digital desde base64 ────────────────────────────────────────
+// ── Upload firma digital desde base64 — sin getSession() para móvil ──────────
 async function uploadSignature({ base64DataUrl, userId }) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token || supabaseKey
+  const token = getTokenFromStorage()
 
   // Convertir base64 a Blob
   const res     = await fetch(base64DataUrl)
