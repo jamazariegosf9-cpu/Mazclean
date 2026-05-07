@@ -634,7 +634,7 @@ export default function OnboardingView({ onComplete }) {
                 { icon: '🏦', title: 'Datos bancarios', desc: 'CLABE interbancaria de 18 dígitos y nombre del banco' },
                 { icon: '📄', title: 'Comprobante de domicilio', desc: 'Recibo de luz, agua o internet — máximo 3 meses de antigüedad' },
                 { icon: '🎥', title: 'Video de prueba de vida', desc: 'Video de 30-60 seg mostrando la fachada de tu domicilio' },
-                { icon: '🧴', title: 'Kit de materiales', desc: 'Shampoo, 4 microfibras, cubeta doble balde y aspiradora portátil' },
+                { icon: '🧴', title: 'Kit de materiales', desc: 'Shampoo pH neutro, producto waterless + atomizador, microfibras por color (azul/negro/gris), brocha de detailing, cubeta doble balde, aspiradora portátil, antibacterial y limpiador de cristales' },
                 { icon: '🚗', title: 'Datos de tu vehículo', desc: 'Foto y placa — solo si operarás a más de 2 km de tu domicilio' },
               ].map((item, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: '#f9fafb', borderRadius: 12, padding: '12px 14px', border: '1px solid #e5e7eb' }}>
@@ -909,10 +909,19 @@ export default function OnboardingView({ onComplete }) {
             <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Sube una foto de tu kit completo para verificar que tienes todo lo necesario.</p>
             <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
               <p style={{ fontSize: 13, fontWeight: 700, color: '#1e40af', margin: '0 0 8px' }}>✅ Materiales obligatorios:</p>
-              {['Shampoo para autos','Mínimo 4 microfibras limpias','Cubeta de doble balde','Aspiradora portátil'].map(m => (
+              {[
+                'Shampoo pH neutro para autos',
+                'Producto waterless (lavado en seco) + atomizador',
+                'Microfibras por color: azul (carrocería), negro (rines), gris (interiores)',
+                'Brocha de detailing (para rejillas y emblemas)',
+                'Cubeta de doble balde',
+                'Aspiradora portátil',
+                'Producto antibacterial (spray)',
+                'Limpiador de cristales base agua',
+              ].map(m => (
                 <div key={m} style={{ fontSize: 13, color: '#1e40af', marginBottom: 4 }}>• {m}</div>
               ))}
-              <p style={{ fontSize: 12, color: '#6b7280', margin: '8px 0 0', fontStyle: 'italic' }}>Recomendados: sellador de llantas, agua propia</p>
+              <p style={{ fontSize: 12, color: '#6b7280', margin: '8px 0 0', fontStyle: 'italic' }}>Recomendado: producto base agua para tablero y plásticos interiores</p>
             </div>
             <PhotoUpload label="Foto del kit" hint="Coloca todos los materiales visibles en la foto." icon="📦" value={kitPhotoUrl} onChange={setKitPhotoUrl} capture="environment" disabled={!canEdit('kit_photo_url')} />
             {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
