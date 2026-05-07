@@ -710,28 +710,6 @@ const OperatorView = () => {
   // Precio efectivo de membresía (con promo si aplica)
   const effectiveMembershipPrice = effectivePromo?.effective_price || membershipConfig?.operator_price || 200;
 
-  // ── Pantalla de activación — aparece hasta completar certificación + membresía ──
-  // Pantalla de activación — renderizada como componente separado
-  const needsCertification = !profile?.is_certified
-  const needsMembership    = operatorMembership?.membership_status !== 'activa' && profile?.membership_status !== 'activa'
-  const isApproved         = profile?.operator_status === 'aprobado'
-
-  if (isApproved && (needsCertification || needsMembership) && !showAcademia) {
-    return (
-      <ActivationScreen
-        profile={profile}
-        membershipStatus={operatorMembership?.membership_status || profile?.membership_status}
-        membershipPrice={membershipConfig?.operator_price || 200}
-        payingMembership={payingMembership}
-        onSubscribe={handleSubscribeOperator}
-        onDeposit={() => setDepositModal(true)}
-        onAcademia={() => setShowAcademia(true)}
-        onSignOut={() => signOut()}
-      />
-    )
-  }
-
-
 
   // ── Fetch bookings ────────────────────────────────────────────────────────
   const fetchMembershipConfig = async () => {
@@ -1352,6 +1330,26 @@ const OperatorView = () => {
   ];
 
   // ── RENDER ────────────────────────────────────────────────────────────────
+  // Pantalla de activación — aquí ya están declaradas todas las variables
+  const needsCertification = !profile?.is_certified
+  const needsMembership    = operatorMembership?.membership_status !== 'activa' && profile?.membership_status !== 'activa'
+  const isApproved         = profile?.operator_status === 'aprobado'
+
+  if (isApproved && (needsCertification || needsMembership) && !showAcademia) {
+    return (
+      <ActivationScreen
+        profile={profile}
+        membershipStatus={operatorMembership?.membership_status || profile?.membership_status}
+        membershipPrice={membershipConfig?.operator_price || 200}
+        payingMembership={payingMembership}
+        onSubscribe={handleSubscribeOperator}
+        onDeposit={() => setDepositModal(true)}
+        onAcademia={() => setShowAcademia(true)}
+        onSignOut={() => signOut()}
+      />
+    )
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6', paddingBottom: isMobile ? 72 : 80 }}>
 
