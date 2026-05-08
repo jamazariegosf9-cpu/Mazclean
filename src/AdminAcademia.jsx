@@ -28,6 +28,12 @@ export default function AdminAcademia({ isMobile }) {
   const [lessonForm, setLessonForm]         = useState({ module_id: '', title: '', content_type: 'video', content_url: '', content_body: '', duration_seconds: '' })
   const [savingLesson, setSavingLesson]     = useState(false)
   const [lessonError, setLessonError]       = useState('')
+  const [quizzes, setQuizzes]               = useState([])
+  const [quizLesson, setQuizLesson]         = useState(null)
+  const [quizModal, setQuizModal]           = useState(false)
+  const [quizForm, setQuizForm]             = useState({ question: '', options: ['','','',''], correct_answer: 0 })
+  const [savingQuiz, setSavingQuiz]         = useState(false)
+  const [quizError, setQuizError]           = useState('')
 
   useEffect(() => { fetchAll() }, [])
 
