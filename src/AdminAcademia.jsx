@@ -38,6 +38,11 @@ export default function AdminAcademia({ isMobile }) {
   const [quizForm, setQuizForm]             = useState({ question: '', options: ['','','',''], correct_answer: 0 })
   const [savingQuiz, setSavingQuiz]         = useState(false)
   const [quizError, setQuizError]           = useState('')
+  // Infografías por módulo
+  const [infografiaUrls, setInfografiaUrls] = useState({})
+  const [savingInfografia, setSavingInfografia] = useState(null)
+  const [infografiaSuccess, setInfografiaSuccess] = useState(null)
+  const [infografiaError, setInfografiaError] = useState(null)
 
   useEffect(() => { fetchAll() }, [])
 
@@ -151,11 +156,57 @@ export default function AdminAcademia({ isMobile }) {
   }
 
   const TABS = [
-    { id: 'pendientes', label: `⏳ Pendientes${pendingCerts.length > 0 ? ` (${pendingCerts.length})` : ''}` },
-    { id: 'operadores', label: '👷 Operadores' },
-    { id: 'contenido',  label: '📚 Contenido' },
-    { id: 'quizzes',    label: '📝 Quizzes' },
+    { id: 'pendientes',   label: `⏳ Pendientes${pendingCerts.length > 0 ? ` (${pendingCerts.length})` : ''}` },
+    { id: 'operadores',   label: '👷 Operadores' },
+    { id: 'contenido',    label: '📚 Contenido' },
+    { id: 'quizzes',      label: '📝 Quizzes' },
+    { id: 'infografias',  label: '🖼️ Infografías' },
   ]
+
+  // Inicializar URLs de infografías desde lecciones existentes
+  const getInfografiaUrl = (moduleId) => {
+    const lesson = lessons.find(l => l.module_id === moduleId && l.content_type === 'infografia')
+    return infografiaUrls[moduleId] !== undefined ? infografiaUrls[moduleId] : (lesson?.content_url || '')
+  }
+
+  const saveInfografia = async (moduleId, moduleName) => {
+    const url = infografiaUrls[moduleId] !== undefined
+      ? infografiaUrls[moduleId]
+      : (lessons.find(l => l.module_id === moduleId && l.content_type === 'infografia')?.content_url || '')
+    if (!url.trim()) { setInfografiaError(moduleId); return }
+    setSavingInfografia(moduleId); setInfografiaError(null); setInfografiaSuccess(null)
+    try {
+      const existingLesson = lessons.find(l => l.module_id === moduleId && l.content_type === 'infografia')
+      if (existingLesson) {
+        // Actualizar lección existente
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/course_lessons?id=eq.${existingLesson.id}`, {
+          method: 'PATCH',
+          headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ content_url: url.trim(), updated_at: new Date().toISOString() }),
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      } else {
+        // Crear nueva lección tipo infografía
+        const modLessons = lessons.filter(l => l.module_id === moduleId)
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/course_lessons`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({
+            module_id: moduleId,
+            title: `Infografía · Resumen ${moduleName}`,
+            content_type: 'infografia',
+            content_url: url.trim(),
+            order_index: modLessons.length + 1,
+          }),
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      }
+      setInfografiaSuccess(moduleId)
+      await fetchAll()
+      setTimeout(() => setInfografiaSuccess(null), 3000)
+    } catch (err) { setInfografiaError(moduleId); console.error(err) }
+    finally { setSavingInfografia(null) }
+  }
 
   const deleteLesson = async (lessonId) => {
     if (!confirm('¿Eliminar esta lección? También se eliminarán sus quizzes.')) return
@@ -440,6 +491,65 @@ export default function AdminAcademia({ isMobile }) {
                   </div>
                 ))}
                 {modLessons.length === 0 && <div style={{ padding: '12px 16px', fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>Sin lecciones</div>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Tab: Infografías */}
+      {tab === 'infografias' && (
+        <div style={{ display: 'grid', gap: 16 }}>
+          <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#0369a1' }}>
+            💡 Pega la URL pública de cada infografía desde Supabase Storage. Si ya existe una infografía para el módulo, se actualizará automáticamente.
+          </div>
+          {modules.map((mod, mi) => {
+            const currentUrl = getInfografiaUrl(mod.id)
+            const isSaving = savingInfografia === mod.id
+            const isSuccess = infografiaSuccess === mod.id
+            const isError = infografiaError === mod.id
+            return (
+              <div key={mod.id} style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', border: '1.5px solid #e5e7eb' }}>
+                <div style={{ background: '#1e40af', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 18 }}>🖼️</span>
+                  <div>
+                    <div style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>Módulo {mi + 1}: {mod.title}</div>
+                    <div style={{ color: '#bfdbfe', fontSize: 11, marginTop: 2 }}>{mod.description}</div>
+                  </div>
+                  {currentUrl && (
+                    <span style={{ marginLeft: 'auto', background: 'rgba(16,185,129,0.25)', borderRadius: 20, padding: '2px 10px', color: '#6ee7b7', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                      ✓ Con infografía
+                    </span>
+                  )}
+                </div>
+                <div style={{ padding: '16px' }}>
+                  {currentUrl && (
+                    <div style={{ marginBottom: 12, borderRadius: 10, overflow: 'hidden', border: '1px solid #e5e7eb', background: '#f8fafc', maxHeight: 180, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <img src={currentUrl} alt={`Infografía M${mi+1}`}
+                        style={{ maxWidth: '100%', maxHeight: 180, objectFit: 'contain', display: 'block' }}
+                        onError={e => { e.target.style.display='none' }} />
+                    </div>
+                  )}
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
+                    URL de la infografía (Supabase Storage)
+                  </label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      type="text"
+                      value={infografiaUrls[mod.id] !== undefined ? infografiaUrls[mod.id] : (currentUrl || '')}
+                      onChange={e => setInfografiaUrls(prev => ({ ...prev, [mod.id]: e.target.value }))}
+                      placeholder="https://ysdmkbwmthrjgvyuvcmm.supabase.co/storage/v1/object/public/Academia/infografia-m1.svg"
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: 8, border: `1.5px solid ${isError ? '#fecaca' : '#e5e7eb'}`, fontSize: 12, outline: 'none', fontFamily: 'inherit', minHeight: 42, boxSizing: 'border-box' }}
+                    />
+                    <button onClick={() => saveInfografia(mod.id, mod.title)} disabled={isSaving}
+                      style={{ padding: '10px 16px', background: isSaving ? '#9ca3af' : isSuccess ? '#059669' : '#1e40af', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: isSaving ? 'not-allowed' : 'pointer', flexShrink: 0, minHeight: 42, whiteSpace: 'nowrap' }}>
+                      {isSaving ? '⏳' : isSuccess ? '✅ Guardado' : '💾 Guardar'}
+                    </button>
+                  </div>
+                  {isError && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: '#dc2626' }}>⚠️ La URL es requerida y debe ser válida.</div>
+                  )}
+                </div>
               </div>
             )
           })}
