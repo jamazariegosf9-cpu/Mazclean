@@ -1438,9 +1438,13 @@ const OperatorView = () => {
     if (profile?.work_end)   setNewWorkEnd(profile.work_end.slice(0,5))
   }, [profile?.id])
 
-  // Cargar excepciones cuando está activo el tab
+  // Cargar excepciones cuando está activo el tab — con guard para evitar loop
+  const excFetchedRef = useRef(false)
   useEffect(() => {
-    if (user && activeTab === 'horarios') fetchExceptions()
+    if (user && activeTab === 'horarios' && !excFetchedRef.current) {
+      excFetchedRef.current = true
+      fetchExceptions().finally(() => { excFetchedRef.current = false })
+    }
   }, [activeTab, user?.id])
 
   // ── RENDER ────────────────────────────────────────────────────────────────
