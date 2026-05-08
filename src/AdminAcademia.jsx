@@ -28,6 +28,10 @@ export default function AdminAcademia({ isMobile }) {
   const [lessonForm, setLessonForm]         = useState({ module_id: '', title: '', content_type: 'video', content_url: '', content_body: '', duration_seconds: '' })
   const [savingLesson, setSavingLesson]     = useState(false)
   const [lessonError, setLessonError]       = useState('')
+  const [editLesson, setEditLesson]         = useState(null)
+  const [editForm, setEditForm]             = useState({ content_url: '', duration_seconds: '' })
+  const [savingEdit, setSavingEdit]         = useState(false)
+  const [editError, setEditError]           = useState('')
   const [quizzes, setQuizzes]               = useState([])
   const [quizLesson, setQuizLesson]         = useState(null)
   const [quizModal, setQuizModal]           = useState(false)
@@ -132,6 +136,43 @@ export default function AdminAcademia({ isMobile }) {
     { id: 'contenido',  label: '📚 Contenido' },
     { id: 'quizzes',    label: '📝 Quizzes' },
   ]
+
+  const deleteLesson = async (lessonId) => {
+    if (!confirm('¿Eliminar esta lección? También se eliminarán sus quizzes.')) return
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/course_quizzes?lesson_id=eq.${lessonId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY },
+      })
+      await fetch(`${SUPABASE_URL}/rest/v1/course_lessons?id=eq.${lessonId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY },
+      })
+      await fetchAll()
+    } catch (err) { alert('Error al eliminar: ' + err.message) }
+  }
+
+  const openEditLesson = (lesson) => {
+    setEditLesson(lesson)
+    setEditForm({ content_url: lesson.content_url || '', duration_seconds: lesson.duration_seconds || '' })
+    setEditError('')
+  }
+
+  const saveEditLesson = async () => {
+    if (!editForm.content_url.trim()) { setEditError('La URL es requerida'); return }
+    setSavingEdit(true); setEditError('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/course_lessons?id=eq.${editLesson.id}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ content_url: editForm.content_url.trim(), duration_seconds: editForm.duration_seconds ? parseInt(editForm.duration_seconds) : null }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setEditLesson(null)
+      await fetchAll()
+    } catch (err) { setEditError(err.message) }
+    finally { setSavingEdit(false) }
+  }
 
   const fetchQuizzes = async (lessonId) => {
     try {
@@ -292,15 +333,50 @@ export default function AdminAcademia({ isMobile }) {
                   {modLessons.length === 0 ? (
                     <div style={{ padding: '14px 16px', fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>Sin lecciones — agrega una con el botón de arriba</div>
                   ) : modLessons.map((lesson, li) => (
-                    <div key={lesson.id} style={{ padding: '12px 16px', borderBottom: li < modLessons.length - 1 ? '1px solid #f3f4f6' : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <span style={{ fontSize: 20 }}>{lesson.content_type === 'video' ? '▶️' : lesson.content_type === 'infografia' ? '🖼️' : '📄'}</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>{lesson.title}</div>
-                        <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                          {lesson.content_type} {lesson.duration_seconds ? `· ${Math.ceil(lesson.duration_seconds / 60)} min` : ''}
-                          {lesson.content_url && ` · URL: ${lesson.content_url.slice(0, 40)}...`}
+                    <div key={lesson.id} style={{ padding: '12px 16px', borderBottom: li < modLessons.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span style={{ fontSize: 20 }}>{lesson.content_type === 'video' ? '▶️' : lesson.content_type === 'infografia' ? '🖼️' : '📄'}</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>{lesson.title}</div>
+                          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+                            {lesson.content_type} {lesson.duration_seconds ? `· ${Math.ceil(lesson.duration_seconds / 60)} min` : ''}
+                            {lesson.content_url ? ` · ${lesson.content_url.slice(0, 35)}...` : ' · Sin URL'}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          <button onClick={() => openEditLesson(lesson)}
+                            style={{ padding: '6px 10px', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 8, color: '#1e40af', fontSize: 11, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                            ✏️ Editar
+                          </button>
+                          <button onClick={() => deleteLesson(lesson.id)}
+                            style={{ padding: '6px 10px', background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: 11, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                            🗑️
+                          </button>
                         </div>
                       </div>
+                      {/* Modal inline de edición */}
+                      {editLesson?.id === lesson.id && (
+                        <div style={{ background: '#f0f9ff', borderRadius: 10, padding: '12px 14px', marginTop: 10, border: '1.5px solid #bae6fd' }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: '#0369a1', marginBottom: 10 }}>✏️ Editar lección</div>
+                          <div style={{ marginBottom: 8 }}>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>URL del video *</label>
+                            <input type="text" value={editForm.content_url} onChange={e => setEditForm(p => ({ ...p, content_url: e.target.value }))}
+                              placeholder="https://..." style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #bae6fd', fontSize: 12, outline: 'none', boxSizing: 'border-box', minHeight: 38 }} />
+                          </div>
+                          <div style={{ marginBottom: 10 }}>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Duración (segundos)</label>
+                            <input type="number" value={editForm.duration_seconds} onChange={e => setEditForm(p => ({ ...p, duration_seconds: e.target.value }))}
+                              placeholder="ej. 390" style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #bae6fd', fontSize: 12, outline: 'none', boxSizing: 'border-box', minHeight: 38 }} />
+                          </div>
+                          {editError && <div style={{ background: '#fef2f2', borderRadius: 6, padding: '6px 10px', marginBottom: 8, fontSize: 11, color: '#dc2626' }}>⚠️ {editError}</div>}
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={() => setEditLesson(null)} style={{ flex: 1, padding: '8px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 36 }}>Cancelar</button>
+                            <button onClick={saveEditLesson} disabled={savingEdit} style={{ flex: 2, padding: '8px', background: savingEdit ? '#9ca3af' : '#0369a1', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 36 }}>
+                              {savingEdit ? '⏳ Guardando...' : '✅ Guardar cambios'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
