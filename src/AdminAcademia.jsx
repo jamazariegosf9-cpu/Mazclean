@@ -124,7 +124,59 @@ export default function AdminAcademia({ isMobile }) {
     { id: 'pendientes', label: `⏳ Pendientes${pendingCerts.length > 0 ? ` (${pendingCerts.length})` : ''}` },
     { id: 'operadores', label: '👷 Operadores' },
     { id: 'contenido',  label: '📚 Contenido' },
+    { id: 'quizzes',    label: '📝 Quizzes' },
   ]
+
+  const fetchQuizzes = async (lessonId) => {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/course_quizzes?lesson_id=eq.${lessonId}&order=order_index.asc&select=*`,
+        { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (res.ok) setQuizzes(await res.json())
+    } catch (err) { console.error('fetchQuizzes:', err) }
+  }
+
+  const openQuizModal = async (lesson) => {
+    setQuizLesson(lesson)
+    setQuizForm({ question: '', options: ['','','',''], correct_answer: 0 })
+    setQuizError('')
+    await fetchQuizzes(lesson.id)
+    setQuizModal(true)
+  }
+
+  const saveQuiz = async () => {
+    if (!quizForm.question.trim()) { setQuizError('La pregunta es requerida'); return }
+    if (quizForm.options.some(o => !o.trim())) { setQuizError('Todas las opciones son requeridas'); return }
+    setSavingQuiz(true); setQuizError('')
+    try {
+      const body = {
+        lesson_id: quizLesson.id,
+        question: quizForm.question.trim(),
+        options: quizForm.options.map(o => o.trim()),
+        correct_answer: quizForm.correct_answer,
+        order_index: quizzes.length + 1,
+      }
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/course_quizzes`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      await fetchQuizzes(quizLesson.id)
+      setQuizForm({ question: '', options: ['','','',''], correct_answer: 0 })
+    } catch (err) { setQuizError(err.message) }
+    finally { setSavingQuiz(false) }
+  }
+
+  const deleteQuiz = async (id) => {
+    if (!confirm('¿Eliminar esta pregunta?')) return
+    await fetch(`${SUPABASE_URL}/rest/v1/course_quizzes?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY },
+    })
+    setQuizzes(prev => prev.filter(q => q.id !== id))
+  }
 
   if (loading) return <div style={{ padding: 48, textAlign: 'center', color: '#9ca3af' }}>Cargando Academia...</div>
 
@@ -252,6 +304,38 @@ export default function AdminAcademia({ isMobile }) {
         </div>
       )}
 
+      {/* Tab: Quizzes */}
+      {tab === 'quizzes' && (
+        <div>
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#1e40af' }}>
+            💡 Selecciona una lección para gestionar sus preguntas de evaluación.
+          </div>
+          {modules.map(mod => {
+            const modLessons = lessons.filter(l => l.module_id === mod.id)
+            return (
+              <div key={mod.id} style={{ background: '#fff', borderRadius: 14, marginBottom: 12, overflow: 'hidden', border: '1.5px solid #e5e7eb' }}>
+                <div style={{ background: '#1e40af', padding: '10px 16px' }}>
+                  <div style={{ color: '#fff', fontWeight: 700, fontSize: 13 }}>{mod.title}</div>
+                </div>
+                {modLessons.map(lesson => (
+                  <div key={lesson.id} style={{ padding: '12px 16px', borderBottom: '1px solid #f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1f2937' }}>{lesson.title}</div>
+                      <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{lesson.content_type}</div>
+                    </div>
+                    <button onClick={() => openQuizModal(lesson)}
+                      style={{ padding: '8px 14px', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 8, color: '#1e40af', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', minHeight: 38 }}>
+                      📝 Gestionar preguntas
+                    </button>
+                  </div>
+                ))}
+                {modLessons.length === 0 && <div style={{ padding: '12px 16px', fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>Sin lecciones</div>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Modal nueva lección */}
       {lessonModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
@@ -309,6 +393,76 @@ export default function AdminAcademia({ isMobile }) {
               <button onClick={saveLesson} disabled={savingLesson} style={{ flex: 2, padding: '12px', background: savingLesson ? '#9ca3af' : '#1e40af', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>
                 {savingLesson ? '⏳ Guardando...' : '✅ Guardar lección'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Gestionar Quizzes */}
+      {quizModal && quizLesson && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 130, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, width: '100%', maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>📝 Preguntas — {quizLesson.title}</div>
+                <div style={{ color: '#bfdbfe', fontSize: 12, marginTop: 2 }}>{quizzes.length} pregunta{quizzes.length !== 1 ? 's' : ''} registrada{quizzes.length !== 1 ? 's' : ''}</div>
+              </div>
+              <button onClick={() => setQuizModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 32, height: 32, color: '#fff', fontSize: 18, cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ overflowY: 'auto', padding: '16px 20px', flex: 1 }}>
+              {/* Preguntas existentes */}
+              {quizzes.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Preguntas actuales</div>
+                  {quizzes.map((q, qi) => (
+                    <div key={q.id} style={{ background: '#f9fafb', borderRadius: 10, padding: '12px 14px', marginBottom: 8, border: '1px solid #e5e7eb' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#1f2937', flex: 1 }}>{qi + 1}. {q.question}</div>
+                        <button onClick={() => deleteQuiz(q.id)} style={{ background: '#fef2f2', border: 'none', borderRadius: 6, color: '#dc2626', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: '4px 8px', flexShrink: 0 }}>✕</button>
+                      </div>
+                      <div style={{ marginTop: 8, display: 'grid', gap: 4 }}>
+                        {(q.options || []).map((opt, oi) => (
+                          <div key={oi} style={{ fontSize: 12, color: oi === q.correct_answer ? '#059669' : '#6b7280', fontWeight: oi === q.correct_answer ? 700 : 400 }}>
+                            {oi === q.correct_answer ? '✅' : '○'} {String.fromCharCode(65+oi)}. {opt}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Nueva pregunta */}
+              <div style={{ background: '#f0f9ff', borderRadius: 12, padding: '14px 16px', border: '1.5px solid #bae6fd' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#0369a1', marginBottom: 12 }}>➕ Nueva pregunta</div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Pregunta *</label>
+                  <input type="text" value={quizForm.question} onChange={e => setQuizForm(p => ({ ...p, question: e.target.value }))} placeholder="Escribe la pregunta..."
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #bae6fd', fontSize: 13, outline: 'none', boxSizing: 'border-box', minHeight: 42 }} />
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Opciones (marca la correcta)</label>
+                  {quizForm.options.map((opt, oi) => (
+                    <div key={oi} style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'center' }}>
+                      <button onClick={() => setQuizForm(p => ({ ...p, correct_answer: oi }))}
+                        style={{ width: 28, height: 28, borderRadius: '50%', border: `2px solid ${quizForm.correct_answer === oi ? '#10b981' : '#d1d5db'}`, background: quizForm.correct_answer === oi ? '#10b981' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 12, color: '#fff', fontWeight: 700 }}>
+                        {quizForm.correct_answer === oi ? '✓' : ''}
+                      </button>
+                      <input type="text" value={opt} onChange={e => { const opts = [...quizForm.options]; opts[oi] = e.target.value; setQuizForm(p => ({ ...p, options: opts })) }}
+                        placeholder={`Opción ${String.fromCharCode(65+oi)}`}
+                        style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${quizForm.correct_answer === oi ? '#bbf7d0' : '#e5e7eb'}`, fontSize: 13, outline: 'none', minHeight: 38 }} />
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>Toca el círculo para marcar la respuesta correcta</div>
+                </div>
+                {quizError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#dc2626' }}>⚠️ {quizError}</div>}
+                <button onClick={saveQuiz} disabled={savingQuiz}
+                  style={{ width: '100%', padding: '12px', background: savingQuiz ? '#9ca3af' : '#1e40af', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 46 }}>
+                  {savingQuiz ? '⏳ Guardando...' : '✅ Agregar pregunta'}
+                </button>
+              </div>
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', flexShrink: 0 }}>
+              <button onClick={() => setQuizModal(false)} style={{ width: '100%', padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 46 }}>Cerrar</button>
             </div>
           </div>
         </div>
