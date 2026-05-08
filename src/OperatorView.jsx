@@ -1419,14 +1419,27 @@ const OperatorView = () => {
     if (newWorkStart < '06:00' || newWorkEnd > '21:00') { setScheduleError('El horario debe estar entre 6:00 am y 9:00 pm'); return }
     setSavingSchedule(true)
     try {
+      // Token desde localStorage — patrón establecido para móvil
+      let token = SUPABASE_ANON_KEY
+      try {
+        const stored = localStorage.getItem('mazclean-auth')
+        if (stored) { const p = JSON.parse(stored); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY }
+      } catch {}
       const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}`, {
         method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'apikey': SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
         body: JSON.stringify({ work_days: newWorkDays, work_start: newWorkStart, work_end: newWorkEnd, updated_at: new Date().toISOString() }),
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      showToast('Horario actualizado correctamente', 'success')
-      if (loadProfile) await loadProfile().catch(() => {})
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        throw new Error('HTTP ' + res.status + (body ? ': ' + body.slice(0, 120) : ''))
+      }
+      showToast('Horario actualizado correctamente ✅', 'success')
     } catch (err) { setScheduleError(err.message) }
     setSavingSchedule(false)
   }
