@@ -1,9 +1,7 @@
-// AcademiaView.jsx — Certificación Pro MAZ CLEAN
-// Academia Código Limpio — curso obligatorio para operadores
-
-import { useState, useEffect, useRef } from 'react'
+// AdminAcademia.jsx — Panel admin para gestionar Certificación Pro
+import { useState, useEffect } from 'react'
 import { useAuth } from './context/AuthContext'
-import { supabase } from './lib/supabase'
+import { sendWhatsApp } from './lib/whatsapp'
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -16,508 +14,569 @@ function getToken() {
   return SUPABASE_ANON_KEY
 }
 
-const MODULE_ICONS = ['🤝', '💧', '✨', '🛡️']
-const MODULE_COLORS = [
-  'linear-gradient(135deg,#1e40af,#3b82f6)',
-  'linear-gradient(135deg,#065f46,#10b981)',
-  'linear-gradient(135deg,#7c3aed,#a78bfa)',
-  'linear-gradient(135deg,#92400e,#f59e0b)',
-]
+export default function AdminAcademia({ isMobile }) {
+  const { user } = useAuth()
+  const [tab, setTab]                       = useState('pendientes')
+  const [pendingCerts, setPendingCerts]     = useState([])
+  const [modules, setModules]               = useState([])
+  const [lessons, setLessons]               = useState([])
+  const [operators, setOperators]           = useState([])
+  const [loading, setLoading]               = useState(true)
+  const [validating, setValidating]         = useState(null)
+  // Formulario nueva lección
+  const [lessonModal, setLessonModal]       = useState(false)
+  const [lessonForm, setLessonForm]         = useState({ module_id: '', title: '', content_type: 'video', content_url: '', content_body: '', duration_seconds: '' })
+  const [savingLesson, setSavingLesson]     = useState(false)
+  const [lessonError, setLessonError]       = useState('')
+  const [editLesson, setEditLesson]         = useState(null)
+  const [editForm, setEditForm]             = useState({ content_url: '', duration_seconds: '' })
+  const [savingEdit, setSavingEdit]         = useState(false)
+  const [editError, setEditError]           = useState('')
+  const [quizzes, setQuizzes]               = useState([])
+  const [quizLesson, setQuizLesson]         = useState(null)
+  const [quizModal, setQuizModal]           = useState(false)
+  const [quizForm, setQuizForm]             = useState({ question: '', options: ['','','',''], correct_answer: 0 })
+  const [savingQuiz, setSavingQuiz]         = useState(false)
+  const [quizError, setQuizError]           = useState('')
 
-export default function AcademiaView({ onBack }) {
-  const { user, profile } = useAuth()
-  const [modules, setModules]           = useState([])
-  const [lessons, setLessons]           = useState([])
-  const [quizzes, setQuizzes]           = useState([])
-  const [progress, setProgress]         = useState([])
-  const [loading, setLoading]           = useState(true)
-  const [activeModule, setActiveModule] = useState(null)
-  const [activeLesson, setActiveLesson] = useState(null)
-  const [quizMode, setQuizMode]         = useState(false)
-  const [quizAnswers, setQuizAnswers]   = useState({})
-  const [quizResult, setQuizResult]     = useState(null)
-  const [submitting, setSubmitting]     = useState(false)
-  const [error, setError]               = useState('')
-  const [certSubmitted, setCertSubmitted] = useState(false)
-  const [membershipConfig, setMembershipConfig] = useState({ operator_price: 200 })
-  const [effectivePromo, setEffectivePromo]     = useState(null)
-  const fileInputRef = useRef(null)
-
-  useEffect(() => { if (user) fetchAll() }, [user])
+  useEffect(() => { fetchAll() }, [])
 
   const fetchAll = async () => {
     setLoading(true)
     try {
       const headers = { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY }
-      const [modRes, lesRes, quizRes, progRes, certRes, cfgRes, promoRes] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/course_modules?is_active=eq.true&order=order_index.asc&select=*`, { headers }),
+      const [certRes, modRes, lesRes, opRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/operator_certifications?validated_at=is.null&is_active=eq.true&select=*,operator:operator_id(full_name,phone,rating_avg)`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/course_modules?order=order_index.asc&select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/course_lessons?order=order_index.asc&select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/course_quizzes?order=order_index.asc&select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/operator_progress?operator_id=eq.${user.id}&select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/operator_certifications?operator_id=eq.${user.id}&select=*&limit=1`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/membership_config?select=operator_price&limit=1`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/rpc/get_effective_membership_price`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ p_role: 'operador' }) }),
+        fetch(`${SUPABASE_URL}/rest/v1/profiles?role=eq.operador&operator_status=eq.aprobado&select=id,full_name,is_certified,certification_date,phone,rating_avg`, { headers }),
       ])
+      // Pendientes = fotos enviadas para validar + operadores aprobados sin certificar
+      if (certRes.ok) {
+        const certData = await certRes.json()
+        const opData = opRes.ok ? await opRes.json() : []
+        // Operadores aprobados sin certificación y sin foto enviada pendiente
+        const certOpIds = certData.map(c => c.operator_id)
+        const pendingNoCert = opData
+          .filter(op => !op.is_certified && !certOpIds.includes(op.id))
+          .map(op => ({
+            id: `pending-${op.id}`,
+            operator_id: op.id,
+            certified_at: null,
+            before_after_photo_url: null,
+            is_active: true,
+            validated_at: null,
+            operator: { full_name: op.full_name, phone: op.phone, rating_avg: op.rating_avg },
+            pending_type: 'no_photo',
+          }))
+        setPendingCerts([...certData, ...pendingNoCert])
+        setOperators(opData)
+      }
       if (modRes.ok)  setModules(await modRes.json())
       if (lesRes.ok)  setLessons(await lesRes.json())
-      if (quizRes.ok) setQuizzes(await quizRes.json())
-      if (progRes.ok) setProgress(await progRes.json())
-      if (certRes.ok) { const c = await certRes.json(); if (c?.[0]) setCertSubmitted(true) }
-      if (cfgRes?.ok) { const c = await cfgRes.json(); if (c?.[0]) setMembershipConfig(c[0]) }
-      if (promoRes?.ok) { const p = await promoRes.json(); if (p?.has_promo) setEffectivePromo(p) }
-
-      // Cachear lecciones offline
-      if (lesRes.ok) {
-        try { localStorage.setItem('mazclean-lessons-cache', JSON.stringify(await (await fetch(`${SUPABASE_URL}/rest/v1/course_lessons?order=order_index.asc&select=*`, { headers })).json())) } catch {}
-      }
-    } catch (err) {
-      // Intentar cargar desde caché offline
-      const cached = localStorage.getItem('mazclean-lessons-cache')
-      if (cached) setLessons(JSON.parse(cached))
-      setError('Sin conexión — mostrando contenido guardado')
-    } finally { setLoading(false) }
+      // setOperators ya se maneja arriba junto con pendingCerts
+    } catch (err) { console.error('AdminAcademia fetch:', err) }
+    finally { setLoading(false) }
   }
 
-  const getLessonProgress = (lessonId) => progress.find(p => p.lesson_id === lessonId)
-  const isLessonCompleted = (lessonId) => getLessonProgress(lessonId)?.completed || false
-  const isModuleCompleted = (moduleId) => {
-    const moduleLessons = lessons.filter(l => l.module_id === moduleId)
-    return moduleLessons.length > 0 && moduleLessons.every(l => isLessonCompleted(l.id))
-  }
-  const isLessonLocked = (lesson, moduleIdx) => {
-    if (moduleIdx === 0) return false
-    const prevModule = modules[moduleIdx - 1]
-    return prevModule && !isModuleCompleted(prevModule.id)
-  }
-
-  const allModulesCompleted = modules.every(m => isModuleCompleted(m.id))
-  const totalLessons = lessons.length
-  const completedLessons = lessons.filter(l => isLessonCompleted(l.id)).length
-  const progressPct = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0
-
-  const openLesson = (lesson) => {
-    setActiveLesson(lesson)
-    setQuizMode(false)
-    setQuizAnswers({})
-    setQuizResult(null)
-    setError('')
-  }
-
-  const markLessonComplete = async (lessonId) => {
-    const lessonQuizzes = quizzes.filter(q => q.lesson_id === lessonId)
-    if (lessonQuizzes.length > 0) {
-      setQuizMode(true)
-      return
-    }
-    // Sin quiz — marcar directamente como completada
-    await saveProgress(lessonId, true, true)
-  }
-
-  const saveProgress = async (lessonId, completed, quizPassed, attempts = 0) => {
+  const approveCert = async (cert) => {
+    setValidating(cert.id)
     try {
-      const existing = getLessonProgress(lessonId)
-      const body = {
-        operator_id: user.id, lesson_id: lessonId,
-        completed, quiz_passed: quizPassed,
-        attempts: (existing?.attempts || 0) + attempts,
-        completed_at: completed ? new Date().toISOString() : null,
+      const headers = { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }
+      // Actualizar certificación
+      await fetch(`${SUPABASE_URL}/rest/v1/operator_certifications?id=eq.${cert.id}`, {
+        method: 'PATCH', headers,
+        body: JSON.stringify({ validated_by: user.id, validated_at: new Date().toISOString(), kit_photo_validated: true }),
+      })
+      // Actualizar perfil del operador
+      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${cert.operator_id}`, {
+        method: 'PATCH', headers,
+        body: JSON.stringify({ is_certified: true, certification_date: new Date().toISOString(), updated_at: new Date().toISOString() }),
+      })
+      // Enviar WA de felicitación
+      if (cert.operator?.phone) {
+        const msg = `🏆 *MAZ CLEAN — ¡Felicidades!* \n\nHas obtenido tu *Certificación Pro* de Academia Código Limpio. A partir de ahora apareces como Operador Certificado para los clientes. ¡Sigue así, Pro! 🚗✨`
+        await sendWhatsApp({ to: cert.operator.phone, message: msg })
       }
-      const method = existing ? 'PATCH' : 'POST'
-      const url = existing
-        ? `${SUPABASE_URL}/rest/v1/operator_progress?operator_id=eq.${user.id}&lesson_id=eq.${lessonId}`
-        : `${SUPABASE_URL}/rest/v1/operator_progress`
-      const res = await fetch(url, {
-        method,
+      setPendingCerts(prev => prev.filter(c => c.id !== cert.id))
+      setOperators(prev => prev.map(o => o.id === cert.operator_id ? { ...o, is_certified: true, certification_date: new Date().toISOString() } : o))
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setValidating(null) }
+  }
+
+  const rejectCert = async (cert) => {
+    const reason = prompt('Motivo del rechazo (se enviará al operador):')
+    if (!reason) return
+    setValidating(cert.id)
+    try {
+      const headers = { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }
+      await fetch(`${SUPABASE_URL}/rest/v1/operator_certifications?id=eq.${cert.id}`, {
+        method: 'PATCH', headers,
+        body: JSON.stringify({ validated_by: user.id, validated_at: new Date().toISOString(), is_active: false, notes: reason }),
+      })
+      if (cert.operator?.phone) {
+        const msg = `⚠️ *MAZ CLEAN* — Tu solicitud de Certificación Pro fue rechazada. Motivo: ${reason}. Puedes volver a intentarlo cuando tengas una foto de antes y después más clara. ¡Ánimo!`
+        await sendWhatsApp({ to: cert.operator.phone, message: msg })
+      }
+      setPendingCerts(prev => prev.filter(c => c.id !== cert.id))
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setValidating(null) }
+  }
+
+  const saveLesson = async () => {
+    if (!lessonForm.module_id || !lessonForm.title) { setLessonError('Módulo y título son requeridos'); return }
+    setSavingLesson(true); setLessonError('')
+    try {
+      const modLessons = lessons.filter(l => l.module_id === lessonForm.module_id)
+      const body = {
+        module_id:        lessonForm.module_id,
+        title:            lessonForm.title,
+        content_type:     lessonForm.content_type,
+        content_url:      lessonForm.content_url || null,
+        content_body:     lessonForm.content_body || null,
+        duration_seconds: lessonForm.duration_seconds ? parseInt(lessonForm.duration_seconds) : null,
+        order_index:      modLessons.length + 1,
+      }
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/course_lessons`, {
+        method: 'POST',
         headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify(body),
       })
-      if (res.ok) {
-        setProgress(prev => {
-          const idx = prev.findIndex(p => p.lesson_id === lessonId)
-          if (idx >= 0) { const updated = [...prev]; updated[idx] = { ...updated[idx], ...body }; return updated }
-          return [...prev, { ...body, id: Date.now() }]
-        })
-      }
-    } catch (err) { console.error('saveProgress:', err) }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setLessonModal(false)
+      setLessonForm({ module_id: '', title: '', content_type: 'video', content_url: '', content_body: '', duration_seconds: '' })
+      await fetchAll()
+    } catch (err) { setLessonError(err.message) }
+    finally { setSavingLesson(false) }
   }
 
-  const submitQuiz = async () => {
-    const lessonQuizzes = quizzes.filter(q => q.lesson_id === activeLesson.id)
-    const correct = lessonQuizzes.every(q => quizAnswers[q.id] === q.correct_answer)
-    const prog = getLessonProgress(activeLesson.id)
-    const currentAttempts = (prog?.attempts || 0) + 1
+  const TABS = [
+    { id: 'pendientes', label: `⏳ Pendientes${pendingCerts.length > 0 ? ` (${pendingCerts.length})` : ''}` },
+    { id: 'operadores', label: '👷 Operadores' },
+    { id: 'contenido',  label: '📚 Contenido' },
+    { id: 'quizzes',    label: '📝 Quizzes' },
+  ]
 
-    // Verificar bloqueo por 24h
-    if (prog?.completed_at && !prog.completed) {
-      const lastAttempt = new Date(prog.completed_at)
-      const hoursSince = (Date.now() - lastAttempt.getTime()) / (1000 * 60 * 60)
-      if (currentAttempts >= 3 && hoursSince < 24) {
-        setError(`Alcanzaste el límite de intentos. Intenta de nuevo en ${Math.ceil(24 - hoursSince)} horas.`)
-        return
-      }
-    }
+  const deleteLesson = async (lessonId) => {
+    if (!confirm('¿Eliminar esta lección? También se eliminarán sus quizzes.')) return
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/course_quizzes?lesson_id=eq.${lessonId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY },
+      })
+      await fetch(`${SUPABASE_URL}/rest/v1/course_lessons?id=eq.${lessonId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY },
+      })
+      await fetchAll()
+    } catch (err) { alert('Error al eliminar: ' + err.message) }
+  }
 
-    setSubmitting(true)
-    setQuizResult(correct ? 'pass' : 'fail')
-    await saveProgress(activeLesson.id, correct, correct, 1)
-    if (!correct && currentAttempts >= 3) {
-      // Guardar timestamp del bloqueo
-      await fetch(`${SUPABASE_URL}/rest/v1/operator_progress?operator_id=eq.${user.id}&lesson_id=eq.${activeLesson.id}`, {
+  const openEditLesson = (lesson) => {
+    setEditLesson(lesson)
+    setEditForm({ content_url: lesson.content_url || '', duration_seconds: lesson.duration_seconds || '' })
+    setEditError('')
+  }
+
+  const saveEditLesson = async () => {
+    if (!editForm.content_url.trim()) { setEditError('La URL es requerida'); return }
+    setSavingEdit(true); setEditError('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/course_lessons?id=eq.${editLesson.id}`, {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ completed_at: new Date().toISOString() }),
-      })
-    }
-    setSubmitting(false)
-  }
-
-  const uploadBeforeAfter = async (file) => {
-    if (!file) return
-    setUploadingPhoto(true)
-    try {
-      const ext = file.name.split('.').pop()
-      const path = `certifications/${user.id}/before_after_${Date.now()}.${ext}`
-      const { error } = await supabase.storage.from('service-photos').upload(path, file, { upsert: true })
-      if (error) throw error
-      const { data: { publicUrl } } = supabase.storage.from('service-photos').getPublicUrl(path)
-      setBeforeAfterPhoto(publicUrl)
-    } catch (err) { setError('Error al subir foto: ' + err.message) }
-    finally { setUploadingPhoto(false) }
-  }
-
-  const submitCertification = async () => {
-    if (!beforeAfterPhoto) { setError('Debes subir una foto de antes y después'); return }
-    try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/operator_certifications`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ operator_id: user.id, before_after_photo_url: beforeAfterPhoto }),
+        body: JSON.stringify({ content_url: editForm.content_url.trim(), duration_seconds: editForm.duration_seconds ? parseInt(editForm.duration_seconds) : null }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setCertSubmitted(true)
-    } catch (err) { setError('Error al enviar: ' + err.message) }
+      setEditLesson(null)
+      await fetchAll()
+    } catch (err) { setEditError(err.message) }
+    finally { setSavingEdit(false) }
   }
 
-  if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: 16 }}>
-      <div style={{ fontSize: 48 }}>🎓</div>
-      <div style={{ fontSize: 15, color: '#6b7280', fontWeight: 600 }}>Cargando Academia...</div>
-    </div>
-  )
+  const fetchQuizzes = async (lessonId) => {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/course_quizzes?lesson_id=eq.${lessonId}&order=order_index.asc&select=*`,
+        { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (res.ok) setQuizzes(await res.json())
+    } catch (err) { console.error('fetchQuizzes:', err) }
+  }
 
-  // Vista de lección activa
-  if (activeLesson) {
-    const lessonQuizzes = quizzes.filter(q => q.lesson_id === activeLesson.id)
-    const prog = getLessonProgress(activeLesson.id)
+  const openQuizModal = async (lesson) => {
+    setQuizLesson(lesson)
+    setQuizForm({ question: '', options: ['','','',''], correct_answer: 0 })
+    setQuizError('')
+    await fetchQuizzes(lesson.id)
+    setQuizModal(true)
+  }
 
-    return (
-      <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
-        {/* Header */}
-        <div style={{ background: '#1e40af', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => { setActiveLesson(null); setQuizMode(false); setQuizResult(null) }}
-            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 36, height: 36, color: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>←</button>
-          <div style={{ flex: 1 }}>
-            <div style={{ color: '#bfdbfe', fontSize: 11 }}>Certificación Pro</div>
-            <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>{activeLesson.title}</div>
-          </div>
-          {isLessonCompleted(activeLesson.id) && <span style={{ background: '#10b981', borderRadius: 20, padding: '3px 10px', color: '#fff', fontSize: 12, fontWeight: 700 }}>✓ Completada</span>}
-        </div>
+  const saveQuiz = async () => {
+    if (!quizForm.question.trim()) { setQuizError('La pregunta es requerida'); return }
+    if (quizForm.options.some(o => !o.trim())) { setQuizError('Todas las opciones son requeridas'); return }
+    setSavingQuiz(true); setQuizError('')
+    try {
+      const body = {
+        lesson_id: quizLesson.id,
+        question: quizForm.question.trim(),
+        options: quizForm.options.map(o => o.trim()),
+        correct_answer: quizForm.correct_answer,
+        order_index: quizzes.length + 1,
+      }
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/course_quizzes`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      await fetchQuizzes(quizLesson.id)
+      setQuizForm({ question: '', options: ['','','',''], correct_answer: 0 })
+    } catch (err) { setQuizError(err.message) }
+    finally { setSavingQuiz(false) }
+  }
 
-        <div style={{ padding: '20px 16px', maxWidth: 600, margin: '0 auto' }}>
-          {!quizMode ? (
-            <>
-              {/* Contenido */}
-              {activeLesson.content_type === 'video' && activeLesson.content_url && (
-                <div style={{ marginBottom: 20, borderRadius: 14, overflow: 'hidden', background: '#000', aspectRatio: '9/16', maxHeight: 480, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <video src={activeLesson.content_url} controls style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                    controlsList="nodownload" playsInline />
-                </div>
-              )}
+  const deleteQuiz = async (id) => {
+    if (!confirm('¿Eliminar esta pregunta?')) return
+    await fetch(`${SUPABASE_URL}/rest/v1/course_quizzes?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY },
+    })
+    setQuizzes(prev => prev.filter(q => q.id !== id))
+  }
 
-              {activeLesson.content_type === 'infografia' && activeLesson.content_url && (
-                <div style={{ marginBottom: 20, borderRadius: 14, overflow: 'hidden', border: '2px solid #e5e7eb' }}>
-                  <img src={activeLesson.content_url} alt={activeLesson.title} style={{ width: '100%', display: 'block' }} />
-                </div>
-              )}
+  if (loading) return <div style={{ padding: 48, textAlign: 'center', color: '#9ca3af' }}>Cargando Academia...</div>
 
-              {activeLesson.content_body && (
-                <div style={{ background: '#fff', borderRadius: 14, padding: '18px 20px', marginBottom: 20, border: '1px solid #e5e7eb', fontSize: 14, color: '#374151', lineHeight: 1.8, whiteSpace: 'pre-line' }}>
-                  {activeLesson.content_body}
-                </div>
-              )}
+  return (
+    <div>
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, overflowX: 'auto', paddingBottom: 4 }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            style={{ padding: '8px 14px', borderRadius: 20, border: `1.5px solid ${tab === t.id ? '#1e40af' : '#e5e7eb'}`, background: tab === t.id ? '#1e40af' : '#fff', color: tab === t.id ? '#fff' : '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', minHeight: 38 }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-              {/* Badge tipo infografía guardable */}
-              <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 12, padding: '12px 16px', marginBottom: 20 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 4 }}>💡 Guarda esta info para consulta offline</div>
-                <div style={{ fontSize: 12, color: '#78716c' }}>Esta lección se guarda automáticamente en tu dispositivo para consultarla sin internet.</div>
-              </div>
-
-              {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#dc2626' }}>⚠️ {error}</div>}
-
-              {!isLessonCompleted(activeLesson.id) && (
-                <button onClick={() => markLessonComplete(activeLesson.id)}
-                  style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
-                  {lessonQuizzes.length > 0 ? '📝 Tomar evaluación' : '✅ Marcar como completada'}
-                </button>
-              )}
-
-              {isLessonCompleted(activeLesson.id) && (
-                <div style={{ textAlign: 'center', padding: '16px', background: '#f0fdf4', borderRadius: 12, border: '1.5px solid #bbf7d0' }}>
-                  <div style={{ fontSize: 32, marginBottom: 6 }}>✅</div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#065f46' }}>¡Lección completada!</div>
-                </div>
-              )}
-            </>
+      {/* Tab: Pendientes de validación */}
+      {tab === 'pendientes' && (
+        <div>
+          {pendingCerts.length === 0 ? (
+            <div style={{ background: '#fff', borderRadius: 14, padding: 40, textAlign: 'center', border: '2px dashed #e5e7eb' }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#374151' }}>Sin certificaciones pendientes</div>
+              <div style={{ fontSize: 13, color: '#9ca3af', marginTop: 6 }}>Todas las solicitudes han sido revisadas</div>
+            </div>
           ) : (
-            // Quiz
-            <>
-              <div style={{ background: '#fff', borderRadius: 14, padding: '18px 20px', marginBottom: 20, border: '1px solid #e5e7eb' }}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: '#1f2937', marginBottom: 6 }}>📝 Evaluación</div>
-                <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 20 }}>Responde correctamente el 100% para completar la lección. Tienes 3 intentos.</div>
-
-                {lessonQuizzes.map((q, qi) => (
-                  <div key={q.id} style={{ marginBottom: 24 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937', marginBottom: 10 }}>
-                      {qi + 1}. {q.question}
+            <div style={{ display: 'grid', gap: 16 }}>
+              {pendingCerts.map(cert => (
+                <div key={cert.id} style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', border: '1.5px solid #fde68a', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ background: 'linear-gradient(135deg,#f59e0b,#fbbf24)', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>{cert.operator?.full_name || 'Operador'}</div>
+                      <div style={{ color: '#fef3c7', fontSize: 12, marginTop: 2 }}>
+                        ⭐ {cert.operator?.rating_avg || '—'} · Solicitud: {new Date(cert.certified_at).toLocaleDateString('es-MX')}
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {(q.options || []).map((opt, oi) => (
-                        <button key={oi} onClick={() => !quizResult && setQuizAnswers(prev => ({ ...prev, [q.id]: oi }))}
-                          style={{
-                            padding: '10px 14px', borderRadius: 10, border: `2px solid ${
-                              quizResult
-                                ? oi === q.correct_answer ? '#10b981'
-                                : quizAnswers[q.id] === oi ? '#dc2626' : '#e5e7eb'
-                                : quizAnswers[q.id] === oi ? '#3b82f6' : '#e5e7eb'
-                            }`,
-                            background: quizResult
-                              ? oi === q.correct_answer ? '#f0fdf4'
-                              : quizAnswers[q.id] === oi ? '#fef2f2' : '#fff'
-                              : quizAnswers[q.id] === oi ? '#eff6ff' : '#fff',
-                            fontSize: 13, color: '#374151', textAlign: 'left', cursor: quizResult ? 'default' : 'pointer',
-                            fontWeight: quizAnswers[q.id] === oi ? 700 : 400,
-                          }}>
-                          {String.fromCharCode(65 + oi)}. {opt}
-                          {quizResult && oi === q.correct_answer && ' ✓'}
-                          {quizResult && quizAnswers[q.id] === oi && oi !== q.correct_answer && ' ✗'}
+                    <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '3px 10px', color: '#fff', fontSize: 12, fontWeight: 700 }}>
+                      {cert.pending_type === 'no_photo' ? '⏳ Sin foto' : '⏳ Foto enviada'}
+                    </span>
+                  </div>
+                  <div style={{ padding: '16px' }}>
+                    {cert.pending_type === 'no_photo' ? (
+                      <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+                        <div style={{ fontSize: 13, color: '#92400e' }}>⏳ Operador aprobado pero aún no ha enviado su foto de antes y después para completar la certificación.</div>
+                      </div>
+                    ) : cert.before_after_photo_url ? (
+                      <div style={{ marginBottom: 14 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 8 }}>📸 Foto Antes y Después:</div>
+                        <img src={cert.before_after_photo_url} alt="Antes y después" style={{ width: '100%', borderRadius: 10, maxHeight: 250, objectFit: 'cover', border: '1px solid #e5e7eb' }} />
+                      </div>
+                    ) : null}
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <button onClick={() => approveCert(cert)} disabled={!!validating}
+                        style={{ flex: 1, padding: '12px', background: validating === cert.id ? '#9ca3af' : '#059669', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 46 }}>
+                        {validating === cert.id ? '⏳...' : '🏆 Aprobar y Certificar'}
+                      </button>
+                      {cert.pending_type !== 'no_photo' && (
+                        <button onClick={() => rejectCert(cert)} disabled={!!validating}
+                          style={{ flex: 1, padding: '12px', background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 46 }}>
+                          ✕ Rechazar
                         </button>
-                      ))}
+                      )}
                     </div>
                   </div>
-                ))}
-              </div>
-
-              {quizResult === 'pass' && (
-                <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 12, padding: '16px', textAlign: 'center', marginBottom: 16 }}>
-                  <div style={{ fontSize: 40, marginBottom: 8 }}>🎉</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: '#065f46' }}>¡Aprobaste!</div>
-                  <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>Lección completada con éxito</div>
                 </div>
-              )}
-
-              {quizResult === 'fail' && (
-                <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '16px', textAlign: 'center', marginBottom: 16 }}>
-                  <div style={{ fontSize: 40, marginBottom: 8 }}>❌</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: '#991b1b' }}>Respuesta incorrecta</div>
-                  <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>Revisa el contenido y vuelve a intentarlo</div>
-                </div>
-              )}
-
-              {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#dc2626' }}>⚠️ {error}</div>}
-
-              {!quizResult && (
-                <button onClick={submitQuiz} disabled={submitting || Object.keys(quizAnswers).length < lessonQuizzes.length}
-                  style={{ width: '100%', padding: '14px', background: Object.keys(quizAnswers).length < lessonQuizzes.length ? '#9ca3af' : 'linear-gradient(135deg,#1e40af,#3b82f6)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
-                  {submitting ? '⏳ Evaluando...' : '📤 Enviar respuestas'}
-                </button>
-              )}
-
-              {quizResult && (
-                <button onClick={() => { setActiveLesson(null); setQuizMode(false); setQuizResult(null); fetchAll() }}
-                  style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
-                  ← Volver al curso
-                </button>
-              )}
-            </>
+              ))}
+            </div>
           )}
         </div>
-      </div>
-    )
-  }
+      )}
 
-  // Vista principal del curso
-  return (
-    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 80 }}>
-      {/* Header */}
-      <div style={{ background: 'linear-gradient(135deg,#1e40af,#1e3a8a)', padding: '20px 20px 24px' }}>
-        {onBack && (
-          <button onClick={onBack} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#fff', fontSize: 13, cursor: 'pointer', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-            ← Volver
-          </button>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
-          <div style={{ fontSize: 44 }}>🎓</div>
-          <div>
-            <div style={{ color: '#bfdbfe', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>MAZ CLEAN</div>
-            <div style={{ color: '#fff', fontWeight: 800, fontSize: 22 }}>Certificación Pro</div>
-            <div style={{ color: '#93c5fd', fontSize: 13 }}>Academia Código Limpio</div>
-          </div>
-        </div>
-
-        {/* Barra de progreso */}
-        <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 20, height: 10, marginBottom: 8 }}>
-          <div style={{ background: '#10b981', borderRadius: 20, height: 10, width: `${progressPct}%`, transition: 'width 0.5s ease' }} />
-        </div>
-        <div style={{ color: '#bfdbfe', fontSize: 12 }}>
-          {completedLessons} de {totalLessons} lecciones completadas — {progressPct}%
-        </div>
-      </div>
-
-      <div style={{ padding: '20px 16px', maxWidth: 600, margin: '0 auto' }}>
-        {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#dc2626' }}>⚠️ {error}</div>}
-
-        {/* Estado de certificación */}
-        {profile?.is_certified && (
-          <div style={{ background: 'linear-gradient(135deg,#065f46,#10b981)', borderRadius: 14, padding: '16px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ fontSize: 36 }}>🏆</div>
-            <div>
-              <div style={{ color: '#fff', fontWeight: 800, fontSize: 16 }}>¡Operador Certificado Pro!</div>
-              <div style={{ color: '#d1fae5', fontSize: 12, marginTop: 2 }}>
-                Certificado desde {profile.certification_date ? new Date(profile.certification_date).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' }) : 'fecha no disponible'}
+      {/* Tab: Operadores */}
+      {tab === 'operadores' && (
+        <div style={{ display: 'grid', gap: 12 }}>
+          {operators.map(op => (
+            <div key={op.id} style={{ background: '#fff', borderRadius: 12, padding: '14px 16px', border: `1.5px solid ${op.is_certified ? '#bbf7d0' : '#fde68a'}`, display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ width: 44, height: 44, borderRadius: '50%', background: op.is_certified ? 'linear-gradient(135deg,#065f46,#10b981)' : '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>
+                {op.is_certified ? '🏆' : '⏳'}
               </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#1f2937' }}>{op.full_name}</div>
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                  ⭐ {op.rating_avg || '—'}
+                  {op.is_certified
+                    ? ` · Certificado ${op.certification_date ? new Date(op.certification_date).toLocaleDateString('es-MX') : ''}`
+                    : ' · Pendiente de certificación'}
+                </div>
+              </div>
+              <span style={{ background: op.is_certified ? '#f0fdf4' : '#fffbeb', color: op.is_certified ? '#059669' : '#92400e', borderRadius: 20, padding: '4px 10px', fontSize: 12, fontWeight: 700 }}>
+                {op.is_certified ? '✓ Certificado' : '⏳ Pendiente'}
+              </span>
             </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tab: Contenido del curso */}
+      {tab === 'contenido' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+            <button onClick={() => { setLessonModal(true); setLessonError('') }}
+              style={{ padding: '10px 16px', background: '#1e40af', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 42 }}>
+              ➕ Nueva lección
+            </button>
           </div>
-        )}
 
-        {/* Módulos */}
-        {modules.map((mod, mi) => {
-          const modLessons = lessons.filter(l => l.module_id === mod.id)
-          const modCompleted = isModuleCompleted(mod.id)
-          const modProgress = modLessons.filter(l => isLessonCompleted(l.id)).length
-          const isLocked = mi > 0 && !isModuleCompleted(modules[mi - 1]?.id)
-
-          return (
-            <div key={mod.id} style={{ background: '#fff', borderRadius: 16, marginBottom: 16, overflow: 'hidden', border: `2px solid ${modCompleted ? '#bbf7d0' : '#e5e7eb'}`, opacity: isLocked ? 0.6 : 1 }}>
-              {/* Header módulo */}
-              <div style={{ background: modCompleted ? 'linear-gradient(135deg,#065f46,#10b981)' : MODULE_COLORS[mi] || MODULE_COLORS[0], padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span style={{ fontSize: 28 }}>{MODULE_ICONS[mi] || '📚'}</span>
-                  <div>
-                    <div style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>{mod.title}</div>
-                    <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2 }}>{mod.description}</div>
-                  </div>
+          {modules.map((mod, mi) => {
+            const modLessons = lessons.filter(l => l.module_id === mod.id)
+            return (
+              <div key={mod.id} style={{ background: '#fff', borderRadius: 14, marginBottom: 16, overflow: 'hidden', border: '1.5px solid #e5e7eb' }}>
+                <div style={{ background: '#1e40af', padding: '12px 16px' }}>
+                  <div style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>Módulo {mi + 1}: {mod.title}</div>
+                  <div style={{ color: '#bfdbfe', fontSize: 12, marginTop: 2 }}>{modLessons.length} lecciones</div>
                 </div>
-                <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
-                  {isLocked ? (
-                    <span style={{ fontSize: 20 }}>🔒</span>
-                  ) : modCompleted ? (
-                    <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '3px 10px', color: '#fff', fontSize: 12, fontWeight: 700 }}>✓ Completado</span>
-                  ) : (
-                    <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>{modProgress}/{modLessons.length}</span>
-                  )}
-                </div>
-              </div>
-
-              {/* Lecciones */}
-              {!isLocked && (
-                <div style={{ padding: '8px 0' }}>
-                  {modLessons.map((lesson, li) => {
-                    const completed = isLessonCompleted(lesson.id)
-                    const locked = isLessonLocked(lesson, mi)
-                    const typeIcon = lesson.content_type === 'video' ? '▶️' : lesson.content_type === 'infografia' ? '🖼️' : '📄'
-                    const duration = lesson.duration_seconds ? `${Math.ceil(lesson.duration_seconds / 60)} min` : ''
-
-                    return (
-                      <button key={lesson.id} onClick={() => !locked && openLesson(lesson)} disabled={locked}
-                        style={{ width: '100%', padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 12, background: 'none', border: 'none', borderBottom: li < modLessons.length - 1 ? '1px solid #f3f4f6' : 'none', cursor: locked ? 'not-allowed' : 'pointer', textAlign: 'left' }}>
-                        <div style={{ width: 36, height: 36, borderRadius: '50%', background: completed ? '#f0fdf4' : '#f3f4f6', border: `2px solid ${completed ? '#10b981' : '#e5e7eb'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 16 }}>
-                          {completed ? '✓' : typeIcon}
-                        </div>
+                <div>
+                  {modLessons.length === 0 ? (
+                    <div style={{ padding: '14px 16px', fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>Sin lecciones — agrega una con el botón de arriba</div>
+                  ) : modLessons.map((lesson, li) => (
+                    <div key={lesson.id} style={{ padding: '12px 16px', borderBottom: li < modLessons.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span style={{ fontSize: 20 }}>{lesson.content_type === 'video' ? '▶️' : lesson.content_type === 'infografia' ? '🖼️' : '📄'}</span>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: locked ? '#9ca3af' : '#1f2937' }}>{lesson.title}</div>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>{lesson.title}</div>
                           <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                            {lesson.content_type === 'video' ? 'Video' : lesson.content_type === 'infografia' ? 'Infografía' : 'Lectura'}
-                            {duration && ` · ${duration}`}
-                            {quizzes.filter(q => q.lesson_id === lesson.id).length > 0 && ' · Con evaluación'}
+                            {lesson.content_type} {lesson.duration_seconds ? `· ${Math.ceil(lesson.duration_seconds / 60)} min` : ''}
+                            {lesson.content_url ? ` · ${lesson.content_url.slice(0, 35)}...` : ' · Sin URL'}
                           </div>
                         </div>
-                        {!locked && !completed && <span style={{ color: '#9ca3af', fontSize: 18 }}>›</span>}
-                        {completed && <span style={{ color: '#10b981', fontSize: 14, fontWeight: 700 }}>✓</span>}
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          <button onClick={() => openEditLesson(lesson)}
+                            style={{ padding: '6px 10px', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 8, color: '#1e40af', fontSize: 11, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                            ✏️ Editar
+                          </button>
+                          <button onClick={() => deleteLesson(lesson.id)}
+                            style={{ padding: '6px 10px', background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: 11, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                      {/* Modal inline de edición */}
+                      {editLesson?.id === lesson.id && (
+                        <div style={{ background: '#f0f9ff', borderRadius: 10, padding: '12px 14px', marginTop: 10, border: '1.5px solid #bae6fd' }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: '#0369a1', marginBottom: 10 }}>✏️ Editar lección</div>
+                          <div style={{ marginBottom: 8 }}>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>URL del video *</label>
+                            <input type="text" value={editForm.content_url} onChange={e => setEditForm(p => ({ ...p, content_url: e.target.value }))}
+                              placeholder="https://..." style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #bae6fd', fontSize: 12, outline: 'none', boxSizing: 'border-box', minHeight: 38 }} />
+                          </div>
+                          <div style={{ marginBottom: 10 }}>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Duración (segundos)</label>
+                            <input type="number" value={editForm.duration_seconds} onChange={e => setEditForm(p => ({ ...p, duration_seconds: e.target.value }))}
+                              placeholder="ej. 390" style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #bae6fd', fontSize: 12, outline: 'none', boxSizing: 'border-box', minHeight: 38 }} />
+                          </div>
+                          {editError && <div style={{ background: '#fef2f2', borderRadius: 6, padding: '6px 10px', marginBottom: 8, fontSize: 11, color: '#dc2626' }}>⚠️ {editError}</div>}
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={() => setEditLesson(null)} style={{ flex: 1, padding: '8px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 36 }}>Cancelar</button>
+                            <button onClick={saveEditLesson} disabled={savingEdit} style={{ flex: 2, padding: '8px', background: savingEdit ? '#9ca3af' : '#0369a1', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 36 }}>
+                              {savingEdit ? '⏳ Guardando...' : '✅ Guardar cambios'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Tab: Quizzes */}
+      {tab === 'quizzes' && (
+        <div>
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#1e40af' }}>
+            💡 Selecciona una lección para gestionar sus preguntas de evaluación.
+          </div>
+          {modules.map(mod => {
+            const modLessons = lessons.filter(l => l.module_id === mod.id)
+            return (
+              <div key={mod.id} style={{ background: '#fff', borderRadius: 14, marginBottom: 12, overflow: 'hidden', border: '1.5px solid #e5e7eb' }}>
+                <div style={{ background: '#1e40af', padding: '10px 16px' }}>
+                  <div style={{ color: '#fff', fontWeight: 700, fontSize: 13 }}>{mod.title}</div>
+                </div>
+                {modLessons.map(lesson => (
+                  <div key={lesson.id} style={{ padding: '12px 16px', borderBottom: '1px solid #f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1f2937' }}>{lesson.title}</div>
+                      <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{lesson.content_type}</div>
+                    </div>
+                    <button onClick={() => openQuizModal(lesson)}
+                      style={{ padding: '8px 14px', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 8, color: '#1e40af', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', minHeight: 38 }}>
+                      📝 Gestionar preguntas
+                    </button>
+                  </div>
+                ))}
+                {modLessons.length === 0 && <div style={{ padding: '12px 16px', fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>Sin lecciones</div>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Modal nueva lección */}
+      {lessonModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, width: '100%', maxWidth: 520, overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ background: '#1e40af', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>➕ Nueva Lección</div>
+              <button onClick={() => setLessonModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 32, height: 32, color: '#fff', fontSize: 18, cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ padding: '20px', overflowY: 'auto', display: 'grid', gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Módulo *</label>
+                <select value={lessonForm.module_id} onChange={e => setLessonForm(p => ({ ...p, module_id: e.target.value }))}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, outline: 'none', minHeight: 44, background: '#fff' }}>
+                  <option value="">Selecciona un módulo</option>
+                  {modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Título *</label>
+                <input type="text" value={lessonForm.title} onChange={e => setLessonForm(p => ({ ...p, title: e.target.value }))} placeholder="ej. Técnica de las 2 Microfibras"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, outline: 'none', minHeight: 44, boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Tipo de contenido</label>
+                <select value={lessonForm.content_type} onChange={e => setLessonForm(p => ({ ...p, content_type: e.target.value }))}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, outline: 'none', minHeight: 44, background: '#fff' }}>
+                  <option value="video">▶️ Video</option>
+                  <option value="infografia">🖼️ Infografía</option>
+                  <option value="texto">📄 Texto</option>
+                </select>
+              </div>
+              {(lessonForm.content_type === 'video' || lessonForm.content_type === 'infografia') && (
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>URL del contenido (Supabase Storage)</label>
+                  <input type="text" value={lessonForm.content_url} onChange={e => setLessonForm(p => ({ ...p, content_url: e.target.value }))} placeholder="https://..."
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, outline: 'none', minHeight: 44, boxSizing: 'border-box' }} />
+                </div>
+              )}
+              {lessonForm.content_type === 'video' && (
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Duración (segundos)</label>
+                  <input type="number" value={lessonForm.duration_seconds} onChange={e => setLessonForm(p => ({ ...p, duration_seconds: e.target.value }))} placeholder="ej. 90"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, outline: 'none', minHeight: 44, boxSizing: 'border-box' }} />
+                </div>
+              )}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Texto / descripción adicional</label>
+                <textarea value={lessonForm.content_body} onChange={e => setLessonForm(p => ({ ...p, content_body: e.target.value }))} placeholder="Contenido de la lección, guión, tips..."
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14, outline: 'none', minHeight: 100, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+              </div>
+              {lessonError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#dc2626' }}>⚠️ {lessonError}</div>}
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, flexShrink: 0 }}>
+              <button onClick={() => setLessonModal(false)} style={{ flex: 1, padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>Cancelar</button>
+              <button onClick={saveLesson} disabled={savingLesson} style={{ flex: 2, padding: '12px', background: savingLesson ? '#9ca3af' : '#1e40af', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>
+                {savingLesson ? '⏳ Guardando...' : '✅ Guardar lección'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Gestionar Quizzes */}
+      {quizModal && quizLesson && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 130, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, width: '100%', maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>📝 Preguntas — {quizLesson.title}</div>
+                <div style={{ color: '#bfdbfe', fontSize: 12, marginTop: 2 }}>{quizzes.length} pregunta{quizzes.length !== 1 ? 's' : ''} registrada{quizzes.length !== 1 ? 's' : ''}</div>
+              </div>
+              <button onClick={() => setQuizModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 32, height: 32, color: '#fff', fontSize: 18, cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ overflowY: 'auto', padding: '16px 20px', flex: 1 }}>
+              {/* Preguntas existentes */}
+              {quizzes.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Preguntas actuales</div>
+                  {quizzes.map((q, qi) => (
+                    <div key={q.id} style={{ background: '#f9fafb', borderRadius: 10, padding: '12px 14px', marginBottom: 8, border: '1px solid #e5e7eb' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#1f2937', flex: 1 }}>{qi + 1}. {q.question}</div>
+                        <button onClick={() => deleteQuiz(q.id)} style={{ background: '#fef2f2', border: 'none', borderRadius: 6, color: '#dc2626', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: '4px 8px', flexShrink: 0 }}>✕</button>
+                      </div>
+                      <div style={{ marginTop: 8, display: 'grid', gap: 4 }}>
+                        {(q.options || []).map((opt, oi) => (
+                          <div key={oi} style={{ fontSize: 12, color: oi === q.correct_answer ? '#059669' : '#6b7280', fontWeight: oi === q.correct_answer ? 700 : 400 }}>
+                            {oi === q.correct_answer ? '✅' : '○'} {String.fromCharCode(65+oi)}. {opt}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Nueva pregunta */}
+              <div style={{ background: '#f0f9ff', borderRadius: 12, padding: '14px 16px', border: '1.5px solid #bae6fd' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#0369a1', marginBottom: 12 }}>➕ Nueva pregunta</div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Pregunta *</label>
+                  <input type="text" value={quizForm.question} onChange={e => setQuizForm(p => ({ ...p, question: e.target.value }))} placeholder="Escribe la pregunta..."
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #bae6fd', fontSize: 13, outline: 'none', boxSizing: 'border-box', minHeight: 42 }} />
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Opciones (marca la correcta)</label>
+                  {quizForm.options.map((opt, oi) => (
+                    <div key={oi} style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'center' }}>
+                      <button onClick={() => setQuizForm(p => ({ ...p, correct_answer: oi }))}
+                        style={{ width: 28, height: 28, borderRadius: '50%', border: `2px solid ${quizForm.correct_answer === oi ? '#10b981' : '#d1d5db'}`, background: quizForm.correct_answer === oi ? '#10b981' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 12, color: '#fff', fontWeight: 700 }}>
+                        {quizForm.correct_answer === oi ? '✓' : ''}
                       </button>
-                    )
-                  })}
+                      <input type="text" value={opt} onChange={e => { const opts = [...quizForm.options]; opts[oi] = e.target.value; setQuizForm(p => ({ ...p, options: opts })) }}
+                        placeholder={`Opción ${String.fromCharCode(65+oi)}`}
+                        style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${quizForm.correct_answer === oi ? '#bbf7d0' : '#e5e7eb'}`, fontSize: 13, outline: 'none', minHeight: 38 }} />
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>Toca el círculo para marcar la respuesta correcta</div>
                 </div>
-              )}
-
-              {isLocked && (
-                <div style={{ padding: '12px 18px', color: '#9ca3af', fontSize: 13, textAlign: 'center' }}>
-                  🔒 Completa el módulo anterior para desbloquear
-                </div>
-              )}
-            </div>
-          )
-        })}
-
-        {/* Pantalla de finalización — todos los módulos completados */}
-        {allModulesCompleted && !profile?.is_certified && (
-          <div style={{ background: 'linear-gradient(135deg,#7c3aed,#5b21b6)', borderRadius: 16, padding: '22px 20px', marginBottom: 20, border: '2px solid #a78bfa' }}>
-            <div style={{ textAlign: 'center', marginBottom: 18 }}>
-              <div style={{ fontSize: 52, marginBottom: 10 }}>🏆</div>
-              <div style={{ color: '#fff', fontWeight: 800, fontSize: 20, marginBottom: 8 }}>¡Felicidades, ya eres un Pro!</div>
-              <div style={{ color: '#ede9fe', fontSize: 14, lineHeight: 1.7 }}>
-                Completaste los 4 módulos de la Academia Código Limpio. Tu certificación está siendo procesada — recibirás confirmación por WhatsApp en breve.
+                {quizError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#dc2626' }}>⚠️ {quizError}</div>}
+                <button onClick={saveQuiz} disabled={savingQuiz}
+                  style={{ width: '100%', padding: '12px', background: savingQuiz ? '#9ca3af' : '#1e40af', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 46 }}>
+                  {savingQuiz ? '⏳ Guardando...' : '✅ Agregar pregunta'}
+                </button>
               </div>
             </div>
-
-            {/* Mensaje según estado de membresía */}
-            {effectivePromo?.free_first_month ? (
-              <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 14, padding: '16px', border: '1.5px solid rgba(255,255,255,0.25)' }}>
-                <div style={{ fontSize: 22, textAlign: 'center', marginBottom: 8 }}>🎁</div>
-                <div style={{ color: '#fff', fontWeight: 700, fontSize: 15, textAlign: 'center', marginBottom: 6 }}>
-                  ¡Tu primer mes es GRATIS!
-                </div>
-                <div style={{ color: '#ede9fe', fontSize: 13, lineHeight: 1.7, textAlign: 'center' }}>
-                  Tienes una promoción activa — no pagas membresía este mes. Actívala ahora y empieza a recibir servicios desde hoy. A partir del segundo mes son solo ${membershipConfig?.operator_price || 200} MXN/mes.
-                </div>
-              </div>
-            ) : effectivePromo?.has_promo ? (
-              <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 14, padding: '16px', border: '1.5px solid rgba(255,255,255,0.25)' }}>
-                <div style={{ fontSize: 22, textAlign: 'center', marginBottom: 8 }}>⚡</div>
-                <div style={{ color: '#fff', fontWeight: 700, fontSize: 15, textAlign: 'center', marginBottom: 6 }}>
-                  ¡Precio especial de lanzamiento!
-                </div>
-                <div style={{ color: '#ede9fe', fontSize: 13, lineHeight: 1.7, textAlign: 'center' }}>
-                  Activa tu membresía hoy por solo ${effectivePromo?.effective_price || membershipConfig?.operator_price} MXN este mes y empieza a generar ingresos de inmediato.
-                </div>
-              </div>
-            ) : (
-              <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 14, padding: '16px', border: '1.5px solid rgba(255,255,255,0.25)' }}>
-                <div style={{ fontSize: 22, textAlign: 'center', marginBottom: 8 }}>🚀</div>
-                <div style={{ color: '#fff', fontWeight: 700, fontSize: 15, textAlign: 'center', marginBottom: 6 }}>
-                  ¡Un paso más para generar ingresos!
-                </div>
-                <div style={{ color: '#ede9fe', fontSize: 13, lineHeight: 1.7, textAlign: 'center' }}>
-                  Activa tu membresía por solo ${membershipConfig?.operator_price || 200} MXN/mes y empieza a recibir servicios desde hoy. Con dos servicios ya comienzas a tener ganancias.
-                </div>
-              </div>
-            )}
-
-            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, textAlign: 'center', marginTop: 12 }}>
-              Activa tu membresía desde la pantalla principal del Panel Operador
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', flexShrink: 0 }}>
+              <button onClick={() => setQuizModal(false)} style={{ width: '100%', padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 46 }}>Cerrar</button>
             </div>
           </div>
-        )}
-
-        {/* Info para nuevos operadores */}
-        {!allModulesCompleted && (
-          <div style={{ background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 12, padding: '14px 16px' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#1e40af', marginBottom: 6 }}>ℹ️ ¿Por qué la Certificación Pro?</div>
-            <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.7 }}>
-              La certificación te acredita como operador de calidad verificada. Los clientes con membresía Premium saben que cada operador en nuestra red cumple estándares profesionales. 🏆
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

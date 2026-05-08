@@ -19,7 +19,7 @@ function getToken() {
 const MODULE_ICONS = ['🤝', '💧', '✨', '🛡️']
 const MODULE_COLORS = [
   'linear-gradient(135deg,#1e40af,#3b82f6)',
-  'linear-gradient(135deg,#065f46,#10b981)',
+  'linear-gradient(135deg,#0369a1,#0ea5e9)',
   'linear-gradient(135deg,#7c3aed,#a78bfa)',
   'linear-gradient(135deg,#92400e,#f59e0b)',
 ]
@@ -39,8 +39,8 @@ export default function AcademiaView({ onBack }) {
   const [submitting, setSubmitting]     = useState(false)
   const [error, setError]               = useState('')
   const [certSubmitted, setCertSubmitted] = useState(false)
-  const [beforeAfterPhoto, setBeforeAfterPhoto] = useState(null)
-  const [uploadingPhoto, setUploadingPhoto]     = useState(false)
+  const [membershipConfig, setMembershipConfig] = useState({ operator_price: 200 })
+  const [effectivePromo, setEffectivePromo]     = useState(null)
   const fileInputRef = useRef(null)
 
   useEffect(() => { if (user) fetchAll() }, [user])
@@ -49,18 +49,22 @@ export default function AcademiaView({ onBack }) {
     setLoading(true)
     try {
       const headers = { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY }
-      const [modRes, lesRes, quizRes, progRes, certRes] = await Promise.all([
+      const [modRes, lesRes, quizRes, progRes, certRes, cfgRes, promoRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/course_modules?is_active=eq.true&order=order_index.asc&select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/course_lessons?order=order_index.asc&select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/course_quizzes?order=order_index.asc&select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/operator_progress?operator_id=eq.${user.id}&select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/operator_certifications?operator_id=eq.${user.id}&select=*&limit=1`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/membership_config?select=operator_price&limit=1`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/rpc/get_effective_membership_price`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ p_role: 'operador' }) }),
       ])
       if (modRes.ok)  setModules(await modRes.json())
       if (lesRes.ok)  setLessons(await lesRes.json())
       if (quizRes.ok) setQuizzes(await quizRes.json())
       if (progRes.ok) setProgress(await progRes.json())
       if (certRes.ok) { const c = await certRes.json(); if (c?.[0]) setCertSubmitted(true) }
+      if (cfgRes?.ok) { const c = await cfgRes.json(); if (c?.[0]) setMembershipConfig(c[0]) }
+      if (promoRes?.ok) { const p = await promoRes.json(); if (p?.has_promo) setEffectivePromo(p) }
 
       // Cachear lecciones offline
       if (lesRes.ok) {
@@ -454,50 +458,53 @@ export default function AcademiaView({ onBack }) {
           )
         })}
 
-        {/* Certificación final */}
+        {/* Pantalla de finalización — todos los módulos completados */}
         {allModulesCompleted && !profile?.is_certified && (
-          <div style={{ background: 'linear-gradient(135deg,#7c3aed,#a78bfa)', borderRadius: 16, padding: '20px', marginBottom: 20, border: '2px solid #a78bfa' }}>
-            <div style={{ textAlign: 'center', marginBottom: 16 }}>
-              <div style={{ fontSize: 48, marginBottom: 8 }}>🏆</div>
-              <div style={{ color: '#fff', fontWeight: 800, fontSize: 18, marginBottom: 6 }}>¡Último paso!</div>
-              <div style={{ color: '#ede9fe', fontSize: 14, lineHeight: 1.6 }}>
-                Completaste todos los módulos. Sube una foto de "Antes y Después" de un servicio real para obtener tu certificación.
+          <div style={{ background: 'linear-gradient(135deg,#7c3aed,#5b21b6)', borderRadius: 16, padding: '22px 20px', marginBottom: 20, border: '2px solid #a78bfa' }}>
+            <div style={{ textAlign: 'center', marginBottom: 18 }}>
+              <div style={{ fontSize: 52, marginBottom: 10 }}>🏆</div>
+              <div style={{ color: '#fff', fontWeight: 800, fontSize: 20, marginBottom: 8 }}>¡Felicidades, ya eres un Pro!</div>
+              <div style={{ color: '#ede9fe', fontSize: 14, lineHeight: 1.7 }}>
+                Completaste los 4 módulos de la Academia Código Limpio. Tu certificación está siendo procesada — recibirás confirmación por WhatsApp en breve.
               </div>
             </div>
 
-            {!certSubmitted ? (
-              <>
-                <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: '14px', marginBottom: 14 }}>
-                  <div style={{ color: '#fff', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>📸 Foto Antes y Después</div>
-                  <div style={{ color: '#ede9fe', fontSize: 12, marginBottom: 12 }}>La foto debe mostrar claramente el vehículo antes y después del servicio. El admin la validará en menos de 24 horas.</div>
-                  {beforeAfterPhoto ? (
-                    <div style={{ position: 'relative' }}>
-                      <img src={beforeAfterPhoto} alt="Antes y después" style={{ width: '100%', borderRadius: 8, maxHeight: 200, objectFit: 'cover' }} />
-                      <button onClick={() => setBeforeAfterPhoto(null)} style={{ position: 'absolute', top: 6, right: 6, background: '#dc2626', border: 'none', borderRadius: '50%', width: 28, height: 28, color: '#fff', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
-                    </div>
-                  ) : (
-                    <button onClick={() => fileInputRef.current?.click()} disabled={uploadingPhoto}
-                      style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.2)', border: '2px dashed rgba(255,255,255,0.5)', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 48 }}>
-                      {uploadingPhoto ? '⏳ Subiendo...' : '📷 Seleccionar foto'}
-                    </button>
-                  )}
-                  <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => uploadBeforeAfter(e.target.files[0])} />
+            {/* Mensaje según estado de membresía */}
+            {effectivePromo?.free_first_month ? (
+              <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 14, padding: '16px', border: '1.5px solid rgba(255,255,255,0.25)' }}>
+                <div style={{ fontSize: 22, textAlign: 'center', marginBottom: 8 }}>🎁</div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 15, textAlign: 'center', marginBottom: 6 }}>
+                  ¡Tu primer mes es GRATIS!
                 </div>
-
-                {error && <div style={{ background: 'rgba(239,68,68,0.2)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#fca5a5' }}>⚠️ {error}</div>}
-
-                <button onClick={submitCertification} disabled={!beforeAfterPhoto}
-                  style={{ width: '100%', padding: '14px', background: beforeAfterPhoto ? '#fff' : 'rgba(255,255,255,0.3)', color: beforeAfterPhoto ? '#7c3aed' : '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 800, cursor: beforeAfterPhoto ? 'pointer' : 'not-allowed', minHeight: 52 }}>
-                  🚀 Enviar para certificación
-                </button>
-              </>
+                <div style={{ color: '#ede9fe', fontSize: 13, lineHeight: 1.7, textAlign: 'center' }}>
+                  Tienes una promoción activa — no pagas membresía este mes. Actívala ahora y empieza a recibir servicios desde hoy. A partir del segundo mes son solo ${membershipConfig?.operator_price || 200} MXN/mes.
+                </div>
+              </div>
+            ) : effectivePromo?.has_promo ? (
+              <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 14, padding: '16px', border: '1.5px solid rgba(255,255,255,0.25)' }}>
+                <div style={{ fontSize: 22, textAlign: 'center', marginBottom: 8 }}>⚡</div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 15, textAlign: 'center', marginBottom: 6 }}>
+                  ¡Precio especial de lanzamiento!
+                </div>
+                <div style={{ color: '#ede9fe', fontSize: 13, lineHeight: 1.7, textAlign: 'center' }}>
+                  Activa tu membresía hoy por solo ${effectivePromo?.effective_price || membershipConfig?.operator_price} MXN este mes y empieza a generar ingresos de inmediato.
+                </div>
+              </div>
             ) : (
-              <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: '20px' }}>
-                <div style={{ fontSize: 36, marginBottom: 8 }}>⏳</div>
-                <div style={{ color: '#fff', fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Solicitud enviada</div>
-                <div style={{ color: '#ede9fe', fontSize: 13 }}>El equipo MAZ CLEAN revisará tu foto en menos de 24 horas. Recibirás una notificación por WhatsApp cuando seas certificado.</div>
+              <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 14, padding: '16px', border: '1.5px solid rgba(255,255,255,0.25)' }}>
+                <div style={{ fontSize: 22, textAlign: 'center', marginBottom: 8 }}>🚀</div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 15, textAlign: 'center', marginBottom: 6 }}>
+                  ¡Un paso más para generar ingresos!
+                </div>
+                <div style={{ color: '#ede9fe', fontSize: 13, lineHeight: 1.7, textAlign: 'center' }}>
+                  Activa tu membresía por solo ${membershipConfig?.operator_price || 200} MXN/mes y empieza a recibir servicios desde hoy. Con dos servicios ya comienzas a tener ganancias.
+                </div>
               </div>
             )}
+
+            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, textAlign: 'center', marginTop: 12 }}>
+              Activa tu membresía desde la pantalla principal del Panel Operador
+            </div>
           </div>
         )}
 
