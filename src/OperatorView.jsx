@@ -428,6 +428,24 @@ function ActivationScreen({ profile, membershipStatus, membershipPrice, payingMe
 const OperatorView = () => {
   const { user, profile, signOut } = useAuth();
   const { showToast } = useToast();
+  // ── Mis Horarios ─────────────────────────────────────────────────────────
+  const [exceptions, setExceptions]         = useState([])
+  const [excLoading, setExcLoading]         = useState(false)
+  const [excTab, setExcTab]                 = useState('excepciones') // 'excepciones' | 'horario'
+  const [excType, setExcType]               = useState('day_off') // day_off | vacation | schedule_change
+  const [excStartDate, setExcStartDate]     = useState('')
+  const [excEndDate, setExcEndDate]         = useState('')
+  const [excStartTime, setExcStartTime]     = useState('08:00')
+  const [excEndTime, setExcEndTime]         = useState('18:00')
+  const [excReason, setExcReason]           = useState('')
+  const [excSaving, setExcSaving]           = useState(false)
+  const [excError, setExcError]             = useState('')
+  // Cambio permanente de horario
+  const [newWorkDays, setNewWorkDays]       = useState([])
+  const [newWorkStart, setNewWorkStart]     = useState('08:00')
+  const [newWorkEnd, setNewWorkEnd]         = useState('18:00')
+  const [savingSchedule, setSavingSchedule] = useState(false)
+  const [scheduleError, setScheduleError]   = useState('')
   const [showAcademia, setShowAcademia] = useState(false);
   const [membershipConfig, setMembershipConfig]           = useState(null);
   const [payingMembership, setPayingMembership]           = useState(false);
@@ -455,6 +473,16 @@ const OperatorView = () => {
   // Cancelar membresia Stripe
   const [cancellingMembership, setCancellingMembership]   = useState(false);
   const isMobile = useIsMobile();
+  // Inicializar horario editable con valores del perfil
+  useEffect(() => {
+    if (profile?.work_days) setNewWorkDays(profile.work_days)
+    if (profile?.work_start) setNewWorkStart(profile.work_start.slice(0,5))
+    if (profile?.work_end)   setNewWorkEnd(profile.work_end.slice(0,5))
+  }, [profile?.id])
+  // Cargar excepciones cuando está activo el tab
+  useEffect(() => {
+    if (user && activeTab === 'horarios') fetchExceptions()
+  }, [activeTab, user?.id])
 
   // ── Estado general ────────────────────────────────────────────────────────
   const [bookings, setBookings]               = useState([]);
@@ -1326,6 +1354,7 @@ const OperatorView = () => {
     { id: 'pendientes',   label: 'Pendientes',  icon: '📋', count: pendingServices.length },
     { id: 'activos',      label: 'Activos',     icon: '⚡', count: activeServices.length },
     { id: 'completados',  label: 'Historial',   icon: '📖', count: completedServices.length },
+    { id: 'horarios',     label: 'Mis Horarios',icon: '🗓️', count: 0 },
   ];
 
   // ── RENDER ────────────────────────────────────────────────────────────────

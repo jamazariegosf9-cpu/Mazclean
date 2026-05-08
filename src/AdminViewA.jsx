@@ -28,6 +28,76 @@ const AdminViewA = ({
   fetchData, fetchUnattendedBookings,
 }) => {
   const { showToast } = useToast();
+  // ── Panel de emergencia ───────────────────────────────────────────────────
+  const [emergencyModal, setEmergencyModal]     = useState(false)
+  const [emergencyBooking, setEmergencyBooking] = useState(null)
+  const [availableOps, setAvailableOps]         = useState([])
+  const [loadingOps, setLoadingOps]             = useState(false)
+  const [assigningEm, setAssigningEm]           = useState(null)
+
+  const openEmergencyPanel = async (booking) => {
+    setEmergencyBooking(booking)
+    setEmergencyModal(true)
+    setLoadingOps(true)
+    setAvailableOps([])
+    try {
+      const headers = { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY }
+      // Buscar operadores disponibles: aprobados, certificados, membresía activa, sin excepción activa
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/profiles?role=eq.operador&operator_status=eq.aprobado&is_certified=eq.true&membership_status=eq.activa&select=id,full_name,phone,rating_avg,base_address,coverage_radius,work_days,work_start,work_end`,
+        { headers }
+      )
+      if (res.ok) {
+        const ops = await res.json()
+        // Filtrar por día y horario del booking
+        const bookingDate = new Date(booking.scheduled_date)
+        const dayNames = ['domingo','lunes','martes','miercoles','jueves','viernes','sabado']
+        const bookingDay = dayNames[bookingDate.getDay()]
+        const bookingTime = booking.scheduled_time_from?.slice(0,5)
+        const filtered = ops.filter(op => {
+          const worksDay = (op.work_days || []).includes(bookingDay)
+          const inHours = op.work_start <= bookingTime && op.work_end >= bookingTime
+          return worksDay && inHours && op.id !== booking.operator_id
+        })
+        setAvailableOps(filtered)
+      }
+    } catch (err) { showToast('Error al buscar operadores: ' + err.message, 'error') }
+    finally { setLoadingOps(false) }
+  }
+
+  const assignEmergency = async (operatorId) => {
+    setAssigningEm(operatorId)
+    try {
+      const headers = { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${emergencyBooking.id}`, {
+        method: 'PATCH', headers,
+        body: JSON.stringify({ operator_id: operatorId, status: 'confirmado', updated_at: new Date().toISOString() }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      // WA al nuevo operador
+      const op = availableOps.find(o => o.id === operatorId)
+      if (op?.phone) {
+        await sendWhatsApp('operator_service_request', op.phone, emergencyBooking)
+      }
+      showToast('Operador asignado por emergencia', 'success')
+      setEmergencyModal(false)
+      if (fetchData) fetchData()
+    } catch (err) { showToast('Error: ' + err.message, 'error') }
+    finally { setAssigningEm(null) }
+  }
+
+  const sendEmergencyRounds = async () => {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/process-booking-request`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ booking_id: emergencyBooking.id, force_new_round: true }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      showToast('Nuevas rondas de asignación enviadas', 'success')
+      setEmergencyModal(false)
+    } catch (err) { showToast('Error: ' + err.message, 'error') }
+  }
   const [confirmAssign, setConfirmAssign] = useState(null); // { bookingId, operatorId, operatorName }
   const [searchTerm, setSearchTerm]     = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -319,6 +389,10 @@ const AdminViewA = ({
                   <div style={{ fontWeight: 700, color: '#059669', fontSize: 15, flexShrink: 0 }}>${booking.total_price}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button onClick={() => openEmergencyPanel(booking)}
+                    style={{ padding: '10px 14px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 44, flexShrink: 0 }}>
+                    🚨 Emergencia
+                  </button>
                   <select defaultValue="" onChange={e => { if (e.target.value) assignManuallyToBooking(booking.id, e.target.value) }} disabled={assigningManual === booking.id}
                     style={{ flex: 1, padding: '10px 12px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 13, fontWeight: 600, cursor: 'pointer', minHeight: 44, fontFamily: 'inherit' }}>
                     <option value="">{assigningManual === booking.id ? '⏳ Asignando...' : '👷 Asignar operador...'}</option>
@@ -496,6 +570,59 @@ const AdminViewA = ({
               <button onClick={saveEdit} disabled={savingEdit} style={{ padding: '12px 24px', background: savingEdit ? '#9ca3af' : '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 48 }}>
                 {savingEdit ? '⏳ Guardando...' : 'Guardar Cambios'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Emergencia */}
+      {emergencyModal && emergencyBooking && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 130, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, width: '100%', maxWidth: 520, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ background: 'linear-gradient(135deg,#dc2626,#ef4444)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <div style={{ color: '#fff', fontWeight: 800, fontSize: 16 }}>🚨 Panel de Emergencia</div>
+                <div style={{ color: '#fecaca', fontSize: 12, marginTop: 2 }}>{emergencyBooking.booking_ref} · {emergencyBooking.service_name}</div>
+              </div>
+              <button onClick={() => setEmergencyModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 32, height: 32, color: '#fff', fontSize: 18, cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ overflowY: 'auto', padding: '16px 20px', flex: 1 }}>
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#991b1b' }}>
+                📍 {emergencyBooking.address} · {emergencyBooking.scheduled_date} {emergencyBooking.scheduled_time_from?.slice(0,5)} hrs
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 10 }}>Operadores disponibles para esta zona y horario</div>
+              {loadingOps ? (
+                <div style={{ textAlign: 'center', padding: 24, color: '#9ca3af' }}>Buscando operadores...</div>
+              ) : availableOps.length === 0 ? (
+                <div style={{ background: '#f9fafb', borderRadius: 10, padding: '16px', textAlign: 'center', marginBottom: 16, border: '1.5px dashed #e5e7eb' }}>
+                  <div style={{ fontSize: 24, marginBottom: 8 }}>😔</div>
+                  <div style={{ fontSize: 13, color: '#6b7280' }}>No hay operadores disponibles en este horario</div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+                  {availableOps.map(op => (
+                    <div key={op.id} style={{ background: '#f9fafb', borderRadius: 12, padding: '12px 14px', border: '1.5px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👷</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1f2937' }}>{op.full_name}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>⭐ {op.rating_avg || '—'} · {(op.base_address || '').slice(0,35)}...</div>
+                      </div>
+                      <button onClick={() => assignEmergency(op.id)} disabled={!!assigningEm}
+                        style={{ padding: '8px 14px', background: assigningEm === op.id ? '#9ca3af' : '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 36, flexShrink: 0 }}>
+                        {assigningEm === op.id ? '⏳' : 'Asignar'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#92400e', marginBottom: 6 }}>¿Prefieres enviar nuevas rondas de aceptación?</div>
+                <div style={{ fontSize: 12, color: '#78716c', marginBottom: 10 }}>El sistema notificará a todos los operadores disponibles para que acepten el servicio.</div>
+                <button onClick={sendEmergencyRounds}
+                  style={{ width: '100%', padding: '10px', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 42 }}>
+                  📣 Enviar nuevas rondas de asignación
+                </button>
+              </div>
             </div>
           </div>
         </div>
