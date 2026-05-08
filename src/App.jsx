@@ -214,7 +214,7 @@ function Navbar({ view, setView, onShowAuth }) {
           {!isMobile && user && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
               {roleBadge && <span style={{ padding: '3px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: roleBadge.color + '20', color: roleBadge.color, whiteSpace: 'nowrap' }}>{roleBadge.label}</span>}
-              <span style={{ color: '#8CA0BF', fontSize: 12, whiteSpace: 'nowrap' }}>{profile?.full_name?.split(' ')[0] || 'Usuario'}</span>
+              {profile?.role !== 'admin' && <span style={{ color: '#8CA0BF', fontSize: 12, whiteSpace: 'nowrap' }}>{profile?.full_name?.split(' ')[0] || 'Usuario'}</span>}
               <button onClick={signOut} style={{ padding: '6px 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'none', color: '#F87171', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>Salir</button>
             </div>
           )}
@@ -224,7 +224,7 @@ function Navbar({ view, setView, onShowAuth }) {
               <button onClick={() => onShowAuth('register')} style={{ padding: '8px 14px', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', border: 'none', borderRadius: 10, color: '#050A14', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Registro</button>
             </div>
           )}
-          {isMobile && user && <span style={{ color: '#8CA0BF', fontSize: 12, whiteSpace: 'nowrap' }}>{profile?.full_name?.split(' ')[0] || 'Usuario'}</span>}
+          {isMobile && user && profile?.role !== 'admin' && <span style={{ color: '#8CA0BF', fontSize: 12, whiteSpace: 'nowrap' }}>{profile?.full_name?.split(' ')[0] || 'Usuario'}</span>}
           {isMobile && (
             <button onClick={() => setMenuOpen(o => !o)}
               style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '8px', cursor: 'pointer', color: '#F0F6FF', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 40, minHeight: 40 }}>
