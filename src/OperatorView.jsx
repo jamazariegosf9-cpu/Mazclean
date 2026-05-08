@@ -1438,13 +1438,9 @@ const OperatorView = () => {
     if (profile?.work_end)   setNewWorkEnd(profile.work_end.slice(0,5))
   }, [profile?.id])
 
-  // Cargar excepciones cuando está activo el tab — con guard para evitar loop
-  const excFetchedRef = useRef(false)
+  // Cargar excepciones cuando está activo el tab
   useEffect(() => {
-    if (user && activeTab === 'horarios' && !excFetchedRef.current) {
-      excFetchedRef.current = true
-      fetchExceptions().finally(() => { excFetchedRef.current = false })
-    }
+    if (user && activeTab === 'horarios') fetchExceptions()
   }, [activeTab, user?.id])
 
   // ── RENDER ────────────────────────────────────────────────────────────────
@@ -1652,8 +1648,225 @@ const OperatorView = () => {
           </div>
         )}
 
+        {/* ── TAB MIS HORARIOS ── */}
+        {activeTab === 'horarios' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+            {/* Sub-tabs: Excepciones / Horario permanente */}
+            <div style={{ display: 'flex', background: '#e5e7eb', borderRadius: 12, padding: 4, gap: 4 }}>
+              <button onClick={() => setExcTab('excepciones')}
+                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+                  background: excTab === 'excepciones' ? '#fff' : 'transparent',
+                  color:      excTab === 'excepciones' ? '#1e40af' : '#6b7280',
+                  boxShadow:  excTab === 'excepciones' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none' }}>
+                📅 Excepciones
+              </button>
+              <button onClick={() => setExcTab('horario')}
+                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+                  background: excTab === 'horario' ? '#fff' : 'transparent',
+                  color:      excTab === 'horario' ? '#1e40af' : '#6b7280',
+                  boxShadow:  excTab === 'horario' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none' }}>
+                🕐 Horario Permanente
+              </button>
+            </div>
+
+            {/* ── SUB-TAB EXCEPCIONES ── */}
+            {excTab === 'excepciones' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+                {/* Formulario nueva excepción */}
+                <div style={{ background: '#fff', borderRadius: 16, padding: '18px 16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: '#1f2937', marginBottom: 14 }}>➕ Nueva excepción</div>
+
+                  {/* Tipo */}
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>Tipo</label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {[
+                        { v: 'day_off',  label: '🚫 Pausa horario' },
+                        { v: 'vacation', label: '🏖️ Vacaciones' },
+                      ].map(opt => (
+                        <button key={opt.v} onClick={() => setExcType(opt.v)}
+                          style={{ flex: 1, padding: '10px 4px', borderRadius: 10, border: `2px solid ${excType === opt.v ? '#3b82f6' : '#e5e7eb'}`,
+                            background: excType === opt.v ? '#eff6ff' : '#f9fafb',
+                            color: excType === opt.v ? '#1e40af' : '#374151',
+                            fontWeight: 700, fontSize: 12, cursor: 'pointer', minHeight: 44 }}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Fecha inicio */}
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>
+                      {excType === 'day_off' ? 'Fecha' : 'Fecha de inicio'}
+                    </label>
+                    <input type="date" value={excStartDate} onChange={e => setExcStartDate(e.target.value)}
+                      min={new Date().toISOString().slice(0,10)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                  </div>
+
+                  {/* Horas (solo day_off) */}
+                  {excType === 'day_off' && (
+                    <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>Hora inicio</label>
+                        <input type="time" value={excStartTime} onChange={e => setExcStartTime(e.target.value)}
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>Hora fin</label>
+                        <input type="time" value={excEndTime} onChange={e => setExcEndTime(e.target.value)}
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Fecha fin (solo vacation) */}
+                  {excType === 'vacation' && (
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>Fecha de regreso</label>
+                      <input type="date" value={excEndDate} onChange={e => setExcEndDate(e.target.value)}
+                        min={excStartDate || new Date().toISOString().slice(0,10)}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                    </div>
+                  )}
+
+                  {/* Motivo */}
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>Motivo (opcional)</label>
+                    <input type="text" value={excReason} onChange={e => setExcReason(e.target.value)}
+                      placeholder="Ej: Cita médica, vacaciones familiares..."
+                      maxLength={120}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                  </div>
+
+                  {excError && (
+                    <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 13, color: '#dc2626' }}>
+                      ⚠️ {excError}
+                    </div>
+                  )}
+
+                  <button onClick={saveException} disabled={excSaving}
+                    style={{ width: '100%', padding: '13px 0', background: excSaving ? '#9ca3af' : 'linear-gradient(135deg,#1e40af,#3b82f6)',
+                      color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
+                      cursor: excSaving ? 'not-allowed' : 'pointer', minHeight: 48 }}>
+                    {excSaving ? '⏳ Guardando...' : '💾 Guardar excepción'}
+                  </button>
+                </div>
+
+                {/* Lista de excepciones activas */}
+                <div style={{ background: '#fff', borderRadius: 16, padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: '#1f2937', marginBottom: 12 }}>
+                    📋 Excepciones registradas
+                  </div>
+                  {excLoading ? (
+                    <div style={{ textAlign: 'center', padding: '24px 0', color: '#9ca3af', fontSize: 14 }}>⏳ Cargando...</div>
+                  ) : exceptions.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '24px 0', color: '#9ca3af', fontSize: 14 }}>
+                      <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
+                      Sin excepciones registradas. Tu horario está activo normalmente.
+                    </div>
+                  ) : exceptions.map(exc => {
+                    const typeLabel = exc.exception_type === 'day_off' ? '🚫 Pausa' : '🏖️ Vacaciones';
+                    const from = new Date(exc.start_datetime).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+                    const to   = new Date(exc.end_datetime).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+                    const isActive = new Date(exc.end_datetime) > new Date();
+                    return (
+                      <div key={exc.id} style={{ background: isActive ? '#f0fdf4' : '#f9fafb', border: `1px solid ${isActive ? '#bbf7d0' : '#e5e7eb'}`, borderRadius: 12, padding: '12px 14px', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13, color: '#1f2937', marginBottom: 4 }}>{typeLabel}</div>
+                          <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>
+                            {from} → {to}
+                            {exc.reason && <div style={{ marginTop: 2, fontStyle: 'italic' }}>"{exc.reason}"</div>}
+                          </div>
+                        </div>
+                        {isActive && (
+                          <button onClick={() => deleteException(exc.id)}
+                            style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '6px 10px', fontSize: 12, color: '#dc2626', fontWeight: 700, cursor: 'pointer', flexShrink: 0, minHeight: 36 }}>
+                            🗑️
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ── SUB-TAB HORARIO PERMANENTE ── */}
+            {excTab === 'horario' && (
+              <div style={{ background: '#fff', borderRadius: 16, padding: '18px 16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: '#1f2937', marginBottom: 6 }}>🕐 Cambiar horario de trabajo</div>
+                <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 16, lineHeight: 1.5 }}>
+                  Este cambio afecta tu disponibilidad permanente. El sistema de asignación usará este horario para enviarte servicios.
+                </div>
+
+                {/* Días de la semana */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 8 }}>Días de trabajo</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {['lunes','martes','miércoles','jueves','viernes','sábado','domingo'].map(day => {
+                      const active = newWorkDays.includes(day);
+                      return (
+                        <button key={day} onClick={() => setNewWorkDays(prev => active ? prev.filter(d => d !== day) : [...prev, day])}
+                          style={{ padding: '8px 14px', borderRadius: 20, border: `2px solid ${active ? '#3b82f6' : '#e5e7eb'}`,
+                            background: active ? '#eff6ff' : '#f9fafb',
+                            color: active ? '#1e40af' : '#6b7280',
+                            fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                            textTransform: 'capitalize', minHeight: 38 }}>
+                          {day.slice(0,3).toUpperCase()}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Horas */}
+                <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>Inicio (mín. 6:00)</label>
+                    <input type="time" value={newWorkStart} min="06:00" max="20:00"
+                      onChange={e => setNewWorkStart(e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>Cierre (máx. 21:00)</label>
+                    <input type="time" value={newWorkEnd} min="07:00" max="21:00"
+                      onChange={e => setNewWorkEnd(e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                  </div>
+                </div>
+
+                {/* Horario actual del perfil */}
+                {profile?.work_days && (
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#065f46' }}>
+                    <strong>Horario actual:</strong>{' '}
+                    {(profile.work_days || []).join(', ')} · {profile.work_start?.slice(0,5)} – {profile.work_end?.slice(0,5)} hrs
+                  </div>
+                )}
+
+                {scheduleError && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 13, color: '#dc2626' }}>
+                    ⚠️ {scheduleError}
+                  </div>
+                )}
+
+                <button onClick={saveScheduleChange} disabled={savingSchedule}
+                  style={{ width: '100%', padding: '13px 0', background: savingSchedule ? '#9ca3af' : 'linear-gradient(135deg,#059669,#10b981)',
+                    color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
+                    cursor: savingSchedule ? 'not-allowed' : 'pointer', minHeight: 48 }}>
+                  {savingSchedule ? '⏳ Guardando...' : '💾 Guardar horario permanente'}
+                </button>
+              </div>
+            )}
+
+          </div>
+        )}
+
         {/* ── TABS DE SERVICIOS ── */}
-        {activeTab !== 'solicitudes' && (
+        {activeTab !== 'solicitudes' && activeTab !== 'horarios' && (
           loading ? (
             <div style={{ background: '#fff', borderRadius: 16, padding: 48, textAlign: 'center' }}>
               <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
