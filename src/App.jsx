@@ -182,7 +182,6 @@ function Navbar({ view, setView, onShowAuth }) {
   ]
   if (profile?.role === 'operador') navLinks.push(['operator', 'Panel Operador'])
   if (profile?.role === 'admin') {
-    navLinks.push(['operator', 'Panel Operador'])
     navLinks.push(['admin', 'Admin'])
   }
 
