@@ -473,16 +473,6 @@ const OperatorView = () => {
   // Cancelar membresia Stripe
   const [cancellingMembership, setCancellingMembership]   = useState(false);
   const isMobile = useIsMobile();
-  // Inicializar horario editable con valores del perfil
-  useEffect(() => {
-    if (profile?.work_days) setNewWorkDays(profile.work_days)
-    if (profile?.work_start) setNewWorkStart(profile.work_start.slice(0,5))
-    if (profile?.work_end)   setNewWorkEnd(profile.work_end.slice(0,5))
-  }, [profile?.id])
-  // Cargar excepciones cuando está activo el tab
-  useEffect(() => {
-    if (user && activeTab === 'horarios') fetchExceptions()
-  }, [activeTab, user?.id])
 
   // ── Estado general ────────────────────────────────────────────────────────
   const [bookings, setBookings]               = useState([]);
@@ -1357,6 +1347,102 @@ const OperatorView = () => {
     { id: 'horarios',     label: 'Mis Horarios',icon: '🗓️', count: 0 },
   ];
 
+  // ── Mis Horarios: funciones ─────────────────────────────────────────────
+  const fetchExceptions = async () => {
+    setExcLoading(true)
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/operator_exceptions?operator_id=eq.${user?.id}&order=start_datetime.asc&select=*`,
+        { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (res.ok) setExceptions(await res.json())
+    } catch {}
+    setExcLoading(false)
+  }
+
+  const saveException = async () => {
+    setExcError('')
+    if (!excStartDate) { setExcError('Selecciona la fecha de inicio'); return }
+    if (excType === 'vacation' && !excEndDate) { setExcError('Selecciona la fecha de regreso'); return }
+    const startDt = excType === 'day_off'
+      ? `${excStartDate}T${excStartTime}:00`
+      : `${excStartDate}T00:00:00`
+    const endDt = excType === 'day_off'
+      ? `${excStartDate}T${excEndTime}:00`
+      : `${excEndDate}T23:59:59`
+    try {
+      const conflictRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/bookings?operator_id=eq.${user?.id}&status=in.(confirmado,en_camino,en_proceso)&select=booking_ref,scheduled_date,scheduled_time_from`,
+        { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (conflictRes.ok) {
+        const bookings = await conflictRes.json()
+        const conflicts = bookings.filter(b => {
+          const bDate = new Date(`${b.scheduled_date}T${b.scheduled_time_from}`)
+          return bDate >= new Date(startDt) && bDate <= new Date(endDt)
+        })
+        if (conflicts.length > 0) {
+          setExcError(`Tienes ${conflicts.length} servicio(s) activo(s) en ese período: ${conflicts.map(b => b.booking_ref).join(', ')}`)
+          return
+        }
+      }
+    } catch {}
+    setExcSaving(true)
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/operator_exceptions`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ operator_id: user.id, exception_type: excType, start_datetime: startDt, end_datetime: endDt, reason: excReason || null }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      showToast('Excepción guardada correctamente', 'success')
+      setExcStartDate(''); setExcEndDate(''); setExcReason('')
+      await fetchExceptions()
+    } catch (err) { setExcError(err.message) }
+    setExcSaving(false)
+  }
+
+  const deleteException = async (id) => {
+    if (!confirm('¿Eliminar esta excepción?')) return
+    await fetch(`${SUPABASE_URL}/rest/v1/operator_exceptions?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY },
+    })
+    setExceptions(prev => prev.filter(e => e.id !== id))
+    showToast('Excepción eliminada', 'success')
+  }
+
+  const saveScheduleChange = async () => {
+    setScheduleError('')
+    if (newWorkDays.length === 0) { setScheduleError('Selecciona al menos un día'); return }
+    if (newWorkStart >= newWorkEnd) { setScheduleError('La hora de inicio debe ser antes del cierre'); return }
+    if (newWorkStart < '06:00' || newWorkEnd > '21:00') { setScheduleError('El horario debe estar entre 6:00 am y 9:00 pm'); return }
+    setSavingSchedule(true)
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ work_days: newWorkDays, work_start: newWorkStart, work_end: newWorkEnd, updated_at: new Date().toISOString() }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      showToast('Horario actualizado correctamente', 'success')
+      if (loadProfile) await loadProfile().catch(() => {})
+    } catch (err) { setScheduleError(err.message) }
+    setSavingSchedule(false)
+  }
+
+  // Inicializar horario editable con valores del perfil
+  useEffect(() => {
+    if (profile?.work_days) setNewWorkDays(profile.work_days)
+    if (profile?.work_start) setNewWorkStart(profile.work_start.slice(0,5))
+    if (profile?.work_end)   setNewWorkEnd(profile.work_end.slice(0,5))
+  }, [profile?.id])
+
+  // Cargar excepciones cuando está activo el tab
+  useEffect(() => {
+    if (user && activeTab === 'horarios') fetchExceptions()
+  }, [activeTab, user?.id])
+
   // ── RENDER ────────────────────────────────────────────────────────────────
   // Academia — aquí ya están declaradas todas las variables
   if (showAcademia) return <AcademiaView onBack={() => setShowAcademia(false)} />;
@@ -1366,7 +1452,7 @@ const OperatorView = () => {
   const needsMembership    = operatorMembership?.membership_status !== 'activa' && profile?.membership_status !== 'activa'
   const isApproved         = profile?.operator_status === 'aprobado'
 
-  if (isApproved && (needsCertification || needsMembership) && !showAcademia) {
+  if (isApproved && profile?.role !== 'admin' && (needsCertification || needsMembership) && !showAcademia) {
     return (
       <ActivationScreen
         profile={profile}
