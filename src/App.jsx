@@ -187,7 +187,6 @@ function Navbar({ view, setView, onShowAuth }) {
   }
 
   const roleBadge = {
-    admin:    { label: 'Admin',    color: '#10b981' },
     operador: { label: 'Operador', color: '#3b82f6' },
     cliente:  { label: 'Cliente',  color: '#8CA0BF' },
   }[profile?.role] || null
