@@ -388,6 +388,7 @@ const AdminViewC = () => {
   useEffect(() => {
     if (activeTab === 'catalog') fetchServices();
     if (activeTab === 'membresias') fetchPromotions();
+    if (activeTab === 'promociones') fetchPromotions();
   }, [activeTab]);
 
   useEffect(() => {
