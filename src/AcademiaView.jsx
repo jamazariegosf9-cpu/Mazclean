@@ -487,7 +487,7 @@ export default function AcademiaView({ onBack }) {
                   ¡Precio especial de lanzamiento!
                 </div>
                 <div style={{ color: '#ede9fe', fontSize: 13, lineHeight: 1.7, textAlign: 'center' }}>
-                  Activa tu membresía hoy por solo ${effectivePromo?.effective_price || membershipConfig?.operator_price} MXN este mes y empieza a generar ingresos de inmediato.
+                  Activa tu membresía hoy con precio especial de lanzamiento y empieza a generar ingresos de inmediato.
                 </div>
               </div>
             ) : (
@@ -497,7 +497,7 @@ export default function AcademiaView({ onBack }) {
                   ¡Un paso más para generar ingresos!
                 </div>
                 <div style={{ color: '#ede9fe', fontSize: 13, lineHeight: 1.7, textAlign: 'center' }}>
-                  Activa tu membresía por solo ${membershipConfig?.operator_price || 200} MXN/mes y empieza a recibir servicios desde hoy. Con dos servicios ya comienzas a tener ganancias.
+                  Activa tu membresía y empieza a recibir servicios desde hoy. Con dos servicios ya comienzas a tener ganancias.
                 </div>
               </div>
             )}
