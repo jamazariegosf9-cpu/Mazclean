@@ -995,7 +995,7 @@ export default function OnboardingView({ onComplete }) {
 
                   <p><strong>III. MEMBRESÍA.</strong> Para acceder a la plataforma, el Operador pagará una <strong>membresía mensual de ${membershipConfig?.operator_price || 200} MXN</strong>, renovable automáticamente. Este monto podrá modificarse con al menos 30 días de anticipación. La membresía no garantiza un número mínimo de servicios.</p>
 
-                  <p><strong>IV. COMISIONES FUTURAS.</strong> Actualmente MAZ CLEAN no cobra comisión por servicio. La Plataforma se reserva el derecho de implementar un esquema de comisión en el futuro, notificando al Operador con mínimo 30 días de anticipación. El Operador podrá aceptar o cancelar sin penalización.</p>
+                  <p><strong>IV. COMISIONES POR SERVICIO.</strong> MAZ CLEAN aplica una comisión sobre el precio total de cada servicio finalizado, conforme al nivel de calificación del Operador: <strong>Operador (0–3.9 ⭐) 5% · Pro (4.0–4.4 ⭐) 4% · Pro+ (4.5–4.7 ⭐) 3% · Elite (4.8–5.0 ⭐) 2%</strong>. Dicha comisión se acumula durante el ciclo de 30 días del Operador y se suma a la membresía en la fecha de renovación. MAZ CLEAN podrá modificar estos porcentajes notificando al Operador con mínimo <strong>30 días naturales de anticipación</strong>. El nivel de calificación se calcula sobre los últimos 30 servicios calificados y se actualiza automáticamente.</p>
 
                   <p><strong>V. PRECIOS.</strong> Los precios de cada servicio son establecidos exclusivamente por MAZ CLEAN. El Operador se compromete a respetar los precios publicados en la App.</p>
 
