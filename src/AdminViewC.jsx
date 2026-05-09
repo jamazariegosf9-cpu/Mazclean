@@ -98,6 +98,12 @@ const MembresiaConfig = ({ isMobile }) => {
         client_promo_label:      form.client_promo_active ? (form.client_promo_label || null)                : null,
         // General
         guarantee_services:      parseInt(form.guarantee_services)      || 5,
+        // Comisiones por nivel
+        commission_enabled:      form.commission_enabled ?? true,
+        commission_pct_base:     parseFloat(form.commission_pct_base)    || 5,
+        commission_pct_pro:      parseFloat(form.commission_pct_pro)     || 4,
+        commission_pct_proplus:  parseFloat(form.commission_pct_proplus) || 3,
+        commission_pct_elite:    parseFloat(form.commission_pct_elite)   || 2,
         updated_at:              new Date().toISOString(),
       };
       const res = await fetch(`${supabaseUrl}/rest/v1/membership_config?id=eq.${config.id}`, {
@@ -252,6 +258,79 @@ const MembresiaConfig = ({ isMobile }) => {
             <div style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed', marginBottom: 4 }}>Beneficios Premium</div>
             <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.6 }}>⭐ Prioridad en asignación · 📅 Horarios reservados · 🎯 Operador preferente · ❌ Cancelación flexible</div>
           </div>
+        </div>
+      </div>
+
+      {/* ── COMISIONES POR NIVEL ── */}
+      <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+        <div style={{ background: 'linear-gradient(135deg,#065f46,#059669)', padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h2 style={{ color: '#fff', fontWeight: 700, fontSize: 15, margin: 0 }}>💰 Comisión por servicio</h2>
+            <p style={{ color: '#d1fae5', fontSize: 12, margin: '2px 0 0' }}>% sobre total_price · se suma a la membresía al renovar</p>
+          </div>
+          <button onClick={() => setForm(p => ({ ...p, commission_enabled: !p.commission_enabled }))}
+            style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: form.commission_enabled ? '#10b981' : 'rgba(255,255,255,0.2)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 36 }}>
+            {form.commission_enabled ? '✅ Activa' : '○ Inactiva'}
+          </button>
+        </div>
+        <div style={{ padding: isMobile ? '14px' : '18px 22px', display: 'grid', gap: 14 }}>
+          <div style={{ background: '#f0fdf4', borderRadius: 10, padding: '10px 14px', border: '1px solid #bbf7d0', fontSize: 12, color: '#065f46' }}>
+            📋 El operador ve el desglose en su panel: ingresos del ciclo, comisión según su nivel y total a depositar en su fecha de renovación.
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5 }}>% de comisión por nivel</div>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr 1fr 1fr', gap: 12 }}>
+            {[
+              { key: 'commission_pct_base',    label: 'Operador', range: '0–3.9 ⭐', dot: '#9ca3af', border: '#e5e7eb', bg: '#f9fafb', tc: '#374151' },
+              { key: 'commission_pct_pro',     label: 'Pro',      range: '4.0–4.4 ⭐', dot: '#60a5fa', border: '#bfdbfe', bg: '#eff6ff', tc: '#1e40af' },
+              { key: 'commission_pct_proplus', label: 'Pro+',     range: '4.5–4.7 ⭐', dot: '#a78bfa', border: '#ddd6fe', bg: '#f5f3ff', tc: '#5b21b6' },
+              { key: 'commission_pct_elite',   label: 'Elite',    range: '4.8–5.0 ⭐', dot: '#fbbf24', border: '#fde68a', bg: '#fffbeb', tc: '#92400e' },
+            ].map(({ key, label, range, dot, border, bg, tc }) => (
+              <div key={key} style={{ background: bg, borderRadius: 10, padding: '12px 14px', border: `1.5px solid ${border}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: dot, flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, fontWeight: 700, color: tc }}>{label}</span>
+                </div>
+                <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 8 }}>{range}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input type="number" min="0" max="100" step="0.5"
+                    value={form[key] ?? 5}
+                    onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
+                    style={{ width: '60px', padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${border}`, fontSize: 15, fontWeight: 700, color: tc, textAlign: 'center', fontFamily: 'inherit' }} />
+                  <span style={{ fontSize: 13, color: '#6b7280' }}>%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          {form.commission_enabled && (
+            <div style={{ background: '#f8fafc', borderRadius: 10, padding: '14px 16px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Vista previa · ejemplo 30 servicios de $199</div>
+              {[
+                { nivel: 'Operador', key: 'commission_pct_base',    dot: '#9ca3af', disc: 0 },
+                { nivel: 'Pro',      key: 'commission_pct_pro',      dot: '#60a5fa', disc: 0.10 },
+                { nivel: 'Pro+',     key: 'commission_pct_proplus',  dot: '#a78bfa', disc: 0.20 },
+                { nivel: 'Elite',    key: 'commission_pct_elite',    dot: '#fbbf24', disc: 0.35 },
+              ].map(({ nivel, key, dot, disc }) => {
+                const pct     = parseFloat(form[key]) || 0;
+                const ingreso = 30 * 199;
+                const com     = Math.round(ingreso * pct / 100);
+                const mem     = Math.round((parseFloat(form.operator_price) || 200) * (1 - disc));
+                return (
+                  <div key={nivel} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid #f1f5f9' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: dot }} />
+                      <span style={{ fontSize: 13, color: '#374151', fontWeight: 600 }}>{nivel}</span>
+                      <span style={{ fontSize: 11, color: '#9ca3af' }}>{pct}%</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 14, fontSize: 12, color: '#6b7280' }}>
+                      <span>Com. <strong style={{ color: '#dc2626' }}>${com}</strong></span>
+                      <span>Mem. <strong>${mem}</strong></span>
+                      <span>Total <strong style={{ color: '#1e40af' }}>${com + mem}</strong></span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 

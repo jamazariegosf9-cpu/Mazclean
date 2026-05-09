@@ -451,6 +451,9 @@ const OperatorView = () => {
   const [infografias, setInfografias]               = useState([]);
   const [loadingInfografias, setLoadingInfografias] = useState(false);
   const [selectedInfografia, setSelectedInfografia] = useState(null); // índice 0-3
+  // Comisiones del ciclo
+  const [commissionData, setCommissionData]         = useState(null);
+  const [loadingCommission, setLoadingCommission]   = useState(false);
   const [membershipConfig, setMembershipConfig]           = useState(null);
   const [payingMembership, setPayingMembership]           = useState(false);
   const [payError, setPayError]                           = useState('');
@@ -531,6 +534,7 @@ const OperatorView = () => {
     fetchBookingRequests();
     fetchMembershipConfig();
     fetchEffectivePromo();
+    fetchCommissionData();
 
     // ── Detectar regreso desde Stripe con pago exitoso ────────────────────
     const params = new URLSearchParams(window.location.search);
@@ -757,6 +761,81 @@ const OperatorView = () => {
       }
     } catch (err) { console.error('fetchInfografias:', err) }
     finally { setLoadingInfografias(false) }
+  }
+
+  const fetchCommissionData = async () => {
+    if (!user?.id) return
+    setLoadingCommission(true)
+    try {
+      let token = SUPABASE_ANON_KEY
+      try {
+        const stored = localStorage.getItem('mazclean-auth')
+        if (stored) { const p = JSON.parse(stored); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY }
+      } catch {}
+      const headers = { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY }
+
+      // 1. Traer config de comisiones
+      const cfgRes = await fetch(`${SUPABASE_URL}/rest/v1/membership_config?select=commission_enabled,commission_pct_base,commission_pct_pro,commission_pct_proplus,commission_pct_elite,operator_price&limit=1`, { headers })
+      const cfgData = cfgRes.ok ? await cfgRes.json() : []
+      const cfg = cfgData[0] || {}
+      if (!cfg.commission_enabled) { setCommissionData(null); setLoadingCommission(false); return }
+
+      // 2. Perfil: membership_start_at, membership_end_at, operator_level, avg_rating
+      const profRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}&select=membership_start_at,membership_end_at,operator_level,membership_status`, { headers })
+      const profData = profRes.ok ? await profRes.json() : []
+      const prof = profData[0] || {}
+
+      // 3. Calcular inicio del ciclo (Solución B: si pagó antes del vencimiento, ciclo empieza en fecha original)
+      let cycleStart = prof.membership_start_at ? new Date(prof.membership_start_at) : new Date()
+      let cycleEnd   = prof.membership_end_at   ? new Date(prof.membership_end_at)   : new Date()
+      // Si pagó antes del vencimiento anterior, el ciclo empieza en membership_end_at - 30 días
+      const prevEnd = new Date(cycleEnd)
+      prevEnd.setDate(prevEnd.getDate() - 30)
+      if (cycleStart < prevEnd) cycleStart = prevEnd
+
+      // 4. Traer bookings finalizados en el ciclo actual
+      const dateFrom = cycleStart.toISOString().slice(0, 10)
+      const bkRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/bookings?operator_id=eq.${user.id}&status=eq.finalizado&scheduled_date=gte.${dateFrom}&select=total_price,scheduled_date`,
+        { headers }
+      )
+      const bookings = bkRes.ok ? await bkRes.json() : []
+
+      // 5. Calcular ingresos y comisión según nivel
+      const level = prof.operator_level || 'operador'
+      const pctMap = {
+        operador: parseFloat(cfg.commission_pct_base)    || 5,
+        pro:      parseFloat(cfg.commission_pct_pro)     || 4,
+        proplus:  parseFloat(cfg.commission_pct_proplus) || 3,
+        elite:    parseFloat(cfg.commission_pct_elite)   || 2,
+      }
+      const pct         = pctMap[level]
+      const totalIncome = bookings.reduce((acc, b) => acc + parseFloat(b.total_price || 0), 0)
+      const commission  = Math.round(totalIncome * pct / 100)
+
+      // 6. Membresía con descuento por nivel
+      const discMap = { operador: 0, pro: 0.10, proplus: 0.20, elite: 0.35 }
+      const basePrice  = parseFloat(cfg.operator_price) || 200
+      const membership = Math.round(basePrice * (1 - (discMap[level] || 0)))
+      const totalDue   = commission + membership
+
+      // 7. Tabla de niveles con %s configurados
+      const levelsTable = [
+        { key: 'operador', label: 'Operador', range: '0–3.9',  pct: parseFloat(cfg.commission_pct_base)    || 5,  dot: '#9ca3af' },
+        { key: 'pro',      label: 'Pro',      range: '4.0–4.4', pct: parseFloat(cfg.commission_pct_pro)     || 4,  dot: '#60a5fa' },
+        { key: 'proplus',  label: 'Pro+',     range: '4.5–4.7', pct: parseFloat(cfg.commission_pct_proplus) || 3,  dot: '#a78bfa' },
+        { key: 'elite',    label: 'Elite',    range: '4.8–5.0', pct: parseFloat(cfg.commission_pct_elite)   || 2,  dot: '#fbbf24' },
+      ]
+
+      setCommissionData({
+        level, pct, totalIncome: Math.round(totalIncome),
+        commission, membership, totalDue,
+        serviceCount: bookings.length,
+        cycleEnd: prof.membership_end_at,
+        levelsTable,
+      })
+    } catch (err) { console.error('fetchCommissionData:', err) }
+    finally { setLoadingCommission(false) }
   }
 
   const fetchMembershipConfig = async () => {
@@ -1656,6 +1735,111 @@ const OperatorView = () => {
           <div style={{ background: '#fef9c3', border: '1.5px solid #fde68a', borderRadius: 12, padding: '14px 16px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
             <span style={{ fontSize: 13, color: '#854d0e', fontWeight: 600 }}>{fetchError}</span>
             <button onClick={() => fetchOperatorBookings()} style={{ padding: '8px 16px', background: '#f97316', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Reintentar</button>
+          </div>
+        )}
+
+        {/* ── TARJETA MI CUENTA DEL MES ── */}
+        {commissionData && !loadingCommission && (
+          <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', border: '1.5px solid #e5e7eb', marginBottom: 4 }}>
+            {/* Header */}
+            <div style={{ background: '#1e3a8a', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>💰 Mi cuenta del mes</div>
+                {commissionData.cycleEnd && (
+                  <div style={{ color: '#93c5fd', fontSize: 11, marginTop: 2 }}>
+                    Cierra el {new Date(commissionData.cycleEnd).toLocaleDateString('es-MX', { day: 'numeric', month: 'long' })}
+                  </div>
+                )}
+              </div>
+              {/* Badge de nivel */}
+              {(() => {
+                const levelStyles = {
+                  elite:    { bg: 'rgba(251,191,36,0.2)',  color: '#fbbf24', border: 'rgba(251,191,36,0.4)',  label: '⭐ Elite' },
+                  proplus:  { bg: 'rgba(167,139,250,0.2)', color: '#a78bfa', border: 'rgba(167,139,250,0.4)', label: '🟣 Pro+' },
+                  pro:      { bg: 'rgba(96,165,250,0.2)',  color: '#60a5fa', border: 'rgba(96,165,250,0.4)',  label: '🔵 Pro' },
+                  operador: { bg: 'rgba(156,163,175,0.2)', color: '#9ca3af', border: 'rgba(156,163,175,0.4)', label: '⚪ Operador' },
+                }
+                const s = levelStyles[commissionData.level] || levelStyles.operador
+                return (
+                  <div style={{ background: s.bg, color: s.color, border: `1px solid ${s.border}`, borderRadius: 99, padding: '4px 10px', fontSize: 12, fontWeight: 700 }}>
+                    {s.label}
+                  </div>
+                )
+              })()}
+            </div>
+            {/* Cuerpo */}
+            <div style={{ padding: '14px 16px' }}>
+              {/* Fila ingresos */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderBottom: '0.5px solid #f3f4f6' }}>
+                <div style={{ fontSize: 13, color: '#6b7280' }}>
+                  Ingresos acumulados
+                  <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 6 }}>({commissionData.serviceCount} servicios)</span>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#1f2937' }}>${commissionData.totalIncome.toLocaleString('es-MX')} MXN</div>
+              </div>
+              {/* Fila comisión */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderBottom: '0.5px solid #f3f4f6' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#6b7280' }}>Comisión MAZ CLEAN</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>{commissionData.pct}% · tarifa nivel {commissionData.level}</div>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>−${commissionData.commission.toLocaleString('es-MX')} MXN</div>
+              </div>
+              {/* Fila membresía */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderBottom: '0.5px solid #f3f4f6' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#6b7280' }}>Membresía mensual</div>
+                  {commissionData.level !== 'operador' && (
+                    <div style={{ fontSize: 11, color: '#059669', marginTop: 1 }}>
+                      {commissionData.level === 'pro' ? '10' : commissionData.level === 'proplus' ? '20' : '35'}% de descuento por tu nivel
+                    </div>
+                  )}
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>−${commissionData.membership.toLocaleString('es-MX')} MXN</div>
+              </div>
+              {/* Total */}
+              <div style={{ background: '#1e3a8a', borderRadius: 10, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>Total a depositar</div>
+                  {commissionData.cycleEnd && (
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 1 }}>
+                      {new Date(commissionData.cycleEnd).toLocaleDateString('es-MX', { day: 'numeric', month: 'long' })}
+                    </div>
+                  )}
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#fff' }}>${commissionData.totalDue.toLocaleString('es-MX')} MXN</div>
+              </div>
+              {/* Tabla de niveles colapsable */}
+              <div style={{ marginTop: 12, background: '#f8fafc', borderRadius: 10, padding: '10px 12px', border: '0.5px solid #e5e7eb' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Comisión según nivel</div>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, textAlign: 'left', padding: '3px 6px', borderBottom: '0.5px solid #e5e7eb' }}>Nivel</th>
+                      <th style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, textAlign: 'left', padding: '3px 6px', borderBottom: '0.5px solid #e5e7eb' }}>Calificación</th>
+                      <th style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, textAlign: 'right', padding: '3px 6px', borderBottom: '0.5px solid #e5e7eb' }}>Comisión</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {commissionData.levelsTable.map(row => {
+                      const isActive = row.key === commissionData.level
+                      return (
+                        <tr key={row.key} style={{ background: isActive ? '#eff6ff' : 'transparent' }}>
+                          <td style={{ padding: '6px 6px', fontSize: 12, color: isActive ? '#1e40af' : '#374151', fontWeight: isActive ? 700 : 400, borderBottom: '0.5px solid #f3f4f6' }}>
+                            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: row.dot, marginRight: 6 }} />
+                            {row.label}
+                          </td>
+                          <td style={{ padding: '6px 6px', fontSize: 12, color: '#9ca3af', borderBottom: '0.5px solid #f3f4f6' }}>{row.range} ⭐</td>
+                          <td style={{ padding: '6px 6px', fontSize: 12, textAlign: 'right', fontWeight: isActive ? 700 : 400, color: isActive ? '#059669' : '#6b7280', borderBottom: '0.5px solid #f3f4f6' }}>
+                            {row.pct}%{isActive ? ' ← tú' : ''}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
