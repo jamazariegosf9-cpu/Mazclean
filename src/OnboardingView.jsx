@@ -283,6 +283,8 @@ export default function OnboardingView({ onComplete }) {
   const [baseLat, setBaseLat]           = useState(profile?.base_lat || null)
   const [baseLng, setBaseLng]           = useState(profile?.base_lng || null)
   const [geoLoading, setGeoLoading]     = useState(false)
+  const [geocodeLoading, setGeocodeLoading] = useState(false)
+  const [geocodeError, setGeocodeError]     = useState('')
   const [geoError, setGeoError]         = useState('')
   const [mapUrl, setMapUrl]             = useState(null)
   const [radius, setRadius]             = useState(profile?.coverage_radius || 5)
@@ -466,6 +468,34 @@ export default function OnboardingView({ onComplete }) {
       },
       { enableHighAccuracy: true, timeout: 15000 }
     )
+  }
+
+  // Geocodificar dirección escrita manualmente
+  const handleGeocodeAddress = async () => {
+    if (!baseAddress.trim()) { setGeocodeError('Escribe una dirección primero.'); return }
+    setGeocodeLoading(true); setGeocodeError(''); setBaseLat(null); setBaseLng(null); setMapUrl(null)
+    try {
+      const query = encodeURIComponent(baseAddress.trim() + ', México')
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&accept-language=es`,
+        { headers: { 'Accept-Language': 'es' } }
+      )
+      const data = await res.json()
+      if (!data || data.length === 0) {
+        setGeocodeError('No se encontró la dirección. Intenta ser más específico o usa "Usar mi ubicación actual".')
+        return
+      }
+      const lat = parseFloat(data[0].lat)
+      const lng = parseFloat(data[0].lon)
+      setBaseLat(lat); setBaseLng(lng)
+      // Actualizar la dirección con el resultado normalizado
+      setBaseAddress(data[0].display_name || baseAddress)
+      setGeocodeError('')
+    } catch {
+      setGeocodeError('Error al buscar la dirección. Verifica tu conexión.')
+    } finally {
+      setGeocodeLoading(false)
+    }
   }
 
   const toggleDay = (d) => setSelectedDays(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d])
@@ -792,12 +822,31 @@ export default function OnboardingView({ onComplete }) {
                   <textarea style={{ ...inp, height: 80, resize: 'vertical', fontSize: 14 }}
                     placeholder="Ej: Colonia Roma Norte, Cuauhtémoc, CDMX"
                     value={baseAddress}
-                    onChange={e => { setBaseAddress(e.target.value); setBaseLat(null); setBaseLng(null); setMapUrl(null) }} />
+                    onChange={e => { setBaseAddress(e.target.value); setBaseLat(null); setBaseLng(null); setMapUrl(null); setGeocodeError('') }} />
+
+                  {/* Botón buscar dirección escrita */}
+                  <button onClick={handleGeocodeAddress} disabled={geocodeLoading || !baseAddress.trim()}
+                    style={{ marginTop: 8, width: '100%', padding: '12px 0', background: geocodeLoading ? '#f3f4f6' : !baseAddress.trim() ? '#f3f4f6' : '#3b82f6', border: 'none', borderRadius: 10, color: geocodeLoading || !baseAddress.trim() ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 600, cursor: geocodeLoading || !baseAddress.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 48 }}>
+                    {geocodeLoading
+                      ? <><div style={{ width: 16, height: 16, border: '2px solid #bfdbfe', borderTop: '2px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />Buscando dirección...</>
+                      : <>🔍 Confirmar dirección en el mapa</>}
+                  </button>
+                  {geocodeError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginTop: 8, color: '#dc2626', fontSize: 13 }}>⚠️ {geocodeError}</div>}
+
+                  {/* Separador */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0' }}>
+                    <div style={{ flex: 1, height: 1, background: '#e5e7eb' }} />
+                    <span style={{ fontSize: 12, color: '#9ca3af' }}>o</span>
+                    <div style={{ flex: 1, height: 1, background: '#e5e7eb' }} />
+                  </div>
+
+                  {/* Botón GPS */}
                   <button onClick={handleGeolocate} disabled={geoLoading}
-                    style={{ marginTop: 10, width: '100%', padding: '12px 0', background: geoLoading ? '#f3f4f6' : '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 10, color: geoLoading ? '#9ca3af' : '#1e40af', fontSize: 14, fontWeight: 600, cursor: geoLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 48 }}>
+                    style={{ width: '100%', padding: '12px 0', background: geoLoading ? '#f3f4f6' : '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 10, color: geoLoading ? '#9ca3af' : '#1e40af', fontSize: 14, fontWeight: 600, cursor: geoLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 48 }}>
                     {geoLoading ? <><div style={{ width: 16, height: 16, border: '2px solid #bfdbfe', borderTop: '2px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} /> Obteniendo ubicación...</> : <>📡 Usar mi ubicación actual</>}
                   </button>
                   {geoError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginTop: 8, color: '#dc2626', fontSize: 13 }}>⚠️ {geoError}</div>}
+
                   {baseLat && baseLng && (
                     <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 12px', marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span>✅</span><span style={{ fontSize: 12, color: '#166534' }}>Ubicación registrada: {Number(baseLat).toFixed(4)}, {Number(baseLng).toFixed(4)}</span>
@@ -805,7 +854,11 @@ export default function OnboardingView({ onComplete }) {
                   )}
                 </div>
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
-                <NavButtons onBack={() => goStepSafe(2)} onNext={() => { if (!baseAddress.trim()) { setError('Ingresa tu dirección.'); return } nextSub() }} />
+                <NavButtons onBack={() => goStepSafe(2)} onNext={() => {
+                    if (!baseAddress.trim()) { setError('Ingresa tu dirección.'); return }
+                    if (!baseLat || !baseLng) { setError('Confirma tu dirección en el mapa antes de continuar.'); return }
+                    nextSub()
+                  }} />
               </>
             )}
             {subStep === 2 && (
