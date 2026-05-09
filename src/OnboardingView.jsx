@@ -914,7 +914,12 @@ export default function OnboardingView({ onComplete }) {
             {subStep === 4 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🗓️ Días y horario</h2>
-                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 20px' }}>¿Cuándo estás disponible para atender servicios?</p>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 10px' }}>¿Cuándo estás disponible para atender servicios?</p>
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+                  <p style={{ fontSize: 12, color: '#065f46', margin: 0, lineHeight: 1.6 }}>
+                    💡 <strong>No te preocupes si cambia tu disponibilidad.</strong> Podrás modificar tus días, horario y agregar excepciones temporales (vacaciones, pausas) en cualquier momento desde tu panel, en el tab <strong>Mis Horarios</strong>.
+                  </p>
+                </div>
                 <div style={{ marginBottom: 20 }}>
                   <label style={lbl}>Días disponibles *</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
