@@ -965,7 +965,19 @@ const AdminViewB = ({
                         <div style={{ fontSize: 12, color: '#6b7280' }}>{op.phone || '—'}</div>
                         {op.base_address && <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📍 {op.base_address}</div>}
                         {op.coverage_radius && <div style={{ fontSize: 11, color: '#9ca3af' }}>Radio: {op.coverage_radius} km</div>}
-                        <div style={{ marginTop: 4 }}><StarRating rating={op.rating_avg} /></div>
+                        <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <StarRating rating={op.rating_avg} />
+                          {op.operator_level && (
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
+                              background: op.operator_level === 'elite' ? '#fffbeb' : op.operator_level === 'proplus' ? '#f5f3ff' : op.operator_level === 'pro' ? '#eff6ff' : '#f3f4f6',
+                              color: op.operator_level === 'elite' ? '#92400e' : op.operator_level === 'proplus' ? '#5b21b6' : op.operator_level === 'pro' ? '#1e40af' : '#374151' }}>
+                              {op.operator_level === 'elite' ? '⭐ Elite' : op.operator_level === 'proplus' ? '🟣 Pro+' : op.operator_level === 'pro' ? '🔵 Pro' : '⚪ Operador'}
+                            </span>
+                          )}
+                        </div>
+                        {op.total_ratings > 0 && (
+                          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{op.total_ratings} calificaciones · últimas 30</div>
+                        )}
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                         <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 20, background: opStatusCfg.bg, color: opStatusCfg.color, border: `1px solid ${opStatusCfg.border}`, fontWeight: 700 }}>{opStatusCfg.icon} {opStatusCfg.label}</span>
@@ -978,7 +990,18 @@ const AdminViewB = ({
                     <div style={{ background: '#fff', borderRadius: 8, padding: '8px 12px', border: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between' }}>
                       <div><div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase' }}>Comisión ({op.commission_pct || 15}%)</div><div style={{ fontSize: 13, fontWeight: 700, color: '#059669' }}>${commission.toFixed(2)}</div></div>
                       <div style={{ textAlign: 'center' }}><div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase' }}>Servicios</div><div style={{ fontSize: 13, fontWeight: 700, color: '#1f2937' }}>{opBookings.length}</div></div>
-                      <div style={{ textAlign: 'right' }}><div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase' }}>Rating</div><div style={{ fontSize: 13, fontWeight: 700, color: op.rating_avg >= 4 ? '#10b981' : op.rating_avg ? '#f59e0b' : '#9ca3af' }}>{op.rating_avg ? `${Number(op.rating_avg).toFixed(1)} ⭐` : '—'}</div></div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', marginBottom: 2 }}>Rating</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: op.rating_avg >= 4.8 ? '#f59e0b' : op.rating_avg >= 4.0 ? '#10b981' : op.rating_avg ? '#f59e0b' : '#9ca3af' }}>
+                          {op.rating_avg ? `${Number(op.rating_avg).toFixed(1)} ⭐` : '—'}
+                        </div>
+                        {op.operator_level && op.operator_level !== 'operador' && (
+                          <div style={{ fontSize: 10, fontWeight: 700, marginTop: 2,
+                            color: op.operator_level === 'elite' ? '#92400e' : op.operator_level === 'proplus' ? '#5b21b6' : '#1e40af' }}>
+                            {op.operator_level === 'elite' ? '⭐ Elite' : op.operator_level === 'proplus' ? '🟣 Pro+' : '🔵 Pro'}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* ── MEMBRESÍA ── */}

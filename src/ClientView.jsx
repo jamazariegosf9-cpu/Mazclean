@@ -549,15 +549,21 @@ export default function ClientView() {
     if (!ratingValue) { showToast('Por favor selecciona una calificación.', 'warning'); return }
     setSavingRating(true)
     try {
-      const { error } = await supabase
-        .from('bookings')
-        .update({
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${ratingBooking.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${getToken()}`,
+          'apikey': SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({
           client_rating: ratingValue,
           client_review: ratingReview || null,
           rated_at:      new Date().toISOString(),
-        })
-        .eq('id', ratingBooking.id)
-      if (error) throw error
+        }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
       // Actualizar lista local
       setBookings(prev => prev.map(b =>
@@ -571,6 +577,7 @@ export default function ClientView() {
           : b
       )
 
+      showToast('¡Gracias por tu calificación! 🌟', 'success')
       setRatingModal(false)
       setRatingValue(0)
       setRatingReview('')

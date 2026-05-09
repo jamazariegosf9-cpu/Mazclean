@@ -454,6 +454,8 @@ const OperatorView = () => {
   // Comisiones del ciclo
   const [commissionData, setCommissionData]         = useState(null);
   const [loadingCommission, setLoadingCommission]   = useState(false);
+  // Dashboard de calificación
+  const [ratingData, setRatingData]                 = useState(null);
   const [membershipConfig, setMembershipConfig]           = useState(null);
   const [payingMembership, setPayingMembership]           = useState(false);
   const [payError, setPayError]                           = useState('');
@@ -535,6 +537,7 @@ const OperatorView = () => {
     fetchMembershipConfig();
     fetchEffectivePromo();
     fetchCommissionData();
+    fetchRatingData();
 
     // ── Detectar regreso desde Stripe con pago exitoso ────────────────────
     const params = new URLSearchParams(window.location.search);
@@ -836,6 +839,45 @@ const OperatorView = () => {
       })
     } catch (err) { console.error('fetchCommissionData:', err) }
     finally { setLoadingCommission(false) }
+  }
+
+  const fetchRatingData = async () => {
+    if (!user?.id) return
+    try {
+      let token = SUPABASE_ANON_KEY
+      try {
+        const stored = localStorage.getItem('mazclean-auth')
+        if (stored) { const p = JSON.parse(stored); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY }
+      } catch {}
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}&select=rating_avg,total_ratings,operator_level`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (!res.ok) return
+      const data = await res.json()
+      const p = data[0] || {}
+      const avg   = parseFloat(p.rating_avg) || 0
+      const total = parseInt(p.total_ratings) || 0
+      const level = p.operator_level || 'operador'
+      // Calcular siguiente nivel y progreso
+      const levels = [
+        { key: 'operador', label: 'Operador', min: 0,   max: 3.9,  next: 'Pro',    nextMin: 4.0, dot: '#9ca3af' },
+        { key: 'pro',      label: 'Pro',      min: 4.0,  max: 4.4,  next: 'Pro+',   nextMin: 4.5, dot: '#60a5fa' },
+        { key: 'proplus',  label: 'Pro+',     min: 4.5,  max: 4.7,  next: 'Elite',  nextMin: 4.8, dot: '#a78bfa' },
+        { key: 'elite',    label: 'Elite',    min: 4.8,  max: 5.0,  next: null,     nextMin: null, dot: '#fbbf24' },
+      ]
+      const currentLevel = levels.find(l => l.key === level) || levels[0]
+      let progress = 0
+      let puntosParaSubir = null
+      if (currentLevel.next && avg > 0) {
+        const range = currentLevel.max - currentLevel.min
+        progress = Math.min(100, Math.round(((avg - currentLevel.min) / range) * 100))
+        puntosParaSubir = Math.max(0, (currentLevel.nextMin - avg).toFixed(2))
+      } else if (level === 'elite') {
+        progress = 100
+      }
+      setRatingData({ avg, total, level, currentLevel, progress, puntosParaSubir })
+    } catch (err) { console.error('fetchRatingData:', err) }
   }
 
   const fetchMembershipConfig = async () => {
@@ -1838,6 +1880,79 @@ const OperatorView = () => {
                     })}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── DASHBOARD CALIFICACIÓN ── */}
+        {ratingData && (
+          <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', border: '1.5px solid #e5e7eb', marginBottom: 4 }}>
+            {/* Header */}
+            <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f3f4f6' }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#1f2937' }}>⭐ Mi calificación</div>
+              {(() => {
+                const s = {
+                  elite:    { bg: 'rgba(251,191,36,0.12)',  color: '#92400e', label: '⭐ Elite' },
+                  proplus:  { bg: 'rgba(167,139,250,0.12)', color: '#5b21b6', label: '🟣 Pro+' },
+                  pro:      { bg: 'rgba(96,165,250,0.12)',  color: '#1e40af', label: '🔵 Pro' },
+                  operador: { bg: 'rgba(156,163,175,0.12)', color: '#374151', label: '⚪ Operador' },
+                }[ratingData.level] || { bg: '#f3f4f6', color: '#374151', label: '⚪ Operador' }
+                return <div style={{ background: s.bg, color: s.color, borderRadius: 99, padding: '4px 12px', fontSize: 12, fontWeight: 700 }}>{s.label}</div>
+              })()}
+            </div>
+            <div style={{ padding: '14px 16px' }}>
+              {/* Promedio grande */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 36, fontWeight: 700, color: ratingData.avg >= 4.8 ? '#f59e0b' : ratingData.avg >= 4.0 ? '#3b82f6' : '#9ca3af', lineHeight: 1 }}>
+                    {ratingData.avg > 0 ? ratingData.avg.toFixed(1) : '—'}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+                    {ratingData.total > 0 ? `${ratingData.total} calificaciones` : 'Sin calificaciones aún'}
+                  </div>
+                </div>
+                <div style={{ flex: 1 }}>
+                  {/* Estrellas visuales */}
+                  <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+                    {[1,2,3,4,5].map(i => (
+                      <div key={i} style={{ flex: 1, height: 8, borderRadius: 4,
+                        background: ratingData.avg >= i ? (ratingData.avg >= 4.8 ? '#f59e0b' : '#3b82f6') : '#e5e7eb' }} />
+                    ))}
+                  </div>
+                  {/* Barra progreso hacia siguiente nivel */}
+                  {ratingData.currentLevel.next && (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>
+                        <span>{ratingData.currentLevel.label}</span>
+                        <span>{ratingData.currentLevel.next}</span>
+                      </div>
+                      <div style={{ background: '#f3f4f6', borderRadius: 99, height: 6, overflow: 'hidden' }}>
+                        <div style={{ width: `${ratingData.progress}%`, height: '100%', borderRadius: 99,
+                          background: ratingData.level === 'elite' ? '#f59e0b' : 'linear-gradient(90deg,#3b82f6,#a78bfa)', transition: 'width 0.6s ease' }} />
+                      </div>
+                      {ratingData.puntosParaSubir > 0 && ratingData.total > 0 && (
+                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4, textAlign: 'center' }}>
+                          Te faltan <strong style={{ color: '#1e40af' }}>{ratingData.puntosParaSubir} ⭐</strong> para llegar a {ratingData.currentLevel.next}
+                        </div>
+                      )}
+                      {ratingData.total === 0 && (
+                        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4, textAlign: 'center' }}>
+                          Completa servicios para comenzar a acumular calificaciones
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {ratingData.level === 'elite' && (
+                    <div style={{ fontSize: 12, color: '#f59e0b', fontWeight: 700, textAlign: 'center', marginTop: 4 }}>
+                      🏆 Nivel máximo — ¡sigue así!
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* Info de impacto en comisiones */}
+              <div style={{ background: '#f0fdf4', borderRadius: 10, padding: '8px 12px', border: '1px solid #bbf7d0', fontSize: 12, color: '#065f46' }}>
+                💡 Tu nivel determina tu comisión y descuento en membresía. Mantén tu calificación alta para pagar menos.
               </div>
             </div>
           </div>
