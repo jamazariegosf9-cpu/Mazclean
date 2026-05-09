@@ -14,6 +14,13 @@ import { useToast } from './App';
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// Convierte ruta relativa de Storage en URL pública completa
+const buildStorageUrl = (path) => {
+  if (!path) return null;
+  if (path.startsWith('http')) return path; // ya es URL completa
+  return `${SUPABASE_URL}/storage/v1/object/public/service-photos/${path}`;
+};
+
 const getMembershipBadge = (op) => {
   const status = op.membership_status || 'ninguna';
   if (status === 'activa') {
@@ -1321,14 +1328,14 @@ const AdminViewB = ({
                       {reviewingOp.ine_back_url ? (
                         <div style={{ borderRadius: 10, overflow: 'hidden', border: '1.5px solid #e5e7eb', background: '#f8fafc' }}>
                           <img
-                            src={reviewingOp.ine_back_url}
+                            src={buildStorageUrl(reviewingOp.ine_back_url)}
                             alt="INE reverso"
                             style={{ width: '100%', display: 'block', objectFit: 'contain', maxHeight: 200 }}
-                            onClick={() => window.open(reviewingOp.ine_back_url, '_blank')}
+                            onClick={() => window.open(buildStorageUrl(reviewingOp.ine_back_url), '_blank')}
                             onError={e => { e.target.parentElement.innerHTML = '<div style="padding:24px;text-align:center;color:#9ca3af;font-size:12px">⚠️ No se pudo cargar</div>' }}
                           />
                           <div style={{ padding: '6px 10px', background: '#f1f5f9', fontSize: 11, color: '#64748b', textAlign: 'center', cursor: 'pointer' }}
-                            onClick={() => window.open(reviewingOp.ine_back_url, '_blank')}>
+                            onClick={() => window.open(buildStorageUrl(reviewingOp.ine_back_url), '_blank')}>
                             🔍 Ver completo
                           </div>
                         </div>
@@ -1348,14 +1355,14 @@ const AdminViewB = ({
                       {reviewingOp.signature_url ? (
                         <div style={{ borderRadius: 10, overflow: 'hidden', border: '1.5px solid #e5e7eb', background: '#fff' }}>
                           <img
-                            src={reviewingOp.signature_url}
+                            src={buildStorageUrl(reviewingOp.signature_url)}
                             alt="Firma digital"
                             style={{ width: '100%', display: 'block', objectFit: 'contain', maxHeight: 200, background: '#fff' }}
-                            onClick={() => window.open(reviewingOp.signature_url, '_blank')}
+                            onClick={() => window.open(buildStorageUrl(reviewingOp.signature_url), '_blank')}
                             onError={e => { e.target.parentElement.innerHTML = '<div style="padding:24px;text-align:center;color:#9ca3af;font-size:12px">⚠️ No se pudo cargar</div>' }}
                           />
                           <div style={{ padding: '6px 10px', background: '#f1f5f9', fontSize: 11, color: '#64748b', textAlign: 'center', cursor: 'pointer' }}
-                            onClick={() => window.open(reviewingOp.signature_url, '_blank')}>
+                            onClick={() => window.open(buildStorageUrl(reviewingOp.signature_url), '_blank')}>
                             🔍 Ver completo
                           </div>
                         </div>
