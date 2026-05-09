@@ -117,7 +117,10 @@ export default function BookingView({ onNavigate }) {
         )
         if (res.ok) {
           const data = await res.json()
-          setServices(data.map(normalizeService))
+          const normalized = data.map(normalizeService)
+          setServices(normalized)
+          // Si solo hay 1 servicio activo, seleccionarlo automáticamente
+          if (normalized.length === 1) setSelectedService(normalized[0].id)
         }
       } catch (err) {
         console.error('fetchServices:', err)
@@ -688,17 +691,23 @@ export default function BookingView({ onNavigate }) {
         {/* STEP 1 */}
         {step === 1 && (
           <div style={{ padding: isMobile ? '16px 12px' : 24 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Qué servicio necesitas?</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: isMobile ? 8 : 10 }}>
+            {/* Título solo si hay más de 1 servicio */}
+            {services.length !== 1 && (
+              <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Qué servicio necesitas?</h3>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: services.length === 1 ? '1fr' : 'repeat(2,1fr)', gap: isMobile ? 8 : 10 }}>
               {loadingServices ? (
                 <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 32, color: '#9ca3af' }}>Cargando servicios...</div>
               ) : services.map(s => {
                 const p = vehicleType ? s.prices[VEHICLE_TYPES.find(v=>v.id===vehicleType)?.priceKey] : s.prices.sedan
+                const isSingle = services.length === 1
                 return (
-                  <div key={s.id} onClick={() => setSelectedService(s.id)}
-                    style={{ padding: isMobile ? 10 : 12, borderRadius: 10, cursor: 'pointer', transition: 'all 0.2s', border: selectedService===s.id ? '2px solid #3b82f6' : '2px solid #e5e7eb', background: selectedService===s.id ? '#eff6ff' : '#fff', minHeight: 44 }}>
-                    <div style={{ fontSize: isMobile ? 20 : 22, marginBottom: 4 }}>{s.icon}</div>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: '#1f2937' }}>{s.name}</div>
+                  <div key={s.id} onClick={() => { if (!isSingle) setSelectedService(s.id) }}
+                    style={{ padding: isMobile ? 10 : 12, borderRadius: 10, cursor: isSingle ? 'default' : 'pointer', transition: 'all 0.2s', border: isSingle ? '2px solid #3b82f6' : selectedService===s.id ? '2px solid #3b82f6' : '2px solid #e5e7eb', background: isSingle ? '#eff6ff' : selectedService===s.id ? '#eff6ff' : '#fff', minHeight: 44 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: isMobile ? 20 : 22 }}>{s.icon}</span>
+                      <span style={{ fontWeight: 600, fontSize: 13, color: '#1f2937' }}>{s.name}</span>
+                    </div>
                     <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{s.description}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, alignItems: 'center' }}>
                       <span style={{ fontWeight: 700, color: '#3b82f6', fontSize: 14 }}>${p}</span>
