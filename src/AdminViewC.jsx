@@ -393,27 +393,53 @@ const AdminViewC = () => {
   const fetchServices = async () => {
     setLoadingServices(true);
     try {
-      const { data } = await supabase.from('services').select('*').order('sort_order', { ascending: true });
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
+      } catch {}
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/services?select=*&order=sort_order.asc`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY },
+      });
+      const data = res.ok ? await res.json() : [];
       setServices(data || []);
     } catch (err) { console.error('fetchServices:', err); }
     finally { setLoadingServices(false); }
   };
 
   const loadChecklist = async (serviceId) => {
-    const { data } = await supabase.from('service_checklist').select('*').eq('service_id', serviceId).order('sort_order', { ascending: true });
+    let token2 = SUPABASE_ANON_KEY;
+    try { const s = localStorage.getItem('mazclean-auth'); if (s) { const p = JSON.parse(s); token2 = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY; } } catch {}
+    const clRes = await fetch(`${SUPABASE_URL}/rest/v1/service_checklist?service_id=eq.${serviceId}&order=sort_order.asc&select=*`, {
+      headers: { 'Authorization': `Bearer ${token2}`, 'apikey': SUPABASE_ANON_KEY },
+    });
+    const data = clRes.ok ? await clRes.json() : [];
     setChecklistItems(data || []);
   };
 
   const addChecklistItem = async (serviceId) => {
     if (!newChecklistItem.trim()) return;
     setSavingChecklist(true);
-    const { data, error } = await supabase.from('service_checklist').insert({ service_id: serviceId, item: newChecklistItem.trim(), sort_order: checklistItems.length + 1 }).select().single();
+    let tokenCl = SUPABASE_ANON_KEY;
+    try { const s = localStorage.getItem('mazclean-auth'); if (s) { const p = JSON.parse(s); tokenCl = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY; } } catch {}
+    const insRes = await fetch(`${SUPABASE_URL}/rest/v1/service_checklist`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${tokenCl}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+      body: JSON.stringify({ service_id: serviceId, item: newChecklistItem.trim(), sort_order: checklistItems.length + 1 }),
+    });
+    const insData = insRes.ok ? await insRes.json() : [];
+    const data = insData[0] || null; const error = insRes.ok ? null : { message: `HTTP ${insRes.status}` };
     if (!error) { setChecklistItems(prev => [...prev, data]); setNewChecklistItem(''); }
     setSavingChecklist(false);
   };
 
   const deleteChecklistItem = async (itemId) => {
-    await supabase.from('service_checklist').delete().eq('id', itemId);
+    let tokenDel = SUPABASE_ANON_KEY;
+    try { const s = localStorage.getItem('mazclean-auth'); if (s) { const p = JSON.parse(s); tokenDel = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY; } } catch {}
+    await fetch(`${SUPABASE_URL}/rest/v1/service_checklist?id=eq.${itemId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${tokenDel}`, 'apikey': SUPABASE_ANON_KEY },
+    });
     setChecklistItems(prev => prev.filter(i => i.id !== itemId));
   };
 
@@ -452,11 +478,25 @@ const AdminViewC = () => {
         is_active: serviceForm.is_active, sort_order: parseInt(serviceForm.sort_order) || 99, updated_at: new Date().toISOString(),
       };
       if (editingService) {
-        const { error } = await supabase.from('services').update(payload).eq('id', editingService);
+        let tokenUpd = SUPABASE_ANON_KEY;
+        try { const s = localStorage.getItem('mazclean-auth'); if (s) { const p = JSON.parse(s); tokenUpd = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY; } } catch {}
+        const updRes = await fetch(`${SUPABASE_URL}/rest/v1/services?id=eq.${editingService}`, {
+          method: 'PATCH',
+          headers: { 'Authorization': `Bearer ${tokenUpd}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify(payload),
+        });
+        const error = updRes.ok ? null : { message: `HTTP ${updRes.status}` };
         if (error) throw error;
         setServiceSuccess('Servicio actualizado.');
       } else {
-        const { error } = await supabase.from('services').insert({ ...payload, created_at: new Date().toISOString() });
+        let tokenIns = SUPABASE_ANON_KEY;
+        try { const s = localStorage.getItem('mazclean-auth'); if (s) { const p = JSON.parse(s); tokenIns = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY; } } catch {}
+        const insServRes = await fetch(`${SUPABASE_URL}/rest/v1/services`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${tokenIns}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ ...payload, created_at: new Date().toISOString() }),
+        });
+        const error = insServRes.ok ? null : { message: `HTTP ${insServRes.status}` };
         if (error) throw error;
         setServiceSuccess('Servicio creado.');
       }
@@ -467,14 +507,27 @@ const AdminViewC = () => {
   };
 
   const toggleServiceStatus = async (service) => {
-    const { error } = await supabase.from('services').update({ is_active: !service.is_active, updated_at: new Date().toISOString() }).eq('id', service.id);
+    let tokenTog = SUPABASE_ANON_KEY;
+    try { const s = localStorage.getItem('mazclean-auth'); if (s) { const p = JSON.parse(s); tokenTog = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY; } } catch {}
+    const togRes = await fetch(`${SUPABASE_URL}/rest/v1/services?id=eq.${service.id}`, {
+      method: 'PATCH',
+      headers: { 'Authorization': `Bearer ${tokenTog}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ is_active: !service.is_active, updated_at: new Date().toISOString() }),
+    });
+    const error = togRes.ok ? null : { message: `HTTP ${togRes.status}` };
     if (error) { alert(error.message); return; }
     setServices(prev => prev.map(s => s.id === service.id ? { ...s, is_active: !s.is_active } : s));
   };
 
   const deleteService = async (serviceId) => {
     if (!confirm('¿Eliminar este servicio?')) return;
-    const { error } = await supabase.from('services').delete().eq('id', serviceId);
+    let tokenDelS = SUPABASE_ANON_KEY;
+    try { const s = localStorage.getItem('mazclean-auth'); if (s) { const p = JSON.parse(s); tokenDelS = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY; } } catch {}
+    const delSRes = await fetch(`${SUPABASE_URL}/rest/v1/services?id=eq.${serviceId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${tokenDelS}`, 'apikey': SUPABASE_ANON_KEY },
+    });
+    const error = delSRes.ok ? null : { message: `HTTP ${delSRes.status}` };
     if (error) { alert(error.message); return; }
     setServices(prev => prev.filter(s => s.id !== serviceId));
   };
