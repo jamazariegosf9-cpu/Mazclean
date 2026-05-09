@@ -247,7 +247,7 @@ function SignaturePad({ onSign, signed }) {
 
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function OnboardingView({ onComplete }) {
-  const { user, profile, updateProfile, loadProfile } = useAuth()
+  const { user, profile, updateProfile, loadProfile, loadProfileDirect } = useAuth()
   const isMobile = useIsMobile()
 
   const [step, setStep] = useState(() => {
@@ -394,8 +394,8 @@ export default function OnboardingView({ onComplete }) {
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
 
-      // Refrescar perfil en memoria para que la UI refleje los cambios
-      if (loadProfile) await loadProfile().catch(() => {})
+      // Refrescar perfil usando fetch directo — evita lock de supabase en móvil
+      try { await loadProfileDirect() } catch {}
 
       setStep(next); setSubStep(1)
     } catch (e) { setError(e.message) }
@@ -562,8 +562,8 @@ export default function OnboardingView({ onComplete }) {
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
 
-      // Refrescar perfil en memoria para que estado final muestre todo correcto
-      if (loadProfile) await loadProfile().catch(() => {})
+      // Refrescar perfil usando fetch directo — evita lock de supabase en móvil
+      try { await loadProfileDirect() } catch {}
 
       setStep(6); setSubStep(1)
     } catch (e) { setError(e.message) }

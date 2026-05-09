@@ -282,6 +282,29 @@ export function AuthProvider({ children }) {
     setAuthState(prev => ({ ...prev, profile: result.profile }))
   }
 
+  // refreshProfileDirect: usa fetch directo para evitar lock en móvil
+  const refreshProfileDirect = async () => {
+    if (!authState.user) return
+    try {
+      const SUPABASE_URL     = import.meta.env.VITE_SUPABASE_URL
+      const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const token = getTokenFromStorage() || SUPABASE_ANON_KEY
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${authState.user.id}&select=*`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (res.ok) {
+        const data = await res.json()
+        if (data?.[0]) {
+          console.log('[AuthContext] refreshProfileDirect OK')
+          setAuthState(prev => ({ ...prev, profile: data[0] }))
+        }
+      }
+    } catch (err) {
+      console.error('[AuthContext] refreshProfileDirect error:', err)
+    }
+  }
+
   const value = {
     user:          authState.user,
     profile:       authState.profile,
@@ -292,7 +315,8 @@ export function AuthProvider({ children }) {
     isAdmin:       authState.profile?.role === 'admin',
     signUp, signIn, signInWithGoogle, signInWithPhone,
     verifyOTP, resetPassword, signOut, updateProfile,
-    loadProfile: refreshProfile,
+    loadProfile:       refreshProfile,
+    loadProfileDirect: refreshProfileDirect,
   }
 
   return (
