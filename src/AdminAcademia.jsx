@@ -56,25 +56,22 @@ export default function AdminAcademia({ isMobile }) {
         fetch(`${SUPABASE_URL}/rest/v1/course_lessons?order=order_index.asc&select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/profiles?role=eq.operador&operator_status=eq.aprobado&select=id,full_name,is_certified,certification_date,phone,rating_avg`, { headers }),
       ])
-      // Pendientes = fotos enviadas para validar + operadores aprobados sin certificar
+      // Pendientes = operadores aprobados sin certificar
       if (certRes.ok) {
-        const certData = await certRes.json()
         const opData = opRes.ok ? await opRes.json() : []
-        // Operadores aprobados sin certificación y sin foto enviada pendiente
-        const certOpIds = certData.map(c => c.operator_id)
-        const pendingNoCert = opData
-          .filter(op => !op.is_certified && !certOpIds.includes(op.id))
+        const pendingOps = opData
+          .filter(op => !op.is_certified)
           .map(op => ({
             id: `pending-${op.id}`,
             operator_id: op.id,
-            certified_at: null,
+            certified_at: new Date().toISOString(),
             before_after_photo_url: null,
             is_active: true,
             validated_at: null,
             operator: { full_name: op.full_name, phone: op.phone, rating_avg: op.rating_avg },
-            pending_type: 'no_photo',
+            pending_type: 'academia',
           }))
-        setPendingCerts([...certData, ...pendingNoCert])
+        setPendingCerts(pendingOps)
         setOperators(opData)
       }
       if (modRes.ok)  setModules(await modRes.json())
@@ -120,7 +117,7 @@ export default function AdminAcademia({ isMobile }) {
         body: JSON.stringify({ validated_by: user.id, validated_at: new Date().toISOString(), is_active: false, notes: reason }),
       })
       if (cert.operator?.phone) {
-        const msg = `⚠️ *MAZ CLEAN* — Tu solicitud de Certificación Pro fue rechazada. Motivo: ${reason}. Puedes volver a intentarlo cuando tengas una foto de antes y después más clara. ¡Ánimo!`
+        const msg = `⚠️ *MAZ CLEAN* — Tu solicitud de Certificación Pro fue rechazada. Motivo: ${reason}. Entra a la App para más información. ¡Ánimo!`
         await sendWhatsApp({ to: cert.operator.phone, message: msg })
       }
       setPendingCerts(prev => prev.filter(c => c.id !== cert.id))
@@ -331,31 +328,24 @@ export default function AdminAcademia({ isMobile }) {
                       </div>
                     </div>
                     <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '3px 10px', color: '#fff', fontSize: 12, fontWeight: 700 }}>
-                      {cert.pending_type === 'no_photo' ? '⏳ Sin foto' : '⏳ Foto enviada'}
+                      {'⏳ Pendiente certificación'}
                     </span>
                   </div>
                   <div style={{ padding: '16px' }}>
-                    {cert.pending_type === 'no_photo' ? (
-                      <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
-                        <div style={{ fontSize: 13, color: '#92400e' }}>⏳ Operador aprobado pero aún no ha enviado su foto de antes y después para completar la certificación.</div>
+                    <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+                      <div style={{ fontSize: 13, color: '#065f46' }}>
+                        🎓 Operador aprobado — pendiente de certificación por el administrador. Verifica que haya completado la Academia antes de certificar.
                       </div>
-                    ) : cert.before_after_photo_url ? (
-                      <div style={{ marginBottom: 14 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 8 }}>📸 Foto Antes y Después:</div>
-                        <img src={cert.before_after_photo_url} alt="Antes y después" style={{ width: '100%', borderRadius: 10, maxHeight: 250, objectFit: 'cover', border: '1px solid #e5e7eb' }} />
-                      </div>
-                    ) : null}
+                    </div>
                     <div style={{ display: 'flex', gap: 10 }}>
                       <button onClick={() => approveCert(cert)} disabled={!!validating}
                         style={{ flex: 1, padding: '12px', background: validating === cert.id ? '#9ca3af' : '#059669', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 46 }}>
                         {validating === cert.id ? '⏳...' : '🏆 Aprobar y Certificar'}
                       </button>
-                      {cert.pending_type !== 'no_photo' && (
-                        <button onClick={() => rejectCert(cert)} disabled={!!validating}
-                          style={{ flex: 1, padding: '12px', background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 46 }}>
-                          ✕ Rechazar
-                        </button>
-                      )}
+                      <button onClick={() => rejectCert(cert)} disabled={!!validating}
+                        style={{ flex: 1, padding: '12px', background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 46 }}>
+                        ✕ Rechazar
+                      </button>
                     </div>
                   </div>
                 </div>
