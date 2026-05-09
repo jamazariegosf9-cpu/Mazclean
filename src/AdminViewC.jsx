@@ -547,13 +547,21 @@ const AdminViewC = () => {
     if (!serviceForm.name || !serviceForm.price_sedan) { setServiceError('Nombre y precio Sedán son requeridos.'); return; }
     setSavingService(true);
     try {
+      // duration_min y price_truck son NOT NULL en DB — usar duration_sedan y price_suv como fallback
+      const durationBase = parseInt(serviceForm.duration_sedan) || parseInt(serviceForm.duration_min) || 45;
       const payload = {
         name: serviceForm.name, description: serviceForm.description, icon: serviceForm.icon, color: serviceForm.color,
-        price_sedan: parseFloat(serviceForm.price_sedan) || null, price_suv: parseFloat(serviceForm.price_suv) || null,
-        price_truck: parseFloat(serviceForm.price_truck) || null, price_van: parseFloat(serviceForm.price_van) || null,
-        duration_min: parseInt(serviceForm.duration_min) || null, duration_sedan: parseInt(serviceForm.duration_sedan) || null,
-        duration_suv: parseInt(serviceForm.duration_suv) || null, duration_pickup: parseInt(serviceForm.duration_pickup) || null,
-        duration_van: parseInt(serviceForm.duration_van) || null, supplies_notes: serviceForm.supplies_notes || null,
+        price_sedan: parseFloat(serviceForm.price_sedan) || null,
+        price_suv:   parseFloat(serviceForm.price_suv)   || parseFloat(serviceForm.price_sedan) || null,
+        price_truck: parseFloat(serviceForm.price_truck) || parseFloat(serviceForm.price_suv) || parseFloat(serviceForm.price_sedan) || null,
+        price_van:   parseFloat(serviceForm.price_van)   || null,
+        duration_min:    durationBase,
+        duration_sedan:  parseInt(serviceForm.duration_sedan)  || durationBase,
+        duration_suv:    parseInt(serviceForm.duration_suv)    || durationBase,
+        duration_pickup: parseInt(serviceForm.duration_pickup) || durationBase,
+        duration_van:    parseInt(serviceForm.duration_van)    || durationBase,
+        duration_minutes: durationBase,
+        supplies_notes: serviceForm.supplies_notes || null,
         is_active: serviceForm.is_active, sort_order: parseInt(serviceForm.sort_order) || 99, updated_at: new Date().toISOString(),
       };
       if (editingService) {
