@@ -447,6 +447,9 @@ const OperatorView = () => {
   const [savingSchedule, setSavingSchedule] = useState(false)
   const [scheduleError, setScheduleError]   = useState('')
   const [showAcademia, setShowAcademia] = useState(false);
+  const [showInfografias, setShowInfografias] = useState(false);
+  const [infografias, setInfografias]         = useState([]);
+  const [loadingInfografias, setLoadingInfografias] = useState(false);
   const [membershipConfig, setMembershipConfig]           = useState(null);
   const [payingMembership, setPayingMembership]           = useState(false);
   const [payError, setPayError]                           = useState('');
@@ -729,6 +732,32 @@ const OperatorView = () => {
 
 
   // ── Fetch bookings ────────────────────────────────────────────────────────
+  const fetchInfografias = async () => {
+    setLoadingInfografias(true)
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/course_lessons?content_type=eq.infografia&select=id,title,content_url,module_id&order=order_index.asc`,
+        { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (res.ok) {
+        const data = await res.json()
+        // Traer también los títulos de módulos para mostrar el nombre
+        const modRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/course_modules?is_active=eq.true&order=order_index.asc&select=id,title,order_index`,
+          { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+        )
+        const modules = modRes.ok ? await modRes.json() : []
+        // Combinar: una infografía por módulo
+        const combined = modules.map(mod => ({
+          ...mod,
+          infografia: data.find(d => d.module_id === mod.id) || null,
+        })).filter(m => m.infografia)
+        setInfografias(combined)
+      }
+    } catch (err) { console.error('fetchInfografias:', err) }
+    finally { setLoadingInfografias(false) }
+  }
+
   const fetchMembershipConfig = async () => {
     try {
       let token = SUPABASE_ANON_KEY;
@@ -1561,9 +1590,17 @@ const OperatorView = () => {
               {showMembershipHistory ? '▲ Ocultar' : '📋 Historial membresías'}
             </button>
           </div>
-          <button onClick={() => signOut()} style={{ background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 10, padding: '10px 12px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', minHeight: 44 }}>
-            <LogOut size={16} />
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+            <button onClick={() => signOut()} style={{ background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 10, padding: '10px 12px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', minHeight: 44 }}>
+              <LogOut size={16} />
+            </button>
+            {profile?.is_certified && (
+              <button onClick={() => { setShowInfografias(true); fetchInfografias(); }}
+                style={{ background: 'rgba(6,182,212,0.2)', border: '1.5px solid rgba(6,182,212,0.5)', borderRadius: 10, padding: '7px 12px', cursor: 'pointer', color: '#67e8f9', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, minHeight: 36, whiteSpace: 'nowrap' }}>
+                🖼️ Mis Guías
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Panel historial membresías */}
@@ -2326,6 +2363,63 @@ const OperatorView = () => {
               <button onClick={sendIncidentReport} disabled={sendingIncident}
                 style={{ flex: 2, padding: '12px 0', background: sendingIncident ? '#9ca3af' : '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', minHeight: 48 }}>
                 {sendingIncident ? 'Enviando...' : 'Enviar al Admin'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL INFOGRAFÍAS */}
+      {showInfografias && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 150, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
+          <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, width: '100%', maxWidth: isMobile ? '100%' : 480, maxHeight: isMobile ? '90vh' : '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Header modal */}
+            <div style={{ background: 'linear-gradient(135deg,#0c4a6e,#0369a1)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>🖼️ Mis Guías de Referencia</div>
+                <div style={{ color: '#bae6fd', fontSize: 12, marginTop: 2 }}>Infografías de tu Certificación Pro</div>
+              </div>
+              <button onClick={() => setShowInfografias(false)}
+                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 34, height: 34, color: '#fff', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+            {/* Contenido */}
+            <div style={{ overflowY: 'auto', flex: 1, padding: '16px', WebkitOverflowScrolling: 'touch' }}>
+              {loadingInfografias ? (
+                <div style={{ textAlign: 'center', padding: '48px 0', color: '#9ca3af', fontSize: 14 }}>
+                  <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+                  Cargando guías...
+                </div>
+              ) : infografias.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '48px 0', color: '#9ca3af', fontSize: 14 }}>
+                  <div style={{ fontSize: 32, marginBottom: 12 }}>🖼️</div>
+                  Las guías estarán disponibles pronto.
+                </div>
+              ) : infografias.map((mod, mi) => (
+                <div key={mod.id} style={{ marginBottom: 20 }}>
+                  {/* Título del módulo */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#0369a1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#fff', fontWeight: 700, flexShrink: 0 }}>
+                      {mod.order_index}
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#1f2937' }}>{mod.title}</div>
+                  </div>
+                  {/* Imagen infografía */}
+                  <div style={{ borderRadius: 12, overflow: 'hidden', border: '1.5px solid #e5e7eb', background: '#f8fafc' }}>
+                    <img
+                      src={mod.infografia.content_url}
+                      alt={`Infografía ${mod.title}`}
+                      style={{ width: '100%', display: 'block' }}
+                      onError={e => { e.target.parentElement.innerHTML = '<div style="padding:24px;text-align:center;color:#9ca3af;font-size:13px">⚠️ No se pudo cargar la imagen</div>' }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Footer */}
+            <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', flexShrink: 0 }}>
+              <button onClick={() => setShowInfografias(false)}
+                style={{ width: '100%', padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 46 }}>
+                Cerrar
               </button>
             </div>
           </div>
