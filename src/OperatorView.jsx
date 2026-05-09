@@ -447,9 +447,10 @@ const OperatorView = () => {
   const [savingSchedule, setSavingSchedule] = useState(false)
   const [scheduleError, setScheduleError]   = useState('')
   const [showAcademia, setShowAcademia] = useState(false);
-  const [showInfografias, setShowInfografias] = useState(false);
-  const [infografias, setInfografias]         = useState([]);
+  const [showInfografias, setShowInfografias]       = useState(false);
+  const [infografias, setInfografias]               = useState([]);
   const [loadingInfografias, setLoadingInfografias] = useState(false);
+  const [selectedInfografia, setSelectedInfografia] = useState(null); // índice 0-3
   const [membershipConfig, setMembershipConfig]           = useState(null);
   const [payingMembership, setPayingMembership]           = useState(false);
   const [payError, setPayError]                           = useState('');
@@ -2373,55 +2374,109 @@ const OperatorView = () => {
       {showInfografias && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 150, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
           <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, width: '100%', maxWidth: isMobile ? '100%' : 480, maxHeight: isMobile ? '90vh' : '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {/* Header modal */}
-            <div style={{ background: 'linear-gradient(135deg,#0c4a6e,#0369a1)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <div>
-                <div style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>🖼️ Mis Guías de Referencia</div>
-                <div style={{ color: '#bae6fd', fontSize: 12, marginTop: 2 }}>Infografías de tu Certificación Pro</div>
-              </div>
-              <button onClick={() => setShowInfografias(false)}
-                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 34, height: 34, color: '#fff', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
-            </div>
-            {/* Contenido */}
-            <div style={{ overflowY: 'auto', flex: 1, padding: '16px', WebkitOverflowScrolling: 'touch' }}>
-              {loadingInfografias ? (
-                <div style={{ textAlign: 'center', padding: '48px 0', color: '#9ca3af', fontSize: 14 }}>
-                  <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
-                  Cargando guías...
-                </div>
-              ) : infografias.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '48px 0', color: '#9ca3af', fontSize: 14 }}>
-                  <div style={{ fontSize: 32, marginBottom: 12 }}>🖼️</div>
-                  Las guías estarán disponibles pronto.
-                </div>
-              ) : infografias.map((mod, mi) => (
-                <div key={mod.id} style={{ marginBottom: 20 }}>
-                  {/* Título del módulo */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#0369a1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#fff', fontWeight: 700, flexShrink: 0 }}>
-                      {mod.order_index}
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#1f2937' }}>{mod.title}</div>
+
+            {/* ── VISTA SELECCIÓN (índice null) ── */}
+            {selectedInfografia === null && (
+              <>
+                {/* Header */}
+                <div style={{ background: 'linear-gradient(135deg,#0c4a6e,#0369a1)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                  <div>
+                    <div style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>🖼️ Mis Guías de Referencia</div>
+                    <div style={{ color: '#bae6fd', fontSize: 12, marginTop: 2 }}>Elige una guía para verla</div>
                   </div>
-                  {/* Imagen infografía */}
-                  <div style={{ borderRadius: 12, overflow: 'hidden', border: '1.5px solid #e5e7eb', background: '#f8fafc' }}>
+                  <button onClick={() => { setShowInfografias(false); setSelectedInfografia(null); }}
+                    style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 34, height: 34, color: '#fff', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                </div>
+                {/* Grid de tarjetas */}
+                <div style={{ overflowY: 'auto', flex: 1, padding: '20px 16px', WebkitOverflowScrolling: 'touch' }}>
+                  {loadingInfografias ? (
+                    <div style={{ textAlign: 'center', padding: '48px 0', color: '#9ca3af', fontSize: 14 }}>
+                      <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>Cargando guías...
+                    </div>
+                  ) : infografias.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '48px 0', color: '#9ca3af', fontSize: 14 }}>
+                      <div style={{ fontSize: 32, marginBottom: 12 }}>🖼️</div>Las guías estarán disponibles pronto.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      {infografias.map((mod, mi) => {
+                        const emojis = ['🤝','💧','✨','🛡️'];
+                        const colors = ['#1e3a8a','#0c4a6e','#4c1d95','#78350f'];
+                        return (
+                          <button key={mod.id} onClick={() => setSelectedInfografia(mi)}
+                            style={{ background: '#fff', border: `2px solid ${colors[mi] || '#e5e7eb'}22`, borderRadius: 16, padding: '20px 12px', cursor: 'pointer', textAlign: 'center', boxShadow: '0 2px 12px rgba(0,0,0,0.07)', transition: 'transform 0.15s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minHeight: 120 }}>
+                            <div style={{ width: 52, height: 52, borderRadius: '50%', background: `${colors[mi] || '#1e3a8a'}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26 }}>
+                              {emojis[mi] || '🖼️'}
+                            </div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5 }}>Módulo {mod.order_index}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#1f2937', lineHeight: 1.3 }}>
+                              {mod.title.replace(/^Módulo \d+[:\s·-]*/i, '').trim()}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                {/* Footer */}
+                <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', flexShrink: 0 }}>
+                  <button onClick={() => { setShowInfografias(false); setSelectedInfografia(null); }}
+                    style={{ width: '100%', padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 46 }}>
+                    Cerrar
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ── VISTA INFOGRAFÍA INDIVIDUAL ── */}
+            {selectedInfografia !== null && infografias[selectedInfografia] && (() => {
+              const mod = infografias[selectedInfografia];
+              const total = infografias.length;
+              const hasPrev = selectedInfografia > 0;
+              const hasNext = selectedInfografia < total - 1;
+              return (
+                <>
+                  {/* Header con navegación */}
+                  <div style={{ background: 'linear-gradient(135deg,#0c4a6e,#0369a1)', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                    <button onClick={() => setSelectedInfografia(null)}
+                      style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, padding: '6px 10px', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 34, whiteSpace: 'nowrap' }}>
+                      ← Regresar
+                    </button>
+                    <div style={{ flex: 1, textAlign: 'center' }}>
+                      <div style={{ color: '#fff', fontWeight: 700, fontSize: 13 }}>
+                        Módulo {mod.order_index}
+                      </div>
+                      <div style={{ color: '#bae6fd', fontSize: 11 }}>
+                        {selectedInfografia + 1} / {total}
+                      </div>
+                    </div>
+                    <button onClick={() => { setShowInfografias(false); setSelectedInfografia(null); }}
+                      style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 34, height: 34, color: '#fff', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                  </div>
+                  {/* Imagen con scroll */}
+                  <div style={{ overflowY: 'auto', flex: 1, WebkitOverflowScrolling: 'touch', background: '#f8fafc' }}>
                     <img
                       src={mod.infografia.content_url}
                       alt={`Infografía ${mod.title}`}
                       style={{ width: '100%', display: 'block' }}
-                      onError={e => { e.target.parentElement.innerHTML = '<div style="padding:24px;text-align:center;color:#9ca3af;font-size:13px">⚠️ No se pudo cargar la imagen</div>' }}
+                      onError={e => { e.target.parentElement.innerHTML = '<div style="padding:48px;text-align:center;color:#9ca3af;font-size:13px">⚠️ No se pudo cargar la imagen</div>' }}
                     />
                   </div>
-                </div>
-              ))}
-            </div>
-            {/* Footer */}
-            <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', flexShrink: 0 }}>
-              <button onClick={() => setShowInfografias(false)}
-                style={{ width: '100%', padding: '12px', background: '#f3f4f6', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 46 }}>
-                Cerrar
-              </button>
-            </div>
+                  {/* Footer navegación ← → */}
+                  <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, flexShrink: 0 }}>
+                    <button onClick={() => setSelectedInfografia(i => i - 1)} disabled={!hasPrev}
+                      style={{ flex: 1, padding: '12px', background: hasPrev ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${hasPrev ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, fontSize: 14, fontWeight: 700, color: hasPrev ? '#1e40af' : '#d1d5db', cursor: hasPrev ? 'pointer' : 'not-allowed', minHeight: 46 }}>
+                      ← Anterior
+                    </button>
+                    <button onClick={() => setSelectedInfografia(i => i + 1)} disabled={!hasNext}
+                      style={{ flex: 1, padding: '12px', background: hasNext ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${hasNext ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, fontSize: 14, fontWeight: 700, color: hasNext ? '#1e40af' : '#d1d5db', cursor: hasNext ? 'pointer' : 'not-allowed', minHeight: 46 }}>
+                      Siguiente →
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
+
           </div>
         </div>
       )}
