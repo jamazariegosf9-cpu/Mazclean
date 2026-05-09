@@ -1291,11 +1291,87 @@ const AdminViewB = ({
               )}
 
               {reviewDocTab === 'contrato' && (
-                <div style={{ display: 'grid', gap: 12 }}>
+                <div style={{ display: 'grid', gap: 14 }}>
+
+                  {/* Estado del contrato */}
                   <div style={{ background: reviewingOp.terms_accepted_at ? '#f0fdf4' : '#fef2f2', borderRadius: 12, padding: '14px 16px', border: `1.5px solid ${reviewingOp.terms_accepted_at ? '#bbf7d0' : '#fecaca'}` }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: reviewingOp.terms_accepted_at ? '#166534' : '#dc2626', marginBottom: 6 }}>{reviewingOp.terms_accepted_at ? '✅ Contrato aceptado' : '❌ Sin aceptar'}</div>
-                    {reviewingOp.terms_accepted_at && <div style={{ fontSize: 12, color: '#059669' }}>Fecha: {new Date(reviewingOp.terms_accepted_at).toLocaleString('es-MX')}</div>}
+                    <div style={{ fontSize: 13, fontWeight: 700, color: reviewingOp.terms_accepted_at ? '#166534' : '#dc2626', marginBottom: 4 }}>
+                      {reviewingOp.terms_accepted_at ? '✅ Contrato aceptado digitalmente' : '❌ Contrato sin aceptar'}
+                    </div>
+                    {reviewingOp.terms_accepted_at && (
+                      <div style={{ fontSize: 12, color: '#059669' }}>
+                        📅 {new Date(reviewingOp.terms_accepted_at).toLocaleString('es-MX', { dateStyle: 'full', timeStyle: 'short' })}
+                      </div>
+                    )}
                   </div>
+
+                  {/* Comparación lado a lado: INE reverso + Firma digital */}
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Verificación de firma
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+
+                    {/* INE Reverso */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        🪪 INE — Reverso
+                        <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 400 }}>(firma física)</span>
+                      </div>
+                      {reviewingOp.ine_back_url ? (
+                        <div style={{ borderRadius: 10, overflow: 'hidden', border: '1.5px solid #e5e7eb', background: '#f8fafc' }}>
+                          <img
+                            src={reviewingOp.ine_back_url}
+                            alt="INE reverso"
+                            style={{ width: '100%', display: 'block', objectFit: 'contain', maxHeight: 200 }}
+                            onClick={() => window.open(reviewingOp.ine_back_url, '_blank')}
+                            onError={e => { e.target.parentElement.innerHTML = '<div style="padding:24px;text-align:center;color:#9ca3af;font-size:12px">⚠️ No se pudo cargar</div>' }}
+                          />
+                          <div style={{ padding: '6px 10px', background: '#f1f5f9', fontSize: 11, color: '#64748b', textAlign: 'center', cursor: 'pointer' }}
+                            onClick={() => window.open(reviewingOp.ine_back_url, '_blank')}>
+                            🔍 Ver completo
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ borderRadius: 10, border: '1.5px solid #fecaca', background: '#fef2f2', padding: '24px 12px', textAlign: 'center', fontSize: 12, color: '#dc2626' }}>
+                          ⚠️ Sin documento
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Firma digital */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        ✍️ Firma digital
+                        <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 400 }}>(en la App)</span>
+                      </div>
+                      {reviewingOp.signature_url ? (
+                        <div style={{ borderRadius: 10, overflow: 'hidden', border: '1.5px solid #e5e7eb', background: '#fff' }}>
+                          <img
+                            src={reviewingOp.signature_url}
+                            alt="Firma digital"
+                            style={{ width: '100%', display: 'block', objectFit: 'contain', maxHeight: 200, background: '#fff' }}
+                            onClick={() => window.open(reviewingOp.signature_url, '_blank')}
+                            onError={e => { e.target.parentElement.innerHTML = '<div style="padding:24px;text-align:center;color:#9ca3af;font-size:12px">⚠️ No se pudo cargar</div>' }}
+                          />
+                          <div style={{ padding: '6px 10px', background: '#f1f5f9', fontSize: 11, color: '#64748b', textAlign: 'center', cursor: 'pointer' }}
+                            onClick={() => window.open(reviewingOp.signature_url, '_blank')}>
+                            🔍 Ver completo
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ borderRadius: 10, border: '1.5px solid #fde68a', background: '#fffbeb', padding: '24px 12px', textAlign: 'center', fontSize: 12, color: '#92400e' }}>
+                          ⚠️ Sin firma registrada
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Instrucción para el revisor */}
+                  <div style={{ background: '#eff6ff', borderRadius: 10, padding: '10px 14px', border: '1px solid #bfdbfe', fontSize: 12, color: '#1e40af', lineHeight: 1.6 }}>
+                    💡 Compara la firma del reverso del INE con la firma digital. Deben ser similares. Si no coinciden, solicita corrección del documento de identidad.
+                  </div>
+
                 </div>
               )}
 
