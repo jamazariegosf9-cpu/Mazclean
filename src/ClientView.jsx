@@ -530,11 +530,21 @@ export default function ClientView() {
         ) {
           // Pequeño delay para que el cliente vea el cambio de estado antes del modal
           setTimeout(() => {
-            setRatingBooking(updated)
-            setRatingValue(0)
-            setRatingReview('')
-            setRatingModal(true)
-            setTab('history') // cambiar al tab de historial donde verá la card
+            // Verificar de nuevo que no se haya calificado ya (evita reabrir tras guardar)
+            setBookings(prev => {
+              const current = prev.find(b => b.id === updated.id)
+              if (!current?.client_rating) {
+                setRatingBooking(updated)
+                setRatingPuntualidad(0)
+                setRatingCalidad(0)
+                setRatingPresentacion(0)
+                setRatingValue(0)
+                setRatingReview('')
+                setRatingModal(true)
+                setTab('history')
+              }
+              return prev
+            })
           }, 1200)
         }
 
@@ -574,15 +584,16 @@ export default function ClientView() {
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
-      // Actualizar lista local
+      // Actualizar lista local con el valor calculado (no ratingValue que es async)
+      const finalRating = Math.round((ratingPuntualidad + ratingCalidad + ratingPresentacion) / 3)
       setBookings(prev => prev.map(b =>
         b.id === ratingBooking.id
-          ? { ...b, client_rating: ratingValue, client_review: ratingReview }
+          ? { ...b, client_rating: finalRating, client_review: ratingReview }
           : b
       ))
       bookingsCache.current = bookingsCache.current.map(b =>
         b.id === ratingBooking.id
-          ? { ...b, client_rating: ratingValue, client_review: ratingReview }
+          ? { ...b, client_rating: finalRating, client_review: ratingReview }
           : b
       )
 
