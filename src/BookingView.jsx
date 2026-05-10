@@ -64,7 +64,7 @@ function loadGoogleMapsScript(apiKey) {
     if (existing) { existing.addEventListener('load', () => resolve(window.google.maps)); existing.addEventListener('error', reject); return }
     const script = document.createElement('script')
     script.id = 'google-maps-script'
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&v=weekly&loading=async`
     script.async = true; script.defer = true
     script.onload = () => resolve(window.google.maps); script.onerror = reject
     document.head.appendChild(script)
@@ -405,13 +405,28 @@ export default function BookingView({ onNavigate }) {
     })
     autocompleteRef.current = ac
 
-    // Siempre iniciar con CDMX como bounds — no usar GPS para el autocomplete
-    // Evita que ubicaciones incorrectas por IP sesguen los resultados
-    const initBounds = new window.google.maps.LatLngBounds(
-      new window.google.maps.LatLng(19.0471, -99.3651),
-      new window.google.maps.LatLng(19.5926, -98.9401)
-    )
-    ac.setBounds(initBounds)
+    // Intentar obtener ubicación real del usuario para los bounds del autocomplete
+    // Si el GPS no es preciso (por IP), no establecer bounds — mejor sin bounds que con bounds incorrectos
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          // Solo usar si la precisión es buena (GPS real, no por IP)
+          if (pos.coords.accuracy <= 5000) {
+            const lat = pos.coords.latitude
+            const lng = pos.coords.longitude
+            const delta = 0.3 // ~33km alrededor del usuario
+            ac.setBounds(new window.google.maps.LatLngBounds(
+              new window.google.maps.LatLng(lat - delta, lng - delta),
+              new window.google.maps.LatLng(lat + delta, lng + delta)
+            ))
+          }
+          // Si precisión > 5000m (GPS por IP) → no establecer bounds
+          // Google Autocomplete funciona bien sin bounds usando el texto escrito
+        },
+        () => {}, // Sin permiso o error → no establecer bounds
+        { timeout: 5000, maximumAge: 300000, enableHighAccuracy: true }
+      )
+    }
     ac.addListener('place_changed', () => {
       const place = ac.getPlace(); if (!place.geometry) return
       const lat = place.geometry.location.lat(); const lng = place.geometry.location.lng()
@@ -457,40 +472,28 @@ export default function BookingView({ onNavigate }) {
     } catch (e) { console.error(e) }
   }
 
-  // Bounds de CDMX para autocomplete — siempre disponibles
-  const cdmxBounds = window.google?.maps ? new window.google.maps.LatLngBounds(
-    new window.google.maps.LatLng(19.0471, -99.3651),
-    new window.google.maps.LatLng(19.5926, -98.9401)
-  ) : null
-
-  const resetAutocompleteToCDMX = () => {
-    if (autocompleteRef.current && cdmxBounds) {
-      autocompleteRef.current.setBounds(cdmxBounds)
-    }
-  }
-
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) { setMapError('Tu navegador no soporta geolocalización.'); return }
     setMapError('')
     navigator.geolocation.getCurrentPosition(async (pos) => {
-      const lat = pos.coords.latitude; const lng = pos.coords.longitude
-      // Validar que las coordenadas estén dentro de México
-      const inMexico = lat >= 14.5 && lat <= 32.7 && lng >= -118.4 && lng <= -86.7
-      if (!inMexico) {
-        setMapError('No pudimos detectar tu ubicación correctamente. Por favor escribe tu dirección manualmente.')
-        resetAutocompleteToCDMX()
+      const lat = pos.coords.latitude
+      const lng = pos.coords.longitude
+      const accuracy = pos.coords.accuracy
+
+      // Si la precisión es mala (GPS por IP) → no usar
+      if (accuracy > 5000) {
+        setMapError('No pudimos detectar tu ubicación con precisión. Por favor escribe tu dirección manualmente.')
         return
       }
-      // Validar precisión mínima (evitar ubicaciones por IP)
-      if (pos.coords.accuracy > 5000) {
-        setMapError('La precisión de tu ubicación es baja. Por favor escribe tu dirección manualmente.')
-        resetAutocompleteToCDMX()
-        return
-      }
+
+      // Actualizar mapa y marker
       if (mapInstanceRef.current && markerRef.current) {
-        mapInstanceRef.current.setCenter({ lat, lng }); mapInstanceRef.current.setZoom(16); markerRef.current.setPosition({ lat, lng })
+        mapInstanceRef.current.setCenter({ lat, lng })
+        mapInstanceRef.current.setZoom(16)
+        markerRef.current.setPosition({ lat, lng })
       }
-      // Actualizar bounds del autocomplete a la ubicación real del usuario
+
+      // Actualizar bounds del autocomplete a la ubicación real
       if (autocompleteRef.current && window.google?.maps) {
         const delta = 0.1
         autocompleteRef.current.setBounds(new window.google.maps.LatLngBounds(
@@ -498,11 +501,11 @@ export default function BookingView({ onNavigate }) {
           new window.google.maps.LatLng(lat + delta, lng + delta)
         ))
       }
+
       await reverseGeocode(lat, lng)
     }, (err) => {
       if (err.code === 1) setMapError('Permiso de ubicación denegado. Por favor escribe tu dirección manualmente.')
       else setMapError('No se pudo obtener tu ubicación. Por favor escribe tu dirección manualmente.')
-      resetAutocompleteToCDMX()
     }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 })
   }
 
