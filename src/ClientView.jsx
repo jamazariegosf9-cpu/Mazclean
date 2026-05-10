@@ -103,6 +103,7 @@ function ReferralCodeDisplay({ userId }) {
 
 export default function ClientView() {
   const { user } = useAuth()
+  const { showToast } = useToast()
   const [bookings, setBookings]           = useState([])
   const [activeBooking, setActiveBooking] = useState(null)
   const [tab, setTab]                     = useState('active')
@@ -114,11 +115,14 @@ export default function ClientView() {
   const bookingsCache                     = useRef([])
 
   // ── Calificación ───────────────────────────────────────────────
-  const [ratingModal, setRatingModal]     = useState(false)
-  const [ratingBooking, setRatingBooking] = useState(null)
-  const [ratingValue, setRatingValue]     = useState(0)
-  const [ratingReview, setRatingReview]   = useState('')
-  const [savingRating, setSavingRating]   = useState(false)
+  const [ratingModal, setRatingModal]         = useState(false)
+  const [ratingBooking, setRatingBooking]     = useState(null)
+  const [ratingPuntualidad, setRatingPuntualidad] = useState(0)
+  const [ratingCalidad, setRatingCalidad]     = useState(0)
+  const [ratingPresentacion, setRatingPresentacion] = useState(0)
+  const [ratingValue, setRatingValue]         = useState(0) // promedio de los 3
+  const [ratingReview, setRatingReview]       = useState('')
+  const [savingRating, setSavingRating]       = useState(false)
 
   // ── Membresía ───────────────────────────────────────────────────
   const [membershipConfig, setMembershipConfig]       = useState(null)
@@ -546,7 +550,12 @@ export default function ClientView() {
 
   // ── Guardar calificación ───────────────────────────────────────
   const saveRating = async () => {
-    if (!ratingValue) { showToast('Por favor selecciona una calificación.', 'warning'); return }
+    if (!ratingPuntualidad || !ratingCalidad || !ratingPresentacion) {
+      showToast('Por favor califica los 3 aspectos del servicio.', 'warning'); return
+    }
+    // Calcular promedio de las 3 dimensiones
+    const avg = Math.round((ratingPuntualidad + ratingCalidad + ratingPresentacion) / 3)
+    setRatingValue(avg)
     setSavingRating(true)
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${ratingBooking.id}`, {
@@ -558,7 +567,7 @@ export default function ClientView() {
           'Prefer': 'return=minimal',
         },
         body: JSON.stringify({
-          client_rating: ratingValue,
+          client_rating: Math.round((ratingPuntualidad + ratingCalidad + ratingPresentacion) / 3),
           client_review: ratingReview || null,
           rated_at:      new Date().toISOString(),
         }),
@@ -580,6 +589,9 @@ export default function ClientView() {
       showToast('¡Gracias por tu calificación! 🌟', 'success')
       setRatingModal(false)
       setRatingValue(0)
+      setRatingPuntualidad(0)
+      setRatingCalidad(0)
+      setRatingPresentacion(0)
       setRatingReview('')
       setRatingBooking(null)
     } catch (err) {
@@ -593,6 +605,9 @@ export default function ClientView() {
   const dismissRatingModal = () => {
     setRatingModal(false)
     setRatingValue(0)
+    setRatingPuntualidad(0)
+    setRatingCalidad(0)
+    setRatingPresentacion(0)
     setRatingReview('')
     // NO limpiamos ratingBooking para que el botón en la card siga disponible
   }
@@ -1033,11 +1048,49 @@ export default function ClientView() {
                 </div>
               </div>
 
-              {/* Slider de calificación */}
-              <RatingSlider
-                initialValue={ratingValue}
-                onRatingChange={(val) => setRatingValue(val)}
-              />
+              {/* 3 dimensiones de calificación */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>⏰ Puntualidad</span>
+                    {ratingPuntualidad > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#1e40af' }}>{ratingPuntualidad}/5</span>}
+                  </div>
+                  <RatingSlider
+                    key="puntualidad"
+                    initialValue={ratingPuntualidad}
+                    onRatingChange={(val) => setRatingPuntualidad(val)}
+                  />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>🧼 Calidad del lavado</span>
+                    {ratingCalidad > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#1e40af' }}>{ratingCalidad}/5</span>}
+                  </div>
+                  <RatingSlider
+                    key="calidad"
+                    initialValue={ratingCalidad}
+                    onRatingChange={(val) => setRatingCalidad(val)}
+                  />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>👔 Presentación</span>
+                    {ratingPresentacion > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#1e40af' }}>{ratingPresentacion}/5</span>}
+                  </div>
+                  <RatingSlider
+                    key="presentacion"
+                    initialValue={ratingPresentacion}
+                    onRatingChange={(val) => setRatingPresentacion(val)}
+                  />
+                </div>
+                {ratingPuntualidad > 0 && ratingCalidad > 0 && ratingPresentacion > 0 && (
+                  <div style={{ background: '#eff6ff', borderRadius: 10, padding: '8px 14px', textAlign: 'center', border: '1px solid #bfdbfe' }}>
+                    <span style={{ fontSize: 13, color: '#1e40af', fontWeight: 700 }}>
+                      Calificación final: {Math.round((ratingPuntualidad + ratingCalidad + ratingPresentacion) / 3)}/5 ⭐
+                    </span>
+                  </div>
+                )}
+              </div>
 
               {/* Comentario */}
               <div style={{ marginTop: 16 }}>
@@ -1059,8 +1112,8 @@ export default function ClientView() {
                 style={{ flex: 1, padding: '12px 0', background: '#f3f4f6', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>
                 Después
               </button>
-              <button onClick={saveRating} disabled={savingRating || !ratingValue}
-                style={{ flex: 2, padding: '12px 0', background: savingRating || !ratingValue ? '#9ca3af' : 'linear-gradient(135deg,#1e40af,#3b82f6)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: savingRating || !ratingValue ? 'not-allowed' : 'pointer', minHeight: 48 }}>
+              <button onClick={saveRating} disabled={savingRating || !ratingPuntualidad || !ratingCalidad || !ratingPresentacion}
+                style={{ flex: 2, padding: '12px 0', background: savingRating || !ratingPuntualidad || !ratingCalidad || !ratingPresentacion ? '#9ca3af' : 'linear-gradient(135deg,#1e40af,#3b82f6)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: savingRating || !ratingPuntualidad || !ratingCalidad || !ratingPresentacion ? 'not-allowed' : 'pointer', minHeight: 48 }}>
                 {savingRating ? '⏳ Guardando...' : '⭐ Enviar calificación'}
               </button>
             </div>
