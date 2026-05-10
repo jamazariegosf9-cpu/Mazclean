@@ -479,11 +479,26 @@ export default function BookingView({ onNavigate }) {
     setMapError('')
     navigator.geolocation.getCurrentPosition(async (pos) => {
       const lat = pos.coords.latitude; const lng = pos.coords.longitude
+      // Validar que las coordenadas estén dentro de México
+      // Bounding box: lat 14.5-32.7, lng -118.4 a -86.7
+      const inMexico = lat >= 14.5 && lat <= 32.7 && lng >= -118.4 && lng <= -86.7
+      if (!inMexico) {
+        setMapError('No pudimos detectar tu ubicación correctamente. Por favor escribe tu dirección manualmente.')
+        return
+      }
+      // Validar precisión mínima (evitar ubicaciones por IP con baja precisión)
+      if (pos.coords.accuracy > 5000) {
+        setMapError('La precisión de tu ubicación es baja. Por favor escribe tu dirección manualmente para mayor exactitud.')
+        return
+      }
       if (mapInstanceRef.current && markerRef.current) {
         mapInstanceRef.current.setCenter({ lat, lng }); mapInstanceRef.current.setZoom(16); markerRef.current.setPosition({ lat, lng })
       }
       await reverseGeocode(lat, lng)
-    }, () => setMapError('No se pudo obtener tu ubicación. Verifica los permisos.'))
+    }, (err) => {
+      if (err.code === 1) setMapError('Permiso de ubicación denegado. Por favor escribe tu dirección manualmente.')
+      else setMapError('No se pudo obtener tu ubicación. Por favor escribe tu dirección manualmente.')
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 })
   }
 
   const canGoNext = () => {
