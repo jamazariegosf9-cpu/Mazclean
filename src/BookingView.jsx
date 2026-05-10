@@ -410,18 +410,19 @@ export default function BookingView({ onNavigate }) {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          // Solo usar si la precisión es buena (GPS real, no por IP)
-          if (pos.coords.accuracy <= 5000) {
-            const lat = pos.coords.latitude
-            const lng = pos.coords.longitude
+          const lat = pos.coords.latitude
+          const lng = pos.coords.longitude
+          const accuracy = pos.coords.accuracy
+          // Solo usar si la precisión es buena Y las coordenadas están dentro de México
+          const inMexico = lat >= 14.5 && lat <= 32.7 && lng >= -118.4 && lng <= -86.7
+          if (accuracy <= 5000 && inMexico) {
             const delta = 0.3 // ~33km alrededor del usuario
             ac.setBounds(new window.google.maps.LatLngBounds(
               new window.google.maps.LatLng(lat - delta, lng - delta),
               new window.google.maps.LatLng(lat + delta, lng + delta)
             ))
           }
-          // Si precisión > 5000m (GPS por IP) → no establecer bounds
-          // Google Autocomplete funciona bien sin bounds usando el texto escrito
+          // Si precisión > 5000m o fuera de México → no establecer bounds
         },
         () => {}, // Sin permiso o error → no establecer bounds
         { timeout: 5000, maximumAge: 300000, enableHighAccuracy: true }
@@ -483,6 +484,14 @@ export default function BookingView({ onNavigate }) {
       // Si la precisión es mala (GPS por IP) → no usar
       if (accuracy > 5000) {
         setMapError('No pudimos detectar tu ubicación con precisión. Por favor escribe tu dirección manualmente.')
+        return
+      }
+
+      // Validar que las coordenadas estén dentro de México
+      // Bounding box de México: lat 14.5–32.7, lng -118.4 a -86.7
+      const inMexico = lat >= 14.5 && lat <= 32.7 && lng >= -118.4 && lng <= -86.7
+      if (!inMexico) {
+        setMapError('No pudimos detectar tu ubicación correctamente. Por favor escribe tu dirección manualmente.')
         return
       }
 
