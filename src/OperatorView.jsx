@@ -319,7 +319,7 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
 
 // ── Componente principal ──────────────────────────────────────────────────────
 // ── Pantalla de Activación — componente separado para evitar problemas de scope ──
-function ActivationScreen({ profile, membershipStatus, membershipPrice, payingMembership, onSubscribe, onDeposit, onAcademia, onSignOut }) {
+function ActivationScreen({ profile, membershipStatus, membershipPrice, effectivePromo, payingMembership, onSubscribe, onDeposit, onAcademia, onSignOut }) {
   const certDone = !!profile?.is_certified
   const memDone  = membershipStatus === 'activa'
   return (
@@ -393,14 +393,20 @@ function ActivationScreen({ profile, membershipStatus, membershipPrice, payingMe
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: '#F0F6FF', marginBottom: 4 }}>Membresía Mensual</div>
               <div style={{ fontSize: 13, color: '#8CA0BF', lineHeight: 1.6 }}>
-                {memDone ? '¡Membresía activa! Estás listo para recibir servicios.' : `Activa tu membresía de $${membershipPrice} MXN/mes para acceder a la plataforma y empezar a generar ingresos.`}
+                {memDone
+                  ? '¡Membresía activa! Estás listo para recibir servicios.'
+                  : membershipPrice === 0
+                    ? 'Activando tu membresía gratuita automáticamente...'
+                    : effectivePromo
+                      ? `Activa tu membresía — precio especial $${membershipPrice} MXN/mes (precio regular $${effectivePromo.base_price} MXN).`
+                      : `Activa tu membresía de $${membershipPrice} MXN/mes para acceder a la plataforma y empezar a generar ingresos.`}
               </div>
             </div>
           </div>
           {!memDone && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <button onClick={onSubscribe} disabled={payingMembership} style={{ width: '100%', padding: '13px', background: payingMembership ? 'rgba(255,255,255,0.1)' : 'linear-gradient(135deg,#059669,#10b981)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: payingMembership ? 'not-allowed' : 'pointer', minHeight: 50 }}>
-                {payingMembership ? '⏳ Redirigiendo...' : `💳 Pagar con tarjeta $${membershipPrice} MXN/mes`}
+                {payingMembership ? '⏳ Redirigiendo...' : membershipPrice === 0 ? '✅ Membresía gratuita activándose...' : `💳 Pagar con tarjeta $${membershipPrice} MXN/mes`}
               </button>
               <button onClick={onDeposit} style={{ width: '100%', padding: '13px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, fontSize: 14, fontWeight: 600, color: '#8CA0BF', cursor: 'pointer', minHeight: 46 }}>
                 🏦 Pagar con depósito bancario
@@ -426,7 +432,7 @@ function ActivationScreen({ profile, membershipStatus, membershipPrice, payingMe
 }
 
 const OperatorView = () => {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, loadProfileDirect } = useAuth();
   const { showToast } = useToast();
   // ── Mis Horarios ─────────────────────────────────────────────────────────
   const [exceptions, setExceptions]         = useState([])
@@ -685,16 +691,30 @@ const OperatorView = () => {
         const stored = localStorage.getItem('mazclean-auth');
         if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
       } catch {}
+      // Usar precio efectivo con promo si existe
+      const priceToCharge = effectiveMembershipPrice || membershipConfig?.operator_price || 200;
       const res = await fetch(`${SUPABASE_URL}/functions/v1/create-subscription`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'operador', user_id: user.id, email: user.email, success_url: `${window.location.origin}?membership=success`, cancel_url: window.location.href }),
+        body: JSON.stringify({
+          type: 'operador',
+          user_id: user.id,
+          email: user.email,
+          price: priceToCharge,
+          success_url: `${window.location.origin}?membership=success`,
+          cancel_url: window.location.href,
+        }),
       });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => `HTTP ${res.status}`)
+        throw new Error(errText || `HTTP ${res.status}`)
+      }
       const data = await res.json();
-      if (!res.ok || !data?.url) throw new Error(data?.error || 'No se pudo crear la sesión de pago');
+      if (!data?.url) throw new Error(data?.error || 'No se recibió URL de pago. Intenta de nuevo.');
       window.location.href = data.url;
     } catch (err) {
-      setPayError(err.message);
+      console.error('handleSubscribeOperator:', err)
+      setPayError(err.message || 'Error al conectar con el sistema de pagos. Intenta de nuevo o usa depósito bancario.');
       setPayingMembership(false);
     }
   };
@@ -1616,14 +1636,39 @@ const OperatorView = () => {
   const needsMembership    = operatorMembership?.membership_status !== 'activa' && profile?.membership_status !== 'activa'
   const isApproved         = profile?.operator_status === 'aprobado'
 
+  // Si hay promo de $0 y membresía no activa → activar automáticamente
+  const hasFreeMembership = effectiveMembershipPrice === 0 || effectiveMembershipPrice === '0'
+
+  if (isApproved && profile?.role !== 'admin' && needsMembership && hasFreeMembership) {
+    // Activar membresía gratuita automáticamente sin pasar por Stripe
+    const activateFreeMembership = async () => {
+      try {
+        let token = SUPABASE_ANON_KEY
+        try {
+          const stored = localStorage.getItem('mazclean-auth')
+          if (stored) { const p = JSON.parse(stored); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY }
+        } catch {}
+        const end = new Date(); end.setDate(end.getDate() + (membershipConfig?.operator_duration_days || 30))
+        await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}`, {
+          method: 'PATCH',
+          headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ membership_status: 'activa', membership_start_at: new Date().toISOString(), membership_end_at: end.toISOString(), membership_type: 'promo_gratuita', updated_at: new Date().toISOString() }),
+        })
+        await loadProfileDirect()
+      } catch (err) { console.error('activateFreeMembership:', err) }
+    }
+    activateFreeMembership()
+  }
+
   if (isApproved && profile?.role !== 'admin' && (needsCertification || needsMembership) && !showAcademia) {
     return (
       <ActivationScreen
         profile={profile}
         membershipStatus={operatorMembership?.membership_status || profile?.membership_status}
-        membershipPrice={membershipConfig?.operator_price || 200}
+        membershipPrice={effectiveMembershipPrice}
+        effectivePromo={effectivePromo}
         payingMembership={payingMembership}
-        onSubscribe={handleSubscribeOperator}
+        onSubscribe={effectiveMembershipPrice === 0 ? null : handleSubscribeOperator}
         onDeposit={() => setDepositModal(true)}
         onAcademia={() => setShowAcademia(true)}
         onSignOut={() => signOut()}
