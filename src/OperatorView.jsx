@@ -1515,6 +1515,7 @@ const OperatorView = () => {
     { id: 'pendientes',   label: 'Pendientes',  icon: '📋', count: pendingServices.length },
     { id: 'activos',      label: 'Activos',     icon: '⚡', count: activeServices.length },
     { id: 'completados',  label: 'Historial',   icon: '📖', count: completedServices.length },
+    { id: 'micuenta',     label: 'Mi Cuenta',   icon: '💰', count: 0 },
     { id: 'horarios',     label: 'Mis Horarios',icon: '🗓️', count: 0 },
   ];
 
@@ -1825,6 +1826,10 @@ const OperatorView = () => {
           </div>
         )}
 
+        {/* ── TAB MI CUENTA ── */}
+        {activeTab === 'micuenta' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
         {/* ── TARJETA MI CUENTA DEL MES ── */}
         {commissionData && !loadingCommission && (
           <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', border: '1.5px solid #e5e7eb', marginBottom: 4 }}>
@@ -2000,6 +2005,17 @@ const OperatorView = () => {
                 💡 Tu nivel determina tu comisión y descuento en membresía. Mantén tu calificación alta para pagar menos.
               </div>
             </div>
+          </div>
+        )}
+
+          {/* Placeholder si no hay datos aún */}
+          {!commissionData && !ratingData && (
+            <div style={{ background: '#fff', borderRadius: 16, padding: 48, textAlign: 'center' }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>💰</div>
+              <p style={{ color: '#9ca3af', fontSize: 14 }}>Completa servicios para ver tu resumen de cuenta.</p>
+            </div>
+          )}
+
           </div>
         )}
 
