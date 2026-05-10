@@ -1026,11 +1026,12 @@ export default function ClientView() {
             background: '#fff', borderRadius: 20,
             boxShadow: '0 8px 40px rgba(0,0,0,0.25)',
             maxWidth: 420, width: '100%',
-            overflow: 'hidden',
+            maxHeight: '90vh',
+            display: 'flex', flexDirection: 'column',
             animation: 'slideUp 0.3s ease',
           }}>
-            {/* Header */}
-            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '20px 24px' }}>
+            {/* Header — fijo */}
+            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '20px 24px', borderRadius: '20px 20px 0 0', flexShrink: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                   <h3 style={{ color: '#fff', fontWeight: 700, fontSize: 18, margin: '0 0 4px' }}>
@@ -1047,8 +1048,8 @@ export default function ClientView() {
               </div>
             </div>
 
-            {/* Cuerpo */}
-            <div style={{ padding: '20px 24px' }}>
+            {/* Cuerpo — scrollable */}
+            <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
               {/* Info del servicio */}
               <div style={{ background: '#f0fdf4', borderRadius: 12, padding: '12px 16px', marginBottom: 20, border: '1px solid #bbf7d0' }}>
                 <div style={{ fontWeight: 700, color: '#065f46', fontSize: 15 }}>
@@ -1117,8 +1118,8 @@ export default function ClientView() {
               </div>
             </div>
 
-            {/* Footer */}
-            <div style={{ padding: '12px 24px 20px', display: 'flex', gap: 10 }}>
+            {/* Footer — fijo en la parte inferior */}
+            <div style={{ padding: '12px 24px 20px', display: 'flex', gap: 10, borderTop: '1px solid #f3f4f6', flexShrink: 0 }}>
               <button onClick={dismissRatingModal}
                 style={{ flex: 1, padding: '12px 0', background: '#f3f4f6', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', minHeight: 48 }}>
                 Después
