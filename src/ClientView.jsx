@@ -461,15 +461,15 @@ export default function ClientView() {
     }, 8000)
 
     try {
-      const { data, error } = await supabase
-        .from('bookings')
-        .select('*')
-        .eq('client_id', user.id)
-        .order('created_at', { ascending: false })
+      // fetch directo — evita lock de supabase client en móvil
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/bookings?client_id=eq.${user.id}&order=created_at.desc&select=*`,
+        { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
       clearTimeout(timeoutId)
       if (timedOut) return
-      if (error) throw error
-      const result = data || []
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const result = await res.json()
       bookingsCache.current = result
       setBookings(result)
       const active = result.find(b =>
