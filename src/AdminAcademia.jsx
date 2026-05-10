@@ -85,24 +85,36 @@ export default function AdminAcademia({ isMobile }) {
     setValidating(cert.id)
     try {
       const headers = { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }
-      // Actualizar certificación
-      await fetch(`${SUPABASE_URL}/rest/v1/operator_certifications?id=eq.${cert.id}`, {
-        method: 'PATCH', headers,
-        body: JSON.stringify({ validated_by: user.id, validated_at: new Date().toISOString(), kit_photo_validated: true }),
-      })
-      // Actualizar perfil del operador
-      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${cert.operator_id}`, {
+      // Solo actualizar operator_certifications si es un registro real (no fabricado)
+      const isRealCert = !String(cert.id).startsWith('pending-')
+      if (isRealCert) {
+        await fetch(`${SUPABASE_URL}/rest/v1/operator_certifications?id=eq.${cert.id}`, {
+          method: 'PATCH', headers,
+          body: JSON.stringify({ validated_by: user.id, validated_at: new Date().toISOString(), kit_photo_validated: true }),
+        })
+      }
+      // Certificar el perfil del operador
+      const profRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${cert.operator_id}`, {
         method: 'PATCH', headers,
         body: JSON.stringify({ is_certified: true, certification_date: new Date().toISOString(), updated_at: new Date().toISOString() }),
       })
-      // Enviar WA de felicitación
+      if (!profRes.ok) throw new Error(`HTTP ${profRes.status} al certificar perfil`)
+      // Enviar WA de certificación via send-whatsapp
       if (cert.operator?.phone) {
-        const msg = `🏆 *MAZ CLEAN — ¡Felicidades!* \n\nHas obtenido tu *Certificación Pro* de Academia Código Limpio. A partir de ahora apareces como Operador Certificado para los clientes. ¡Sigue así, Pro! 🚗✨`
-        await sendWhatsApp({ to: cert.operator.phone, message: msg })
+        await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: 'operator_approved',
+            phone: cert.operator.phone,
+            booking: {},
+            extra: { operator_name: cert.operator.full_name },
+          }),
+        })
       }
       setPendingCerts(prev => prev.filter(c => c.id !== cert.id))
       setOperators(prev => prev.map(o => o.id === cert.operator_id ? { ...o, is_certified: true, certification_date: new Date().toISOString() } : o))
-    } catch (err) { alert('Error: ' + err.message) }
+    } catch (err) { alert('Error al certificar: ' + err.message) }
     finally { setValidating(null) }
   }
 
