@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  MapPin, Clock, Phone, Navigation,
+  MapPin, Clock, Phone, Navigation, LogOut,
   Play, Check, Camera, CheckSquare, Square, AlertTriangle, Bell
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
