@@ -718,6 +718,8 @@ const OperatorView = () => {
       if (error) throw error;
       const result = data || [];
       bookingsCache.current = result; setBookings(result); setFetchError('');
+      // Cargar badges de mensajes sin leer una vez que tenemos los bookings
+      fetchUnreadCounts();
     } catch (err) {
       clearTimeout(timeoutId); if (timedOut) return;
       if (bookingsCache.current.length > 0) { setBookings(bookingsCache.current); setFetchError('Error de red — mostrando datos anteriores.'); }
@@ -840,6 +842,7 @@ const OperatorView = () => {
 
       // Refrescar listas
       await Promise.all([fetchBookingRequests(), fetchOperatorBookings(true)]);
+      fetchUnreadCounts();
 
       // Cambiar al tab de servicios activos
       setActiveTab('pendientes');
