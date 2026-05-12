@@ -11,6 +11,7 @@ import AcademiaView from './AcademiaView';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const GOOGLE_MAPS_KEY   = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
 
 // ── Notificaciones de chat ────────────────────────────────────────────────────
 let chatAudio = null
@@ -441,6 +442,7 @@ const OperatorView = () => {
   // ── Solicitud cambio de zona ───────────────────────────────────────────────
   const [zoneRequest, setZoneRequest]       = useState(null)   // solicitud activa pendiente
   const [zoneForm, setZoneForm]             = useState({ new_address: '', new_lat: null, new_lng: null, new_radius: 3, reason_type: 'cambio_domicilio', reason_detail: '' })
+  const [zoneMapUrl, setZoneMapUrl]         = useState(null)
   const [savingZone, setSavingZone]         = useState(false)
   const [zoneSuccess, setZoneSuccess]       = useState('')
   const [zoneError, setZoneError]           = useState('')
@@ -1634,6 +1636,18 @@ const OperatorView = () => {
     if (user && activeTab === 'horarios') { fetchExceptions(); fetchZoneRequest() }
   }, [activeTab, user?.id])
 
+  // Generar mapa estático cuando cambia la ubicación del formulario de zona
+  useEffect(() => {
+    const { new_lat, new_lng, new_radius } = zoneForm
+    if (new_lat && new_lng && GOOGLE_MAPS_KEY) {
+      const zoom = new_radius > 10 ? 11 : new_radius > 5 ? 12 : 13
+      const url = `https://maps.googleapis.com/maps/api/staticmap?center=${new_lat},${new_lng}&zoom=${zoom}&size=400x200&maptype=roadmap&markers=color:blue%7C${new_lat},${new_lng}&key=${GOOGLE_MAPS_KEY}`
+      setZoneMapUrl(url)
+    } else {
+      setZoneMapUrl(null)
+    }
+  }, [zoneForm.new_lat, zoneForm.new_lng, zoneForm.new_radius])
+
   // ── Solicitud cambio de zona ─────────────────────────────────────────────
   const fetchZoneRequest = async () => {
     if (!user?.id) return
@@ -2431,6 +2445,25 @@ const OperatorView = () => {
                       {zoneForm.new_lat && zoneForm.new_lng && (
                         <div style={{ background: '#f0fdf4', borderRadius: 8, padding: '6px 10px', marginTop: 6, fontSize: 12, color: '#065f46' }}>
                           ✅ Dirección verificada: {zoneForm.new_lat.toFixed(4)}, {zoneForm.new_lng.toFixed(4)}
+                        </div>
+                      )}
+                      {zoneMapUrl && (
+                        <div style={{ marginTop: 10 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>🗺️ Tu nueva zona de operación</div>
+                          <img
+                            src={zoneMapUrl}
+                            alt="zona de cobertura"
+                            style={{ width: '100%', borderRadius: 12, border: '1.5px solid #bfdbfe', maxHeight: 200, objectFit: 'cover', display: 'block' }}
+                            onError={e => { e.target.style.display = 'none' }}
+                          />
+                          <p style={{ fontSize: 11, color: '#9ca3af', margin: '6px 0 0' }}>
+                            Zona estimada con {zoneForm.new_radius} km de radio desde tu nueva base
+                          </p>
+                        </div>
+                      )}
+                      {zoneForm.new_lat && zoneForm.new_lng && !GOOGLE_MAPS_KEY && (
+                        <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '8px 12px', marginTop: 8 }}>
+                          <p style={{ fontSize: 12, color: '#0284c7', margin: 0 }}>📍 Ubicación: {zoneForm.new_lat.toFixed(4)}, {zoneForm.new_lng.toFixed(4)} · Radio: {zoneForm.new_radius} km</p>
                         </div>
                       )}
                     </div>
