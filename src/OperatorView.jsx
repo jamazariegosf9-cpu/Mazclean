@@ -2467,7 +2467,7 @@ const OperatorView = () => {
                             📍 Zona base con {zoneForm.new_radius} km de radio · {zoneForm.new_lat?.toFixed(4)}, {zoneForm.new_lng?.toFixed(4)}
                           </p>
                         </div>
-                    </div>
+                      )}
 
                     {/* Radio de cobertura */}
                     <div style={{ marginBottom: 14 }}>
