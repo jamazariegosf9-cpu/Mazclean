@@ -317,12 +317,32 @@ export default function ClientView() {
     finally { setChatLoading(false) }
   }
 
+  const markMessagesRead = async (bookingId) => {
+    if (!bookingId) return
+    try {
+      await fetch(
+        `${SUPABASE_URL}/rest/v1/messages?booking_id=eq.${bookingId}&sender_role=eq.operador&read_at=is.null`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${getToken()}`,
+            'apikey': SUPABASE_ANON_KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify({ read_at: new Date().toISOString() }),
+        }
+      )
+      setUnreadCount(0)
+      setUnreadByBooking(prev => ({ ...prev, [bookingId]: 0 }))
+    } catch (err) { console.error('markMessagesRead cliente:', err) }
+  }
+
   const openChat = async (bookingId) => {
     setChatOpen(true)
     setChatInput('')
     setChatError('')
-    setUnreadCount(0)
-    setUnreadByBooking(prev => ({ ...prev, [bookingId]: 0 }))
+    markMessagesRead(bookingId)
     // Limpiar todos los canales previos
     if (bgChannelRef.current) { supabase.removeChannel(bgChannelRef.current); bgChannelRef.current = null }
     if (chatChannelRef.current) { supabase.removeChannel(chatChannelRef.current); chatChannelRef.current = null }
@@ -340,6 +360,8 @@ export default function ClientView() {
       }, (payload) => {
         const msg = payload.new
         if (msg.sender_role === 'operador') {
+          // Chat abierto → marcar como leído inmediatamente
+          markMessagesRead(bookingId)
           playNotificationSound()
           vibrateDevice()
           showSystemNotification('💬 Mensaje de tu operador', msg.content)
@@ -418,33 +440,60 @@ export default function ClientView() {
     if (chatBottomRef.current) chatBottomRef.current.scrollIntoView({ behavior: 'smooth' })
   }, [chatMessages])
 
-  // Suscribir al chat cuando hay booking activo — notificar mensajes sin abrir chat
+  // Canal global cliente — escucha mensajes del operador en TODOS los bookings activos
+  // Se reactiva cuando cambia la lista de bookings
   useEffect(() => {
-    if (!activeBooking?.id) return
-    if (!['confirmado','en_camino','en_proceso'].includes(activeBooking.status)) return
-    // Verificar mensajes no leídos del operador
-    fetch(
-      `${SUPABASE_URL}/rest/v1/messages?booking_id=eq.${activeBooking.id}&sender_role=eq.operador&read_at=is.null&select=id`,
-      { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
-    ).then(r => r.json()).then(rows => setUnreadCount(rows?.length || 0)).catch(() => {})
-    // Canal Realtime para notificar cuando chat está cerrado
+    if (!user?.id || !bookings.length) return
+    const activeIds = bookings
+      .filter(b => ['confirmado','en_camino','en_proceso'].includes(b.status))
+      .map(b => b.id)
+    if (!activeIds.length) return
+
+    // Cargar unread reales de DB por cada booking activo
+    Promise.all(activeIds.map(id =>
+      fetch(
+        `${SUPABASE_URL}/rest/v1/messages?booking_id=eq.${id}&sender_role=eq.operador&read_at=is.null&select=id`,
+        { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+      ).then(r => r.json()).then(rows => ({ id, count: rows?.length || 0 })).catch(() => ({ id, count: 0 }))
+    )).then(results => {
+      const counts = {}
+      results.forEach(({ id, count }) => { counts[id] = count })
+      setUnreadByBooking(counts)
+      setUnreadCount(results.reduce((s, r) => s + r.count, 0))
+    })
+
+    // Limpiar canales previos
+    if (bgChannelRef.current?.remove) bgChannelRef.current.remove()
+
+    // Un canal por cada booking activo
     requestNotificationPermission()
-    if (bgChannelRef.current) supabase.removeChannel(bgChannelRef.current)
-    bgChannelRef.current = supabase
-      .channel(`chat-bg-${activeBooking.id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `booking_id=eq.${activeBooking.id}` },
-        (payload) => {
-          if (payload.new.sender_role === 'operador') {
+    const channels = activeIds.map(bookingId =>
+      supabase
+        .channel(`chat-bg-client-${bookingId}-${user.id}`)
+        .on('postgres_changes', {
+          event: 'INSERT', schema: 'public', table: 'messages',
+          filter: `booking_id=eq.${bookingId}`,
+        }, (payload) => {
+          const msg = payload.new
+          // Solo mensajes del operador cuando el chat de ese booking NO está abierto
+          if (msg.sender_role === 'operador' && !chatOpen) {
+            setUnreadByBooking(prev => ({ ...prev, [bookingId]: (prev[bookingId] || 0) + 1 }))
             setUnreadCount(prev => prev + 1)
             playNotificationSound()
             vibrateDevice()
-            showSystemNotification('💬 Tu operador te escribió', payload.new.content)
+            showSystemNotification('💬 Tu operador te escribió', msg.content)
           }
-        }
-      )
-      .subscribe()
-    return () => { if (bgChannelRef.current) { supabase.removeChannel(bgChannelRef.current); bgChannelRef.current = null } }
-  }, [activeBooking?.id, activeBooking?.status])
+        })
+        .subscribe()
+    )
+
+    bgChannelRef.current = { channels, remove: () => channels.forEach(c => supabase.removeChannel(c)) }
+
+    return () => {
+      if (bgChannelRef.current?.remove) bgChannelRef.current.remove()
+      bgChannelRef.current = null
+    }
+  }, [bookings, user?.id])
 
   const fetchBookings = async (silent = false) => {
     if (fetchingRef.current) return
