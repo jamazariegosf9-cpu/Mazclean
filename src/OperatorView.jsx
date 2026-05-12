@@ -605,11 +605,34 @@ const OperatorView = () => {
   }
 
   // ── Abrir chat ────────────────────────────────────────────────────────────
+  // ── Marcar mensajes del cliente como leídos ─────────────────────────────
+  const markMessagesRead = async (bookingId) => {
+    if (!bookingId) return
+    try {
+      const token = getToken()
+      await fetch(
+        `${SUPABASE_URL}/rest/v1/messages?booking_id=eq.${bookingId}&sender_role=eq.cliente&read_at=is.null`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'apikey': SUPABASE_ANON_KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify({ read_at: new Date().toISOString() }),
+        }
+      )
+      // Limpiar badge del booking
+      setUnreadByBooking(prev => ({ ...prev, [bookingId]: 0 }))
+    } catch (err) { console.error('markMessagesRead:', err) }
+  }
+
   const openChat = async (bookingId) => {
     setChatBookingId(bookingId)
     setChatInput('')
     setChatError('')
-    setUnreadByBooking(prev => ({ ...prev, [bookingId]: 0 }))
+    markMessagesRead(bookingId)
     if (chatChannelRef.current) { supabase.removeChannel(chatChannelRef.current); chatChannelRef.current = null }
     await fetchMessages(bookingId)
     await requestNotificationPermission()
@@ -625,11 +648,14 @@ const OperatorView = () => {
       }, (payload) => {
         const msg = payload.new
         if (msg.sender_role === 'cliente') {
-          playNotificationSound()
-          vibrateDevice()
-          showSystemNotification('💬 Mensaje del cliente', msg.content)
-          // Badge solo si el chat de ESTE booking no está abierto
-          if (msg.booking_id !== chatBookingId) {
+          if (msg.booking_id === chatBookingId) {
+            // Chat abierto → marcar como leído inmediatamente
+            markMessagesRead(msg.booking_id)
+          } else {
+            // Chat cerrado → incrementar badge y notificar
+            playNotificationSound()
+            vibrateDevice()
+            showSystemNotification('💬 Mensaje del cliente', msg.content)
             setUnreadByBooking(prev => ({ ...prev, [msg.booking_id]: (prev[msg.booking_id] || 0) + 1 }))
           }
         }
