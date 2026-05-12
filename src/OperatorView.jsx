@@ -437,7 +437,13 @@ const OperatorView = () => {
   // ── Mis Horarios ─────────────────────────────────────────────────────────
   const [exceptions, setExceptions]         = useState([])
   const [excLoading, setExcLoading]         = useState(false)
-  const [excTab, setExcTab]                 = useState('excepciones') // 'excepciones' | 'horario'
+  const [excTab, setExcTab]                 = useState('excepciones') // 'excepciones' | 'horario' | 'zona'
+  // ── Solicitud cambio de zona ───────────────────────────────────────────────
+  const [zoneRequest, setZoneRequest]       = useState(null)   // solicitud activa pendiente
+  const [zoneForm, setZoneForm]             = useState({ new_address: '', new_lat: null, new_lng: null, new_radius: 3, reason_type: 'cambio_domicilio', reason_detail: '' })
+  const [savingZone, setSavingZone]         = useState(false)
+  const [zoneSuccess, setZoneSuccess]       = useState('')
+  const [zoneError, setZoneError]           = useState('')
   const [excType, setExcType]               = useState('day_off') // day_off | vacation | schedule_change
   const [excStartDate, setExcStartDate]     = useState('')
   const [excEndDate, setExcEndDate]         = useState('')
@@ -1516,7 +1522,7 @@ const OperatorView = () => {
     { id: 'activos',      label: 'Activos',     icon: '⚡', count: activeServices.length },
     { id: 'completados',  label: 'Historial',   icon: '📖', count: completedServices.length },
     { id: 'micuenta',     label: 'Mi Cuenta',   icon: '💰', count: 0 },
-    { id: 'horarios',     label: 'Mis Horarios',icon: '🗓️', count: 0 },
+    { id: 'horarios',     label: 'Mi Configuración', icon: '⚙️', count: 0 },
   ];
 
   // ── Mis Horarios: funciones ─────────────────────────────────────────────
@@ -1625,8 +1631,68 @@ const OperatorView = () => {
 
   // Cargar excepciones cuando está activo el tab
   useEffect(() => {
-    if (user && activeTab === 'horarios') fetchExceptions()
+    if (user && activeTab === 'horarios') { fetchExceptions(); fetchZoneRequest() }
   }, [activeTab, user?.id])
+
+  // ── Solicitud cambio de zona ─────────────────────────────────────────────
+  const fetchZoneRequest = async () => {
+    if (!user?.id) return
+    try {
+      const token = getTokenFromStorage()
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/operator_zone_requests?operator_id=eq.${user.id}&status=eq.pendiente&order=created_at.desc&limit=1`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (res.ok) { const data = await res.json(); setZoneRequest(data[0] || null) }
+    } catch (err) { console.error('fetchZoneRequest:', err) }
+  }
+
+  const submitZoneRequest = async () => {
+    if (!zoneForm.new_address.trim()) { setZoneError('Ingresa la nueva dirección.'); return }
+    if (!zoneForm.new_lat || !zoneForm.new_lng) { setZoneError('Confirma la dirección en el mapa primero.'); return }
+    if (!zoneForm.reason_type) { setZoneError('Selecciona el motivo del cambio.'); return }
+    setSavingZone(true); setZoneError(''); setZoneSuccess('')
+    try {
+      const token = getTokenFromStorage()
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/operator_zone_requests`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({
+          operator_id:     user.id,
+          current_address: profile?.base_address || null,
+          current_lat:     profile?.base_lat || null,
+          current_lng:     profile?.base_lng || null,
+          current_radius:  profile?.coverage_radius || null,
+          new_address:     zoneForm.new_address,
+          new_lat:         zoneForm.new_lat,
+          new_lng:         zoneForm.new_lng,
+          new_radius:      parseInt(zoneForm.new_radius) || 3,
+          reason_type:     zoneForm.reason_type,
+          reason_detail:   zoneForm.reason_detail || null,
+          status:          'pendiente',
+          updated_at:      new Date().toISOString(),
+        }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setZoneSuccess('✅ Solicitud enviada. El administrador la revisará pronto.')
+      setZoneForm({ new_address: '', new_lat: null, new_lng: null, new_radius: 3, reason_type: 'cambio_domicilio', reason_detail: '' })
+      await fetchZoneRequest()
+    } catch (err) { setZoneError('Error al enviar: ' + err.message) }
+    finally { setSavingZone(false) }
+  }
+
+  const geocodeZoneAddress = async () => {
+    if (!zoneForm.new_address.trim()) { setZoneError('Escribe una dirección primero.'); return }
+    setZoneError('')
+    try {
+      const query = encodeURIComponent(zoneForm.new_address.trim() + ', México')
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&accept-language=es`, { headers: { 'Accept-Language': 'es' } })
+      const data = await res.json()
+      if (!data || data.length === 0) { setZoneError('No se encontró la dirección. Intenta ser más específico.'); return }
+      setZoneForm(p => ({ ...p, new_lat: parseFloat(data[0].lat), new_lng: parseFloat(data[0].lon), new_address: data[0].display_name || p.new_address }))
+      setZoneError('')
+    } catch { setZoneError('Error al buscar la dirección. Verifica tu conexión.') }
+  }
 
   // ── RENDER ────────────────────────────────────────────────────────────────
   // Academia — aquí ya están declaradas todas las variables
@@ -2063,21 +2129,28 @@ const OperatorView = () => {
         {activeTab === 'horarios' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-            {/* Sub-tabs: Excepciones / Horario permanente */}
+            {/* Sub-tabs: Excepciones / Horario permanente / Mi Zona */}
             <div style={{ display: 'flex', background: '#e5e7eb', borderRadius: 12, padding: 4, gap: 4 }}>
               <button onClick={() => setExcTab('excepciones')}
-                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12,
                   background: excTab === 'excepciones' ? '#fff' : 'transparent',
                   color:      excTab === 'excepciones' ? '#1e40af' : '#6b7280',
                   boxShadow:  excTab === 'excepciones' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none' }}>
                 📅 Excepciones
               </button>
               <button onClick={() => setExcTab('horario')}
-                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13,
+                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12,
                   background: excTab === 'horario' ? '#fff' : 'transparent',
                   color:      excTab === 'horario' ? '#1e40af' : '#6b7280',
                   boxShadow:  excTab === 'horario' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none' }}>
-                🕐 Horario Permanente
+                🕐 Horario
+              </button>
+              <button onClick={() => setExcTab('zona')}
+                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12,
+                  background: excTab === 'zona' ? '#fff' : 'transparent',
+                  color:      excTab === 'zona' ? '#1e40af' : '#6b7280',
+                  boxShadow:  excTab === 'zona' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none' }}>
+                🗺️ Mi Zona
               </button>
             </div>
 
@@ -2270,6 +2343,136 @@ const OperatorView = () => {
                     cursor: savingSchedule ? 'not-allowed' : 'pointer', minHeight: 48 }}>
                   {savingSchedule ? '⏳ Guardando...' : '💾 Guardar horario permanente'}
                 </button>
+              </div>
+            )}
+
+            {/* ── SUB-TAB MI ZONA ── */}
+            {excTab === 'zona' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+                {/* Zona actual */}
+                <div style={{ background: '#f0fdf4', borderRadius: 14, padding: '14px 16px', border: '1px solid #bbf7d0' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#065f46', marginBottom: 8 }}>📍 Tu zona actual</div>
+                  {profile?.base_address ? (
+                    <div style={{ fontSize: 13, color: '#374151' }}>
+                      <div>{profile.base_address}</div>
+                      <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>Radio de cobertura: {profile?.coverage_radius || '—'} km</div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 13, color: '#9ca3af' }}>Sin zona configurada</div>
+                  )}
+                </div>
+
+                {/* Solicitud pendiente activa */}
+                {zoneRequest && (
+                  <div style={{ background: '#fffbeb', borderRadius: 14, padding: '14px 16px', border: '1px solid #fde68a' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#92400e', marginBottom: 6 }}>⏳ Solicitud pendiente</div>
+                    <div style={{ fontSize: 12, color: '#78350f' }}>
+                      <div>Nueva dirección: {zoneRequest.new_address}</div>
+                      <div style={{ marginTop: 3 }}>Radio solicitado: {zoneRequest.new_radius} km</div>
+                      <div style={{ marginTop: 3 }}>Motivo: {{
+                        cambio_domicilio: 'Cambio de domicilio',
+                        ampliar_zona: 'Ampliar zona de cobertura',
+                        reducir_zona: 'Reducir zona de cobertura',
+                        otro: 'Otro motivo'
+                      }[zoneRequest.reason_type]}</div>
+                      {zoneRequest.reason_detail && <div style={{ marginTop: 3, fontStyle: 'italic' }}>"{zoneRequest.reason_detail}"</div>}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#d97706', marginTop: 8 }}>
+                      El administrador revisará tu solicitud pronto.
+                    </div>
+                  </div>
+                )}
+
+                {/* Formulario nueva solicitud */}
+                {!zoneRequest && (
+                  <div style={{ background: '#fff', borderRadius: 14, padding: '18px 16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#1f2937', marginBottom: 4 }}>📝 Solicitar cambio de zona</div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 16, lineHeight: 1.6 }}>
+                      Si necesitas cambiar tu zona de operación, envía una solicitud. El administrador la revisará y te notificará por WhatsApp.
+                    </div>
+
+                    {/* Motivo */}
+                    <div style={{ marginBottom: 14 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 8 }}>Motivo del cambio</label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        {[
+                          { v: 'cambio_domicilio', label: '🏠 Cambio de domicilio' },
+                          { v: 'ampliar_zona',     label: '📈 Ampliar zona' },
+                          { v: 'reducir_zona',     label: '📉 Reducir zona' },
+                          { v: 'otro',             label: '💬 Otro motivo' },
+                        ].map(opt => (
+                          <button key={opt.v} onClick={() => setZoneForm(p => ({ ...p, reason_type: opt.v }))}
+                            style={{ padding: '10px 8px', borderRadius: 10, border: `2px solid ${zoneForm.reason_type === opt.v ? '#3b82f6' : '#e5e7eb'}`,
+                              background: zoneForm.reason_type === opt.v ? '#eff6ff' : '#fff',
+                              color: zoneForm.reason_type === opt.v ? '#1e40af' : '#374151',
+                              fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'center', minHeight: 44 }}>
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Nueva dirección */}
+                    <div style={{ marginBottom: 14 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Nueva dirección base</label>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input
+                          value={zoneForm.new_address}
+                          onChange={e => setZoneForm(p => ({ ...p, new_address: e.target.value, new_lat: null, new_lng: null }))}
+                          placeholder="Ej: Colonia Roma Norte, CDMX"
+                          style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 13, fontFamily: 'inherit' }}
+                        />
+                        <button onClick={geocodeZoneAddress}
+                          style={{ padding: '10px 12px', borderRadius: 10, background: '#3b82f6', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          🔍 Verificar
+                        </button>
+                      </div>
+                      {zoneForm.new_lat && zoneForm.new_lng && (
+                        <div style={{ background: '#f0fdf4', borderRadius: 8, padding: '6px 10px', marginTop: 6, fontSize: 12, color: '#065f46' }}>
+                          ✅ Dirección verificada: {zoneForm.new_lat.toFixed(4)}, {zoneForm.new_lng.toFixed(4)}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Radio de cobertura */}
+                    <div style={{ marginBottom: 14 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
+                        Radio de cobertura solicitado: <strong style={{ color: '#1e40af' }}>{zoneForm.new_radius} km</strong>
+                      </label>
+                      <input type="range" min="1" max="20" step="1" value={zoneForm.new_radius}
+                        onChange={e => setZoneForm(p => ({ ...p, new_radius: e.target.value }))}
+                        style={{ width: '100%', accentColor: '#3b82f6' }} />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                        <span>1 km</span><span>10 km</span><span>20 km</span>
+                      </div>
+                    </div>
+
+                    {/* Explicación adicional */}
+                    <div style={{ marginBottom: 14 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
+                        Explicación adicional <span style={{ fontWeight: 400, color: '#9ca3af' }}>(opcional)</span>
+                      </label>
+                      <textarea
+                        value={zoneForm.reason_detail}
+                        onChange={e => setZoneForm(p => ({ ...p, reason_detail: e.target.value }))}
+                        placeholder="Explica brevemente el motivo de tu solicitud..."
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', minHeight: 80, boxSizing: 'border-box' }}
+                      />
+                    </div>
+
+                    {zoneError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#dc2626', fontSize: 12 }}>⚠️ {zoneError}</div>}
+                    {zoneSuccess && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#065f46', fontSize: 12 }}>{zoneSuccess}</div>}
+
+                    <button onClick={submitZoneRequest} disabled={savingZone || !zoneForm.new_address.trim() || !zoneForm.new_lat}
+                      style={{ width: '100%', padding: '13px 0', background: savingZone || !zoneForm.new_address.trim() || !zoneForm.new_lat ? '#9ca3af' : 'linear-gradient(135deg,#1e40af,#3b82f6)',
+                        color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
+                        cursor: savingZone || !zoneForm.new_address.trim() || !zoneForm.new_lat ? 'not-allowed' : 'pointer', minHeight: 48 }}>
+                      {savingZone ? '⏳ Enviando...' : '📤 Enviar solicitud de cambio de zona'}
+                    </button>
+                  </div>
+                )}
+
               </div>
             )}
 

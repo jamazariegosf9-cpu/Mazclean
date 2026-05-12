@@ -101,6 +101,8 @@ const AdminViewB = ({
   const [reviewError, setReviewError]       = useState('');
   const [reviewPhotoModal, setReviewPhotoModal] = useState(null);
   const [reviewDocTab, setReviewDocTab]     = useState('personal');
+  const [zoneRequests, setZoneRequests]     = useState([]);
+  const [approvingZone, setApprovingZone]   = useState(null);
 
   // ── Delete modal ──────────────────────────────────────────────────────────
   const [deleteModal, setDeleteModal]       = useState(null); // op object
@@ -377,6 +379,42 @@ const AdminViewB = ({
   };
 
   // Docs que el operador acaba de corregir (status = 'corregido')
+  const fetchZoneRequests = async (operatorId) => {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/operator_zone_requests?operator_id=eq.${operatorId}&order=created_at.desc`,
+        { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (res.ok) setZoneRequests(await res.json())
+    } catch (err) { console.error('fetchZoneRequests:', err) }
+  }
+
+  const handleZoneRequest = async (requestId, action, operatorId) => {
+    setApprovingZone(requestId)
+    try {
+      const headers = { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }
+      // Actualizar status de la solicitud
+      await fetch(`${SUPABASE_URL}/rest/v1/operator_zone_requests?id=eq.${requestId}`, {
+        method: 'PATCH', headers,
+        body: JSON.stringify({ status: action === 'approve' ? 'aprobada' : 'rechazada', reviewed_by: null, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
+      })
+      if (action === 'approve') {
+        // Obtener la solicitud para actualizar el perfil
+        const reqRes = await fetch(`${SUPABASE_URL}/rest/v1/operator_zone_requests?id=eq.${requestId}&select=*`, { headers })
+        const reqData = reqRes.ok ? await reqRes.json() : []
+        const req = reqData[0]
+        if (req) {
+          await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${operatorId}`, {
+            method: 'PATCH', headers,
+            body: JSON.stringify({ base_address: req.new_address, base_lat: req.new_lat, base_lng: req.new_lng, coverage_radius: req.new_radius, updated_at: new Date().toISOString() }),
+          })
+        }
+      }
+      await fetchZoneRequests(operatorId)
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setApprovingZone(null) }
+  }
+
   const isDocCorrected = (key) => {
     if (!reviewingOp) return false;
     return (reviewingOp.rejected_documents || []).some(d => d.key === key && d.status === 'corregido');
@@ -1286,16 +1324,65 @@ const AdminViewB = ({
                 </div>
               )}
 
-              {reviewDocTab === 'zona' && (
-                <div style={{ background: '#f0f9ff', borderRadius: 12, padding: '14px 16px', border: '1.5px solid #bae6fd' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase', marginBottom: 10 }}>📍 Zona de Operación</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
-                    {[{ label: 'Radio', value: reviewingOp.coverage_radius ? `${reviewingOp.coverage_radius} km` : '—' }, { label: 'Días', value: Array.isArray(reviewingOp.work_days) ? reviewingOp.work_days.map(d => WORK_DAYS_LABELS[d] || d).join(', ') : '—' }, { label: 'Horario', value: reviewingOp.work_start && reviewingOp.work_end ? `${reviewingOp.work_start} – ${reviewingOp.work_end}` : '—' }].map(({ label, value }) => (
-                      <div key={label}><div style={{ fontSize: 10, color: '#0284c7', fontWeight: 600 }}>{label}</div><div style={{ fontSize: 13, color: '#0369a1', fontWeight: 600, marginTop: 2 }}>{value}</div></div>
-                    ))}
+              {reviewDocTab === 'zona' && (() => {
+                if (zoneRequests.length === 0 && reviewingOp) fetchZoneRequests(reviewingOp.id)
+                return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+                  {/* Zona actual */}
+                  <div style={{ background: '#f0f9ff', borderRadius: 12, padding: '14px 16px', border: '1.5px solid #bae6fd' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase', marginBottom: 10 }}>📍 Zona actual</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+                      {[{ label: 'Radio', value: reviewingOp.coverage_radius ? `${reviewingOp.coverage_radius} km` : '—' }, { label: 'Días', value: Array.isArray(reviewingOp.work_days) ? reviewingOp.work_days.map(d => WORK_DAYS_LABELS[d] || d).join(', ') : '—' }, { label: 'Horario', value: reviewingOp.work_start && reviewingOp.work_end ? `${reviewingOp.work_start} – ${reviewingOp.work_end}` : '—' }].map(({ label, value }) => (
+                        <div key={label}><div style={{ fontSize: 10, color: '#0284c7', fontWeight: 600 }}>{label}</div><div style={{ fontSize: 13, color: '#0369a1', fontWeight: 600, marginTop: 2 }}>{value}</div></div>
+                      ))}
+                    </div>
                   </div>
+
+                  {/* Solicitudes de cambio de zona */}
+                  {zoneRequests.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>📬 Solicitudes de cambio de zona</div>
+                      {zoneRequests.map(req => (
+                        <div key={req.id} style={{ borderRadius: 12, padding: '14px 16px', marginBottom: 10, border: '1.5px solid',
+                          borderColor: req.status === 'pendiente' ? '#fde68a' : req.status === 'aprobada' ? '#bbf7d0' : '#fecaca',
+                          background: req.status === 'pendiente' ? '#fffbeb' : req.status === 'aprobada' ? '#f0fdf4' : '#fef2f2' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: req.status === 'pendiente' ? '#92400e' : req.status === 'aprobada' ? '#065f46' : '#dc2626' }}>
+                              {req.status === 'pendiente' ? '⏳ Pendiente' : req.status === 'aprobada' ? '✅ Aprobada' : '❌ Rechazada'}
+                            </span>
+                            <span style={{ fontSize: 11, color: '#9ca3af' }}>{new Date(req.created_at).toLocaleDateString('es-MX')}</span>
+                          </div>
+                          <div style={{ fontSize: 12, color: '#374151', marginBottom: 6 }}>
+                            <div><strong>Nueva dirección:</strong> {req.new_address}</div>
+                            <div><strong>Radio:</strong> {req.new_radius} km</div>
+                            <div><strong>Motivo:</strong> {{ cambio_domicilio: 'Cambio de domicilio', ampliar_zona: 'Ampliar zona', reducir_zona: 'Reducir zona', otro: 'Otro' }[req.reason_type]}</div>
+                            {req.reason_detail && <div style={{ fontStyle: 'italic', marginTop: 3 }}>"{req.reason_detail}"</div>}
+                          </div>
+                          {req.status === 'pendiente' && (
+                            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                              <button onClick={() => handleZoneRequest(req.id, 'approve', reviewingOp.id)} disabled={approvingZone === req.id}
+                                style={{ flex: 1, padding: '10px', background: '#10b981', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 40 }}>
+                                {approvingZone === req.id ? '⏳...' : '✅ Aprobar'}
+                              </button>
+                              <button onClick={() => handleZoneRequest(req.id, 'reject', reviewingOp.id)} disabled={approvingZone === req.id}
+                                style={{ flex: 1, padding: '10px', background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 40 }}>
+                                ✕ Rechazar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {zoneRequests.filter(r => r.status === 'pendiente').length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '16px', fontSize: 12, color: '#9ca3af' }}>
+                      Sin solicitudes de cambio de zona pendientes
+                    </div>
+                  )}
                 </div>
-              )}
+              )})()}
 
               {reviewDocTab === 'contrato' && (
                 <div style={{ display: 'grid', gap: 14 }}>
