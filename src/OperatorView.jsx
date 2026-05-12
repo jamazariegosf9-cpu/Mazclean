@@ -24,6 +24,8 @@ const GOOGLE_MAPS_KEY   = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
 const OperatorView = () => {
   const { user, profile, signOut, loadProfileDirect } = useAuth();
   const { showToast } = useToast();
+  const [membershipPanelOpen, setMembershipPanelOpen] = useState(false)
+
   // ── Mis Horarios ─────────────────────────────────────────────────────────
   const [exceptions, setExceptions]         = useState([])
   const [excLoading, setExcLoading]         = useState(false)
@@ -1484,74 +1486,91 @@ const OperatorView = () => {
           <div>
             <h1 style={{ color: '#fff', fontSize: isMobile ? 18 : 22, fontWeight: 700, margin: '0 0 4px' }}>🚗 Mis Servicios</h1>
             <p style={{ color: '#bfdbfe', fontSize: 13, margin: 0 }}>Hola, {user?.user_metadata?.full_name || profile?.full_name || 'Operador'}</p>
-            {/* Banner membresía */}
-            {effectiveProfile?.membership_status === 'activa' && (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, background: 'rgba(16,185,129,0.2)', border: '1px solid rgba(16,185,129,0.4)', borderRadius: 20, padding: '3px 10px' }}>
-                <span style={{ fontSize: 11, color: '#6ee7b7', fontWeight: 700 }}>
-                  💳 Membresía activa
-                  {effectiveProfile.membership_end_at ? ` — vence ${new Date(effectiveProfile.membership_end_at).toLocaleDateString('es-MX')}` : ''}
-                </span>
-              </div>
-            )}
-            {effectiveProfile?.membership_status === 'vencida' && (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 20, padding: '3px 10px' }}>
-                <span style={{ fontSize: 11, color: '#fde68a', fontWeight: 700 }}>⚠️ Membresía vencida</span>
-              </div>
-            )}
-            {/* Record de miembro */}
-            {effectiveProfile?.membership_record_since && (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, marginLeft: 4 }}>
-                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>
-                  🏅 Miembro desde {new Date(effectiveProfile.membership_record_since).toLocaleDateString('es-MX', { year: 'numeric', month: 'short' })}
-                </span>
-              </div>
-            )}
-            {/* Botones pago — inactiva/vencida: activar con Stripe o depósito */}
-            {effectiveProfile?.membership_status !== 'activa' && (
-              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {payError && <div style={{ fontSize: 10, color: '#fca5a5', marginBottom: 2 }}>⚠️ {payError}</div>}
-                {/* Mostrar promo si aplica */}
-                {effectivePromo?.promo_name && (
-                  <div style={{ background: 'rgba(16,185,129,0.25)', border: '1px solid rgba(16,185,129,0.5)', borderRadius: 12, padding: '6px 10px', marginBottom: 6 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#6ee7b7' }}>🏷️ {effectivePromo.promo_name}</div>
-                    <div style={{ fontSize: 10, color: '#d1fae5' }}>
-                      {effectivePromo.discount_type === 'precio_fijo' && `Precio especial: $${effectivePromo.effective_price} MXN (normal: $${effectivePromo.base_price})`}
-                      {effectivePromo.discount_type === 'porcentaje' && `${effectivePromo.discount_value}% de descuento → $${effectivePromo.effective_price} MXN`}
-                      {effectivePromo.discount_type === 'dias_gratis' && `${effectivePromo.trial_days} días gratis incluidos`}
-                    </div>
+            {/* ── Chip de membresía colapsable ── */}
+            {effectiveProfile && (
+              <div style={{ marginTop: 8 }}>
+                {/* Chip — siempre visible, toque para expandir */}
+                <button onClick={() => {
+                  setMembershipPanelOpen(p => !p)
+                  if (!showMembershipHistory) fetchMembershipHistory()
+                }} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer', minHeight: 30,
+                  background: effectiveProfile.membership_status === 'activa'
+                    ? 'rgba(16,185,129,0.25)' : 'rgba(245,158,11,0.25)',
+                  border: effectiveProfile.membership_status === 'activa'
+                    ? '1px solid rgba(16,185,129,0.5)' : '1px solid rgba(245,158,11,0.5)',
+                }}>
+                  <span style={{ fontSize: 11, fontWeight: 700,
+                    color: effectiveProfile.membership_status === 'activa' ? '#6ee7b7' : '#fde68a' }}>
+                    {effectiveProfile.membership_status === 'activa'
+                      ? `💳 Activa · vence ${new Date(effectiveProfile.membership_end_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}`
+                      : effectiveProfile.membership_status === 'vencida'
+                        ? '⚠️ Membresía vencida'
+                        : '⚠️ Sin membresía activa'}
+                  </span>
+                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }}>
+                    {membershipPanelOpen ? '▲' : '▼'}
+                  </span>
+                </button>
+
+                {/* Record de miembro — siempre visible, pequeño */}
+                {effectiveProfile.membership_record_since && (
+                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', marginLeft: 8 }}>
+                    🏅 desde {new Date(effectiveProfile.membership_record_since).toLocaleDateString('es-MX', { year: 'numeric', month: 'short' })}
+                  </span>
+                )}
+
+                {/* Panel expandible */}
+                {membershipPanelOpen && (
+                  <div style={{ marginTop: 10, background: 'rgba(0,0,0,0.2)', borderRadius: 14, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {/* Promo si aplica */}
+                    {effectivePromo?.promo_name && (
+                      <div style={{ background: 'rgba(16,185,129,0.2)', border: '1px solid rgba(16,185,129,0.4)', borderRadius: 10, padding: '6px 10px' }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#6ee7b7' }}>🏷️ {effectivePromo.promo_name}</div>
+                        <div style={{ fontSize: 10, color: '#d1fae5' }}>
+                          {effectivePromo.discount_type === 'precio_fijo' && `Precio especial: $${effectivePromo.effective_price} MXN`}
+                          {effectivePromo.discount_type === 'porcentaje' && `${effectivePromo.discount_value}% descuento → $${effectivePromo.effective_price} MXN`}
+                          {effectivePromo.discount_type === 'dias_gratis' && `${effectivePromo.trial_days} días gratis incluidos`}
+                        </div>
+                      </div>
+                    )}
+                    {/* Botones de pago si no está activa */}
+                    {effectiveProfile.membership_status !== 'activa' && (
+                      <>
+                        {payError && <div style={{ fontSize: 10, color: '#fca5a5' }}>⚠️ {payError}</div>}
+                        <button onClick={handleSubscribeOperator} disabled={payingMembership}
+                          style={{ padding: '8px 14px', background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 10, color: '#fff', fontSize: 12, fontWeight: 700, cursor: payingMembership ? 'not-allowed' : 'pointer', minHeight: 38 }}>
+                          {payingMembership ? '⏳ Redirigiendo...' : `💳 Pagar con tarjeta $${effectivePromo?.effective_price || membershipConfig?.operator_price || 200} MXN/mes`}
+                        </button>
+                        <button onClick={() => { setDepositModal(true); setDepositSuccess(false); setDepositError('') }}
+                          style={{ padding: '8px 14px', background: 'rgba(16,185,129,0.15)', border: '1.5px solid rgba(16,185,129,0.4)', borderRadius: 10, color: '#6ee7b7', fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 38 }}>
+                          🏦 Pagar con depósito bancario
+                        </button>
+                      </>
+                    )}
+                    {/* Renovar anticipado */}
+                    {effectiveProfile.membership_status === 'activa' && effectiveProfile.membership_end_at &&
+                      Math.ceil((new Date(effectiveProfile.membership_end_at) - new Date()) / 86400000) <= 15 && (
+                        <button onClick={handleSubscribeOperator} disabled={payingMembership}
+                          style={{ padding: '8px 14px', background: 'rgba(251,191,36,0.2)', border: '1px solid rgba(251,191,36,0.4)', borderRadius: 10, color: '#fde68a', fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 38 }}>
+                          {payingMembership ? '⏳...' : `🔄 Renovar anticipado (${Math.ceil((new Date(effectiveProfile.membership_end_at) - new Date()) / 86400000)}d restantes)`}
+                        </button>
+                    )}
+                    {/* Cancelar */}
+                    {effectiveProfile.membership_status === 'activa' && (
+                      <button onClick={handleCancelMembership} disabled={cancellingMembership}
+                        style={{ padding: '6px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, color: '#fca5a5', fontSize: 11, fontWeight: 600, cursor: 'pointer', minHeight: 34 }}>
+                        {cancellingMembership ? '⏳...' : '✕ Cancelar membresía'}
+                      </button>
+                    )}
+                    {/* Historial */}
+                    <button onClick={() => { setShowMembershipHistory(p => !p); if (!showMembershipHistory) fetchMembershipHistory() }}
+                      style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 10, color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: 600, cursor: 'pointer', minHeight: 34 }}>
+                      {showMembershipHistory ? '▲ Ocultar historial' : '📋 Historial membresías'}
+                    </button>
                   </div>
                 )}
-                <button onClick={handleSubscribeOperator} disabled={payingMembership}
-                  style={{ padding: '7px 14px', background: payingMembership ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)', border: '1.5px solid rgba(255,255,255,0.4)', borderRadius: 20, color: '#fff', fontSize: 11, fontWeight: 700, cursor: payingMembership ? 'not-allowed' : 'pointer', minHeight: 34 }}>
-                  {payingMembership ? '⏳ Redirigiendo...' : `💳 Pagar con tarjeta $${effectivePromo?.effective_price || membershipConfig?.operator_price || 200} MXN/mes`}
-                </button>
-                <button onClick={() => { setDepositModal(true); setDepositSuccess(false); setDepositError(''); }}
-                  style={{ padding: '7px 14px', background: 'rgba(16,185,129,0.2)', border: '1.5px solid rgba(16,185,129,0.5)', borderRadius: 20, color: '#6ee7b7', fontSize: 11, fontWeight: 700, cursor: 'pointer', minHeight: 34 }}>
-                  🏦 Pagar con depósito bancario
-                </button>
               </div>
             )}
-            {/* Cancelar membresía activa */}
-            {effectiveProfile?.membership_status === 'activa' && (
-              <button onClick={handleCancelMembership} disabled={cancellingMembership}
-                style={{ marginTop: 6, padding: '4px 10px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 20, color: '#fca5a5', fontSize: 10, fontWeight: 600, cursor: 'pointer', minHeight: 26 }}>
-                {cancellingMembership ? '⏳...' : '✕ Cancelar membresía'}
-              </button>
-            )}
-            {effectiveProfile?.membership_status === 'activa' && effectiveProfile?.membership_end_at &&
-              Math.ceil((new Date(effectiveProfile.membership_end_at) - new Date()) / 86400000) <= 15 && (
-                <div style={{ marginTop: 6 }}>
-                  <button onClick={handleSubscribeOperator} disabled={payingMembership}
-                    style={{ padding: '5px 12px', background: 'rgba(251,191,36,0.25)', border: '1px solid rgba(251,191,36,0.5)', borderRadius: 20, color: '#fde68a', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 28 }}>
-                    {payingMembership ? '⏳...' : `🔄 Renovar anticipado (${Math.ceil((new Date(effectiveProfile.membership_end_at) - new Date()) / 86400000)}d restantes)`}
-                  </button>
-                </div>
-              )}
-            {/* Ver historial */}
-            <button onClick={() => { setShowMembershipHistory(!showMembershipHistory); if (!showMembershipHistory) fetchMembershipHistory(); }}
-              style={{ marginTop: 6, padding: '4px 10px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 20, color: 'rgba(255,255,255,0.8)', fontSize: 10, fontWeight: 600, cursor: 'pointer', minHeight: 26 }}>
-              {showMembershipHistory ? '▲ Ocultar' : '📋 Historial membresías'}
-            </button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
             <button onClick={() => signOut()} style={{ background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 10, padding: '10px 12px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', minHeight: 44 }}>

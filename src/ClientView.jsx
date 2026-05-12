@@ -145,6 +145,7 @@ export default function ClientView() {
   const [showClientTerms, setShowClientTerms] = useState(false)
   const [clientTermsAccepted, setClientTermsAccepted] = useState(false)
   const [chatOpen, setChatOpen]           = useState(false)
+  const [membershipExpanded, setMembershipExpanded] = useState(false)
   const [chatMessages, setChatMessages]   = useState([])
   const [chatInput, setChatInput]         = useState('')
   const [chatLoading, setChatLoading]     = useState(false)
@@ -692,22 +693,29 @@ export default function ClientView() {
 
       <div style={styles.card}>
 
-        {/* ── Membresía Premium (visible solo si client_enabled = true) ── */}
+        {/* ── Membresía Premium colapsable ── */}
         {membershipConfig?.client_enabled && (
-          <div style={{ marginBottom: 20, borderRadius: 14, overflow: 'hidden', border: '1.5px solid #e9d5ff' }}>
-            <div style={{ background: 'linear-gradient(135deg,#7c3aed,#a78bfa)', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>⭐ Membresía Premium</div>
-                <div style={{ color: '#ede9fe', fontSize: 12, marginTop: 2 }}>
-                  ${membershipConfig.client_price} MXN / {membershipConfig.client_duration_days} días
+          <div style={{ marginBottom: 20, borderRadius: 14, overflow: 'hidden', border: clientProfile?.membership_status === 'activa' ? '1.5px solid #bbf7d0' : '1.5px solid #e9d5ff' }}>
+            {/* Header siempre visible — toque para expandir/colapsar */}
+            <button onClick={() => { setMembershipExpanded(p => !p); if (!showMembershipHistory) fetchMembershipHistory() }}
+              style={{ width: '100%', background: 'linear-gradient(135deg,#7c3aed,#a78bfa)', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: 'none', cursor: 'pointer' }}>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>⭐ Membresía Premium</div>
+                <div style={{ color: '#ede9fe', fontSize: 11, marginTop: 1 }}>
+                  {clientProfile?.membership_status === 'activa'
+                    ? `Activa · vence ${new Date(clientProfile.membership_end_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}`
+                    : `$${membershipConfig.client_price} MXN / mes · Toca para activar`}
                 </div>
               </div>
-              {clientProfile?.membership_status === 'activa'
-                ? <span style={{ background: 'rgba(16,185,129,0.25)', border: '1px solid rgba(16,185,129,0.5)', borderRadius: 20, padding: '4px 12px', color: '#6ee7b7', fontSize: 12, fontWeight: 700 }}>✅ Activa</span>
-                : <span style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 20, padding: '4px 12px', color: '#ede9fe', fontSize: 12, fontWeight: 700 }}>○ Inactiva</span>
-              }
-            </div>
-            <div style={{ background: '#faf5ff', padding: '12px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {clientProfile?.membership_status === 'activa'
+                  ? <span style={{ background: 'rgba(16,185,129,0.3)', border: '1px solid rgba(16,185,129,0.5)', borderRadius: 20, padding: '3px 10px', color: '#6ee7b7', fontSize: 11, fontWeight: 700 }}>✅ Activa</span>
+                  : <span style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 20, padding: '3px 10px', color: '#ede9fe', fontSize: 11, fontWeight: 700 }}>○ Inactiva</span>
+                }
+                <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>{membershipExpanded ? '▲' : '▼'}</span>
+              </div>
+            </button>
+            {membershipExpanded && <div style={{ background: '#faf5ff', padding: '12px 16px' }}>
 
               {/* Record de miembro */}
               {clientProfile?.membership_record_since && (
@@ -819,7 +827,7 @@ export default function ClientView() {
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
           </div>
         )}
 
