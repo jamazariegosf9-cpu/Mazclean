@@ -70,6 +70,7 @@ const OperatorView = () => {
   const [effectivePromo, setEffectivePromo]               = useState(null);
   // Chat interno
   const [chatBookingId, setChatBookingId]     = useState(null);
+  const [unreadByBooking, setUnreadByBooking]  = useState({}) // { bookingId: count }
   const [chatMessages, setChatMessages]       = useState([]);
   const [chatInput, setChatInput]             = useState('');
   const [chatLoading, setChatLoading]         = useState(false);
@@ -142,6 +143,7 @@ const OperatorView = () => {
     fetchCommissionData();
     fetchRatingData();
     fetchBillingHistory();
+    fetchUnreadCounts();
 
     // ── Detectar regreso desde Stripe con pago exitoso ────────────────────
     const params = new URLSearchParams(window.location.search);
@@ -607,6 +609,7 @@ const OperatorView = () => {
     setChatBookingId(bookingId)
     setChatInput('')
     setChatError('')
+    setUnreadByBooking(prev => ({ ...prev, [bookingId]: 0 }))
     if (chatChannelRef.current) { supabase.removeChannel(chatChannelRef.current); chatChannelRef.current = null }
     await fetchMessages(bookingId)
     await requestNotificationPermission()
@@ -625,6 +628,10 @@ const OperatorView = () => {
           playNotificationSound()
           vibrateDevice()
           showSystemNotification('💬 Mensaje del cliente', msg.content)
+          // Badge solo si el chat de ESTE booking no está abierto
+          if (msg.booking_id !== chatBookingId) {
+            setUnreadByBooking(prev => ({ ...prev, [msg.booking_id]: (prev[msg.booking_id] || 0) + 1 }))
+          }
         }
         setChatMessages(prev => {
           const tempIdx = prev.findIndex(m =>
@@ -717,6 +724,33 @@ const OperatorView = () => {
       else { setFetchError('No se pudieron cargar los servicios. Verifica tu conexion.'); }
     } finally { if (!timedOut) { fetchingRef.current = false; setLoading(false); } }
   };
+
+  // ── Cargar unread count al iniciar ──────────────────────────────────────
+  const fetchUnreadCounts = async () => {
+    if (!user?.id) return
+    try {
+      const token = getToken()
+      // Obtener todos los bookings activos del operador
+      const bkRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/bookings?operator_id=eq.${user.id}&status=in.(confirmado,en_camino,en_proceso)&select=id`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (!bkRes.ok) return
+      const bks = await bkRes.json()
+      if (!bks.length) return
+      // Contar mensajes sin leer del cliente por booking
+      const ids = bks.map(b => `"${b.id}"`).join(',')
+      const msgRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/messages?booking_id=in.(${ids})&sender_role=eq.cliente&read_at=is.null&select=booking_id`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (!msgRes.ok) return
+      const msgs = await msgRes.json()
+      const counts = {}
+      msgs.forEach(m => { counts[m.booking_id] = (counts[m.booking_id] || 0) + 1 })
+      setUnreadByBooking(counts)
+    } catch (err) { console.error('fetchUnreadCounts:', err) }
+  }
 
   // ── Fetch solicitudes pendientes del operador ─────────────────────────────
   const fetchBookingRequests = async () => {
@@ -2029,8 +2063,13 @@ const OperatorView = () => {
                       {['confirmado','en_camino','en_proceso'].includes(booking.status) && (
                         <>
                           <button onClick={e => { e.stopPropagation(); openChat(booking.id); }}
-                            style={{ background: '#eff6ff', color: '#1e40af', border: '1.5px solid #bfdbfe', borderRadius: 10, padding: '13px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, minHeight: 48, position: 'relative' }}>
+                            style={{ background: unreadByBooking[booking.id] ? '#1e40af' : '#eff6ff', color: unreadByBooking[booking.id] ? '#fff' : '#1e40af', border: '1.5px solid #bfdbfe', borderRadius: 10, padding: '13px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, minHeight: 48, position: 'relative' }}>
                             💬
+                            {unreadByBooking[booking.id] > 0 && (
+                              <span style={{ background: '#dc2626', color: '#fff', borderRadius: '50%', width: 18, height: 18, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'absolute', top: -6, right: -6 }}>
+                                {unreadByBooking[booking.id]}
+                              </span>
+                            )}
                           </button>
                           <button onClick={e => { e.stopPropagation(); setIncidentBooking(booking); setIncidentModal(true); }}
                             style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 10, padding: '13px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, minHeight: 48 }}>

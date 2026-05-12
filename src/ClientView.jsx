@@ -151,6 +151,7 @@ export default function ClientView() {
   const [chatSending, setChatSending]     = useState(false)
   const [chatError, setChatError]         = useState('')
   const [unreadCount, setUnreadCount]     = useState(0)
+  const [unreadByBooking, setUnreadByBooking] = useState({}) // { bookingId: count }
   const chatBottomRef                     = useRef(null)
   const chatChannelRef                    = useRef(null)
   const bgChannelRef                      = useRef(null)
@@ -307,6 +308,8 @@ export default function ClientView() {
       if (res.ok) {
         const msgs = await res.json()
         setChatMessages(msgs)
+        const unread = msgs.filter(m => m.sender_role === 'operador' && !m.read_at).length
+        setUnreadByBooking(prev => ({ ...prev, [bookingId]: unread }))
         // Contar no leídos del operador
         setUnreadCount(msgs.filter(m => m.sender_role === 'operador' && !m.read_at).length)
       }
@@ -319,6 +322,7 @@ export default function ClientView() {
     setChatInput('')
     setChatError('')
     setUnreadCount(0)
+    setUnreadByBooking(prev => ({ ...prev, [bookingId]: 0 }))
     // Limpiar todos los canales previos
     if (bgChannelRef.current) { supabase.removeChannel(bgChannelRef.current); bgChannelRef.current = null }
     if (chatChannelRef.current) { supabase.removeChannel(chatChannelRef.current); chatChannelRef.current = null }
@@ -375,6 +379,7 @@ export default function ClientView() {
           (payload) => {
             if (payload.new.sender_role === 'operador') {
               setUnreadCount(prev => prev + 1)
+              setUnreadByBooking(prev => ({ ...prev, [activeBooking.id]: (prev[activeBooking.id] || 0) + 1 }))
               playNotificationSound()
               vibrateDevice()
               showSystemNotification('💬 Tu operador te escribió', payload.new.content)
@@ -634,20 +639,7 @@ export default function ClientView() {
         <TrackingCard booking={activeBooking} mapsLoaded={mapsLoaded} eta={eta} setEta={setEta} />
       )}
 
-      {/* Botón chat — visible cuando hay servicio activo */}
-      {activeBooking && ['confirmado','en_camino','en_proceso'].includes(activeBooking.status) && (
-        <div style={{ margin: '0 0 12px', padding: '0 16px' }}>
-          <button onClick={() => openChat(activeBooking.id)}
-            style={{ width: '100%', padding: '12px 16px', borderRadius: 12, background: 'linear-gradient(135deg,#1e40af,#3b82f6)', border: 'none', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 48, boxShadow: '0 2px 8px rgba(30,64,175,0.3)', position: 'relative' }}>
-            💬 Contactar a mi operador
-            {unreadCount > 0 && (
-              <span style={{ background: '#dc2626', color: '#fff', borderRadius: '50%', width: 22, height: 22, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: 4 }}>
-                {unreadCount}
-              </span>
-            )}
-          </button>
-        </div>
-      )}
+      {/* Botón chat global eliminado — ahora cada tarjeta tiene su propio botón */}
 
       <div style={styles.card}>
 
@@ -821,7 +813,10 @@ export default function ClientView() {
                     setRatingValue(b.client_rating || 0)
                     setRatingReview(b.client_review || '')
                     setRatingModal(true)
-                  }} />
+                  }}
+                  onChat={['confirmado','en_camino','en_proceso'].includes(b.status) ? () => openChat(b.id) : null}
+                  chatUnread={unreadByBooking[b.id] || 0}
+                />
               ))
             )}
           </>
@@ -898,7 +893,9 @@ export default function ClientView() {
             <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div>
                 <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>💬 Chat con tu operador</div>
-                <div style={{ color: '#bfdbfe', fontSize: 11, marginTop: 2 }}>Comunicación directa durante el servicio</div>
+                <div style={{ color: '#bfdbfe', fontSize: 11, marginTop: 2 }}>
+                  {activeBooking?.booking_ref} · {activeBooking?.service_name}
+                </div>
               </div>
               <button onClick={() => closeChat(activeBooking?.id)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 32, height: 32, color: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
@@ -1273,7 +1270,7 @@ function TrackingCard({ booking, mapsLoaded, eta, setEta }) {
 }
 
 // ── BookingCard ────────────────────────────────────────────────────
-function BookingCard({ booking, onRate }) {
+function BookingCard({ booking, onRate, onChat, chatUnread }) {
   const status  = STATUS_INFO[booking.status] || STATUS_INFO.pendiente
   const canRate = booking.status === 'finalizado' && !booking.client_rating
   const hasRated = booking.status === 'finalizado' && booking.client_rating
@@ -1299,6 +1296,18 @@ function BookingCard({ booking, onRate }) {
           <span style={{ fontSize: 14 }}>{'⭐'.repeat(booking.client_rating)}</span>
           {booking.client_review && <span style={{ fontSize: 12, color: '#854d0e' }}>{booking.client_review}</span>}
         </div>
+      )}
+      {/* Botón chat — visible solo en bookings activos */}
+      {onChat && (
+        <button onClick={onChat}
+          style={{ marginTop: 10, width: '100%', padding: '11px 0', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 44, position: 'relative' }}>
+          💬 Contactar a mi operador
+          {chatUnread > 0 && (
+            <span style={{ background: '#dc2626', color: '#fff', borderRadius: '50%', width: 20, height: 20, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {chatUnread}
+            </span>
+          )}
+        </button>
       )}
       {canRate && (
         <button onClick={onRate}
