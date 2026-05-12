@@ -790,17 +790,6 @@ const AdminViewC = () => {
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: isMobile ? '0 12px' : '0 16px', overflowX: 'hidden', boxSizing: 'border-box' }}>
 
-        {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(auto-fit,minmax(140px,1fr))', gap: isMobile ? 8 : 12, marginTop: 20 }}>
-          {statCards.map((s, i) => (
-            <div key={i} style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? '14px' : '16px 18px' }}>
-              <div style={{ fontSize: isMobile ? 20 : 22, marginBottom: 6 }}>{s.icon}</div>
-              <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</div>
-              <div style={{ fontSize: isMobile ? 22 : 26, fontWeight: 700, color: s.color, marginTop: 2 }}>{s.value}</div>
-            </div>
-          ))}
-        </div>
-
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 4, marginTop: 20, background: '#e5e7eb', padding: 4, borderRadius: 12, overflowX: 'auto', scrollbarWidth: 'none' }}>
           {[
