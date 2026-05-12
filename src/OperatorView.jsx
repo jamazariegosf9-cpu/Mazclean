@@ -1636,12 +1636,14 @@ const OperatorView = () => {
     if (user && activeTab === 'horarios') { fetchExceptions(); fetchZoneRequest() }
   }, [activeTab, user?.id])
 
-  // Generar mapa estático cuando cambia la ubicación del formulario de zona
+  // Generar URL de mapa cuando cambia la ubicación del formulario de zona
+  // Usa OpenStreetMap embed — sin dependencia de API key
   useEffect(() => {
     const { new_lat, new_lng, new_radius } = zoneForm
-    if (new_lat && new_lng && GOOGLE_MAPS_KEY) {
+    if (new_lat && new_lng) {
       const zoom = new_radius > 10 ? 11 : new_radius > 5 ? 12 : 13
-      const url = `https://maps.googleapis.com/maps/api/staticmap?center=${new_lat},${new_lng}&zoom=${zoom}&size=400x200&maptype=roadmap&markers=color:blue%7C${new_lat},${new_lng}&key=${GOOGLE_MAPS_KEY}`
+      // OpenStreetMap embed con marcador
+      const url = `https://www.openstreetmap.org/export/embed.html?bbox=${new_lng - 0.02},${new_lat - 0.02},${new_lng + 0.02},${new_lat + 0.02}&layer=mapnik&marker=${new_lat},${new_lng}`
       setZoneMapUrl(url)
     } else {
       setZoneMapUrl(null)
@@ -2450,22 +2452,21 @@ const OperatorView = () => {
                       {zoneMapUrl && (
                         <div style={{ marginTop: 10 }}>
                           <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>🗺️ Tu nueva zona de operación</div>
-                          <img
-                            src={zoneMapUrl}
-                            alt="zona de cobertura"
-                            style={{ width: '100%', borderRadius: 12, border: '1.5px solid #bfdbfe', maxHeight: 200, objectFit: 'cover', display: 'block' }}
-                            onError={e => { e.target.style.display = 'none' }}
-                          />
+                          <div style={{ borderRadius: 12, overflow: 'hidden', border: '1.5px solid #bfdbfe', height: 200 }}>
+                            <iframe
+                              src={zoneMapUrl}
+                              width="100%"
+                              height="200"
+                              frameBorder="0"
+                              scrolling="no"
+                              title="Mapa nueva zona"
+                              style={{ display: 'block', border: 'none' }}
+                            />
+                          </div>
                           <p style={{ fontSize: 11, color: '#9ca3af', margin: '6px 0 0' }}>
-                            Zona estimada con {zoneForm.new_radius} km de radio desde tu nueva base
+                            📍 Zona base con {zoneForm.new_radius} km de radio · {zoneForm.new_lat?.toFixed(4)}, {zoneForm.new_lng?.toFixed(4)}
                           </p>
                         </div>
-                      )}
-                      {zoneForm.new_lat && zoneForm.new_lng && !GOOGLE_MAPS_KEY && (
-                        <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '8px 12px', marginTop: 8 }}>
-                          <p style={{ fontSize: 12, color: '#0284c7', margin: 0 }}>📍 Ubicación: {zoneForm.new_lat.toFixed(4)}, {zoneForm.new_lng.toFixed(4)} · Radio: {zoneForm.new_radius} km</p>
-                        </div>
-                      )}
                     </div>
 
                     {/* Radio de cobertura */}
