@@ -1,6 +1,7 @@
-// src/lib/whatsapp.js v2
-// Fix: reemplaza supabase.functions.invoke() por fetch directo
-// Motivo: invoke() bloquea el lock de Supabase en móvil causando que los mensajes no se envíen
+// src/lib/whatsapp.js v3
+// Agrega: reintentos con backoff exponencial (3 intentos: 0s, 5s, 15s)
+// Si los 3 fallan → log en whatsapp_failures
+// updateOperatorLocation sin reintentos (se llama cada 30s de todas formas)
 
 const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -16,52 +17,91 @@ function getToken() {
   return SUPABASE_KEY
 }
 
-/**
- * Envía un mensaje de WhatsApp al cliente
- * @param {string} event   - Tipo de evento: booking_created, operator_assigned,
- *                           on_the_way, llegando, washing, done
- * @param {string} phone   - Teléfono del cliente (10 dígitos mexicanos)
- * @param {object} booking - Datos de la reservación
- */
-export async function sendWhatsApp(event, phone, booking) {
-  if (!phone) {
-    console.warn('sendWhatsApp: no hay teléfono del cliente, omitiendo notificación')
-    return
-  }
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
+async function logFailure(event, phone, error, bookingId, operatorId) {
   try {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
-      method:  'POST',
+    await fetch(`${SUPABASE_URL}/rest/v1/whatsapp_failures`, {
+      method: 'POST',
       headers: {
         'Authorization': `Bearer ${getToken()}`,
         'apikey':        SUPABASE_KEY,
         'Content-Type':  'application/json',
+        'Prefer':        'return=minimal',
       },
-      body: JSON.stringify({ event, phone, booking, extra: booking }),
+      body: JSON.stringify({
+        event,
+        phone,
+        error:       error?.toString() || 'Error desconocido',
+        attempts:    3,
+        booking_id:  bookingId  || null,
+        operator_id: operatorId || null,
+      }),
     })
-
-    const data = await res.json()
-
-    if (!res.ok) {
-      console.warn(`⚠️ WhatsApp error [${event}]:`, data?.error || res.status)
-      return { success: false, error: data?.error }
-    }
-
-    console.log(`✅ WhatsApp enviado [${event}] a ${phone}`)
-    return data
-  } catch (err) {
-    console.error(`⚠️ Error crítico en sendWhatsApp [${event}]:`, err.message)
-    return { success: false, error: err.message }
+  } catch (logErr) {
+    console.error('Error registrando fallo WA:', logErr.message)
   }
 }
 
 /**
- * Envía ubicación del operador a la Edge Function track-operator.
- * Actualiza operator_locations y dispara WhatsApp "llegando" si está a ~5 min.
- * @param {string} bookingId   - ID de la reservación activa
- * @param {string} operatorId  - ID del operador
- * @param {number} lat         - Latitud actual del operador
- * @param {number} lng         - Longitud actual del operador
+ * Envía un mensaje de WhatsApp con reintentos (backoff: 0s → 5s → 15s)
+ * @param {string} event      - Tipo de evento
+ * @param {string} phone      - Teléfono del destinatario (10 dígitos mexicanos)
+ * @param {object} booking    - Datos de la reservación / contexto
+ * @param {object} options    - { bookingId, operatorId } para log de fallos
+ */
+export async function sendWhatsApp(event, phone, booking, options = {}) {
+  if (!phone) {
+    console.warn('sendWhatsApp: no hay teléfono, omitiendo notificación')
+    return { success: false, error: 'sin teléfono' }
+  }
+
+  const delays = [0, 5000, 15000]
+  let lastError = null
+
+  for (let attempt = 0; attempt < delays.length; attempt++) {
+    if (delays[attempt] > 0) {
+      console.log(`sendWhatsApp [${event}]: reintento ${attempt + 1} en ${delays[attempt] / 1000}s...`)
+      await sleep(delays[attempt])
+    }
+
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
+        method:  'POST',
+        headers: {
+          'Authorization': `Bearer ${getToken()}`,
+          'apikey':        SUPABASE_KEY,
+          'Content-Type':  'application/json',
+        },
+        body: JSON.stringify({ event, phone, booking, extra: booking }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok) {
+        if (attempt > 0) console.log(`✅ WhatsApp enviado [${event}] en intento ${attempt + 1}`)
+        else console.log(`✅ WhatsApp enviado [${event}] a ${phone}`)
+        return { success: true, ...data }
+      }
+
+      lastError = data?.error || `HTTP ${res.status}`
+      console.warn(`⚠️ WhatsApp intento ${attempt + 1} fallido [${event}]: ${lastError}`)
+
+    } catch (err) {
+      lastError = err.message
+      console.warn(`⚠️ WhatsApp intento ${attempt + 1} excepción [${event}]: ${lastError}`)
+    }
+  }
+
+  // Los 3 intentos fallaron — registrar en whatsapp_failures
+  console.error(`❌ WhatsApp [${event}] falló después de 3 intentos. Registrando fallo.`)
+  await logFailure(event, phone, lastError, options?.bookingId, options?.operatorId)
+  return { success: false, error: lastError }
+}
+
+/**
+ * Envía ubicación del operador a track-operator.
+ * Sin reintentos — se llama cada 30s, un fallo aislado es irrelevante.
  */
 export async function updateOperatorLocation(bookingId, operatorId, lat, lng) {
   try {

@@ -624,9 +624,17 @@ const AdminViewB = ({
       const phone = reviewingOp?.phone;
       if (phone) {
         try {
-          if (reviewAction === 'approve') await sendWhatsApp('operator_approved', phone, { operator_name: reviewingOp.full_name });
-          else if (reviewAction === 'reject_docs') await sendWhatsApp('operator_docs_required', phone, { operator_name: reviewingOp.full_name, docs_list: rejectedDocs.map(d => `${d.icon} ${d.label}${d.reason ? `: ${d.reason}` : ''}`).join('\n') });
-          else await sendWhatsApp('operator_rejected', phone, { operator_name: reviewingOp.full_name, rejection_reason: rejectionReason });
+          if (reviewAction === 'approve') {
+            // Primera aprobación (pending_review) vs aprobación posterior (docs_requeridos)
+            const waEvent = reviewingOp.operator_status === 'docs_requeridos'
+              ? 'operator_docs_approved'
+              : 'operator_approved'
+            await sendWhatsApp(waEvent, phone, { operator_name: reviewingOp.full_name }, { operatorId: reviewingOp.id })
+          } else if (reviewAction === 'reject_docs') {
+            await sendWhatsApp('operator_docs_required', phone, { operator_name: reviewingOp.full_name, docs_list: rejectedDocs.map(d => `${d.icon} ${d.label}${d.reason ? `: ${d.reason}` : ''}`).join('\n') }, { operatorId: reviewingOp.id })
+          } else {
+            await sendWhatsApp('operator_rejected', phone, { operator_name: reviewingOp.full_name, rejection_reason: rejectionReason }, { operatorId: reviewingOp.id })
+          }
         } catch (wsErr) { console.warn('WhatsApp omitido:', wsErr.message); }
       }
       if (reviewAction === 'approve' || reviewAction === 'reject') {
