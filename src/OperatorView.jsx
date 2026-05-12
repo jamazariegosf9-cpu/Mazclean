@@ -1241,7 +1241,7 @@ const OperatorView = () => {
   const fetchZoneRequest = async () => {
     if (!user?.id) return
     try {
-      const token = getTokenFromStorage()
+      const token = getToken()
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/operator_zone_requests?operator_id=eq.${user.id}&status=eq.pendiente&order=created_at.desc&limit=1`,
         { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
@@ -1256,7 +1256,7 @@ const OperatorView = () => {
     if (!zoneForm.reason_type) { setZoneError('Selecciona el motivo del cambio.'); return }
     setSavingZone(true); setZoneError(''); setZoneSuccess('')
     try {
-      const token = getTokenFromStorage()
+      const token = getToken()
       const res = await fetch(`${SUPABASE_URL}/rest/v1/operator_zone_requests`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
@@ -1524,7 +1524,7 @@ const OperatorView = () => {
           savingSchedule={savingSchedule} scheduleError={scheduleError}
           saveScheduleChange={saveScheduleChange}
           zoneRequest={zoneRequest} zoneForm={zoneForm} setZoneForm={setZoneForm}
-          zoneMapUrl={zoneMapUrl} savingZone={savingZone} zoneSuccess={zoneSuccess} zoneError={zoneError}
+          savingZone={savingZone} zoneSuccess={zoneSuccess} zoneError={zoneError}
           submitZoneRequest={submitZoneRequest} geocodeZoneAddress={geocodeZoneAddress}
           profile={profile} isMobile={isMobile}
         />

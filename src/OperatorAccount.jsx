@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Clock } from 'lucide-react';
 import { LevelBadge } from './OperatorHelpers';
 
@@ -10,6 +10,75 @@ const WORK_DAYS_LABELS = {
   lunes: 'Lun', martes: 'Mar', miercoles: 'Mie',
   jueves: 'Jue', viernes: 'Vie', sabado: 'Sab', domingo: 'Dom',
 };
+
+// ── ZoneMapPicker — mapa interactivo con marcador arrastrable ─────────────────
+function ZoneMapPicker({ lat, lng, onMove }) {
+  const mapRef    = useRef(null)
+  const markerRef = useRef(null)
+  const mapInstRef = useRef(null)
+
+  useEffect(() => {
+    if (!mapRef.current) return
+    const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || ''
+    const initMap = () => {
+      if (!window.google?.maps) return
+      const center = { lat, lng }
+      const map = new window.google.maps.Map(mapRef.current, {
+        center, zoom: 15,
+        disableDefaultUI: true,
+        zoomControl: true,
+        gestureHandling: 'cooperative',
+      })
+      mapInstRef.current = map
+      const marker = new window.google.maps.Marker({
+        position: center, map, draggable: true,
+        title: 'Arrastra para ajustar tu ubicación',
+      })
+      markerRef.current = marker
+      marker.addListener('dragend', async (e) => {
+        const newLat = e.latLng.lat()
+        const newLng = e.latLng.lng()
+        // Reverse geocoding con Nominatim
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${newLat}&lon=${newLng}&format=json&accept-language=es`)
+          const data = await res.json()
+          const address = data?.display_name || ''
+          onMove(newLat, newLng, address)
+        } catch {
+          onMove(newLat, newLng, '')
+        }
+      })
+    }
+    // Cargar Google Maps si no está ya cargado
+    if (window.google?.maps) {
+      initMap()
+    } else {
+      const existing = document.getElementById('google-maps-script-zone')
+      if (!existing) {
+        const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || ''
+        const script = document.createElement('script')
+        script.id = 'google-maps-script-zone'
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_KEY}&libraries=places&v=weekly&loading=async`
+        script.async = true
+        script.defer = true
+        script.onload = initMap
+        document.head.appendChild(script)
+      } else {
+        existing.addEventListener('load', initMap)
+      }
+    }
+  }, [lat, lng])
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>🗺️ Tu nueva zona de operación</div>
+      <div ref={mapRef} style={{ width: '100%', height: 200, borderRadius: 12, border: '1.5px solid #bfdbfe', overflow: 'hidden' }} />
+      <p style={{ fontSize: 11, color: '#9ca3af', margin: '6px 0 0' }}>
+        📍 {lat?.toFixed(4)}, {lng?.toFixed(4)} · Arrastra el pin para ajustar la posición exacta
+      </p>
+    </div>
+  )
+}
 
 export default function OperatorAccount({
   activeTab,
@@ -36,7 +105,7 @@ export default function OperatorAccount({
   newWorkEnd, setNewWorkEnd,
   savingSchedule, scheduleError, saveScheduleChange,
   zoneRequest, zoneForm, setZoneForm,
-  zoneMapUrl, savingZone, zoneSuccess, zoneError,
+  savingZone, zoneSuccess, zoneError,
   submitZoneRequest, geocodeZoneAddress,
   profile, isMobile,
 }) {
@@ -518,19 +587,15 @@ export default function OperatorAccount({
                       </div>
                       {zoneForm.new_lat && zoneForm.new_lng && (
                         <div style={{ background: '#f0fdf4', borderRadius: 8, padding: '6px 10px', marginTop: 6, fontSize: 12, color: '#065f46' }}>
-                          ✅ Dirección verificada: {zoneForm.new_lat.toFixed(4)}, {zoneForm.new_lng.toFixed(4)}
+                          ✅ Dirección verificada — arrastra el pin para ajustar la posición exacta
                         </div>
                       )}
-                      {zoneMapUrl && (
-                        <div style={{ marginTop: 10 }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>🗺️ Tu nueva zona de operación</div>
-                          <div style={{ borderRadius: 12, overflow: 'hidden', border: '1.5px solid #bfdbfe', height: 200 }}>
-                            <iframe src={zoneMapUrl} width="100%" height="200" frameBorder="0" scrolling="no" title="Mapa nueva zona" style={{ display: 'block', border: 'none' }} />
-                          </div>
-                          <p style={{ fontSize: 11, color: '#9ca3af', margin: '6px 0 0' }}>
-                            📍 Zona base · {zoneForm.new_lat?.toFixed(4)}, {zoneForm.new_lng?.toFixed(4)} · Radio: {zoneForm.new_radius} km
-                          </p>
-                        </div>
+                      {zoneForm.new_lat && zoneForm.new_lng && (
+                        <ZoneMapPicker
+                          lat={zoneForm.new_lat}
+                          lng={zoneForm.new_lng}
+                          onMove={(lat, lng, address) => setZoneForm(p => ({ ...p, new_lat: lat, new_lng: lng, new_address: address || p.new_address }))}
+                        />
                       )}
                     </div>
 
