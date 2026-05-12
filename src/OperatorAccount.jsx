@@ -1,34 +1,100 @@
-import React from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Clock } from 'lucide-react';
 import { LevelBadge } from './OperatorHelpers';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const GOOGLE_MAPS_KEY   = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
+const GOOGLE_MAPS_KEY     = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_KEY;
 
 const WORK_DAYS_LABELS = {
   lunes: 'Lun', martes: 'Mar', miercoles: 'Mie',
   jueves: 'Jue', viernes: 'Vie', sabado: 'Sab', domingo: 'Dom',
 };
 
-// ── ZoneMapPicker — mapa de referencia con OpenStreetMap ─────────────────────
-function ZoneMapPicker({ lat, lng }) {
-  const delta = 0.015
-  const osmUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - delta},${lat - delta},${lng + delta},${lat + delta}&layer=mapnik&marker=${lat},${lng}`
+// ── loadGoogleMapsScript — idéntico a BookingView ────────────────────────────
+function loadGoogleMapsScriptZone(apiKey) {
+  return new Promise((resolve, reject) => {
+    if (window.google && window.google.maps) { resolve(window.google.maps); return }
+    const existing = document.getElementById('google-maps-script')
+    if (existing) { existing.addEventListener('load', () => resolve(window.google.maps)); existing.addEventListener('error', reject); return }
+    const script = document.createElement('script')
+    script.id = 'google-maps-script'
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&v=weekly&loading=async`
+    script.async = true; script.defer = true
+    script.onload = () => resolve(window.google.maps); script.onerror = reject
+    document.head.appendChild(script)
+  })
+}
+
+// ── ZoneMapPicker — mapa interactivo con pin arrastrable ─────────────────────
+// Patrón idéntico al mapa de BookingView
+function ZoneMapPicker({ lat, lng, onMove }) {
+  const mapRef         = useRef(null)
+  const mapInstanceRef = useRef(null)
+  const markerRef      = useRef(null)
+  const [mapsLoaded, setMapsLoaded] = useState(!!window.google?.maps)
+
+  useEffect(() => {
+    if (mapsLoaded) return
+    loadGoogleMapsScriptZone(GOOGLE_MAPS_API_KEY)
+      .then(() => setMapsLoaded(true))
+      .catch(() => console.error('No se pudo cargar Google Maps en ZoneMapPicker'))
+  }, [])
+
+  useEffect(() => {
+    if (!mapsLoaded) return
+    const t = setTimeout(() => {
+      if (!mapRef.current || mapInstanceRef.current) return
+      const center = { lat, lng }
+      const map = new window.google.maps.Map(mapRef.current, {
+        center, zoom: 15,
+        mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
+      })
+      mapInstanceRef.current = map
+      const marker = new window.google.maps.Marker({
+        position: center, map, draggable: true,
+        animation: window.google.maps.Animation.DROP,
+      })
+      markerRef.current = marker
+
+      const handleMove = async (newLat, newLng) => {
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${newLat}&lon=${newLng}&format=json&accept-language=es`,
+            { headers: { 'User-Agent': 'MazClean/1.0' } }
+          )
+          const data = await res.json()
+          onMove(newLat, newLng, data?.display_name || '')
+        } catch {
+          onMove(newLat, newLng, '')
+        }
+      }
+
+      marker.addListener('dragend', (e) => handleMove(e.latLng.lat(), e.latLng.lng()))
+      map.addListener('click', (e) => {
+        marker.setPosition(e.latLng)
+        handleMove(e.latLng.lat(), e.latLng.lng())
+      })
+    }, 100)
+    return () => clearTimeout(t)
+  }, [mapsLoaded])
+
+  // Actualizar posición del marker cuando cambian lat/lng externamente
+  useEffect(() => {
+    if (!mapInstanceRef.current || !markerRef.current) return
+    const center = { lat, lng }
+    mapInstanceRef.current.setCenter(center)
+    mapInstanceRef.current.setZoom(15)
+    markerRef.current.setPosition(center)
+  }, [lat, lng])
+
   return (
     <div style={{ marginTop: 10 }}>
       <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>🗺️ Tu nueva zona de operación</div>
-      <div style={{ borderRadius: 12, overflow: 'hidden', border: '1.5px solid #bfdbfe', height: 200 }}>
-        <iframe
-          src={osmUrl}
-          width="100%" height="200"
-          frameBorder="0" scrolling="no"
-          title="Mapa nueva zona"
-          style={{ display: 'block', border: 'none' }}
-        />
-      </div>
+      <div ref={mapRef} style={{ width: '100%', height: 220, borderRadius: 12, border: '1.5px solid #bfdbfe', overflow: 'hidden' }} />
       <p style={{ fontSize: 11, color: '#9ca3af', margin: '6px 0 0' }}>
-        📍 {lat?.toFixed(4)}, {lng?.toFixed(4)} · Si la ubicación no es exacta, escribe una dirección más específica
+        📍 {lat?.toFixed(4)}, {lng?.toFixed(4)} · Arrastra el pin o toca el mapa para ajustar la posición exacta
       </p>
     </div>
   )
