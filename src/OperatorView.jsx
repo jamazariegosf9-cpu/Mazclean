@@ -78,6 +78,7 @@ const OperatorView = () => {
   const [chatError, setChatError]             = useState('');
   const chatBottomRef                         = useRef(null);
   const chatChannelRef                        = useRef(null);
+  const globalMsgChannelRef                   = useRef(null); // canal global para badges cuando chat cerrado
   // Deposito bancario
   const [depositModal, setDepositModal]                   = useState(false);
   const [depositLoading, setDepositLoading]               = useState(false);
@@ -220,6 +221,59 @@ const OperatorView = () => {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // ── Canal global de mensajes — badge cuando chat está cerrado ───────────
+  // NO toca el canal del chat abierto (chatChannelRef) — son independientes
+  useEffect(() => {
+    if (!user?.id || !bookings.length) return
+
+    // Bookings activos donde el operador puede recibir mensajes
+    const activeBookingIds = bookings
+      .filter(b => ['confirmado','en_camino','en_proceso'].includes(b.status))
+      .map(b => b.id)
+
+    if (!activeBookingIds.length) return
+
+    // Limpiar canal global previo si existía
+    if (globalMsgChannelRef.current) {
+      supabase.removeChannel(globalMsgChannelRef.current)
+      globalMsgChannelRef.current = null
+    }
+
+    // Crear un canal por cada booking activo para escuchar mensajes del cliente
+    // Cuando llega un mensaje y el chat de ESE booking NO está abierto → badge +1
+    const channels = activeBookingIds.map(bookingId => {
+      return supabase
+        .channel(`global-msg-${bookingId}-${user.id}`)
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `booking_id=eq.${bookingId}`,
+        }, (payload) => {
+          const msg = payload.new
+          // Solo contar mensajes del cliente que llegan cuando el chat está CERRADO
+          if (msg.sender_role === 'cliente' && msg.booking_id !== chatBookingId) {
+            setUnreadByBooking(prev => ({
+              ...prev,
+              [msg.booking_id]: (prev[msg.booking_id] || 0) + 1,
+            }))
+            playNotificationSound()
+            vibrateDevice()
+            showSystemNotification('💬 Mensaje del cliente', msg.content)
+          }
+        })
+        .subscribe()
+    })
+
+    // Guardar referencia para cleanup (array de canales)
+    globalMsgChannelRef.current = { channels, remove: () => channels.forEach(c => supabase.removeChannel(c)) }
+
+    return () => {
+      if (globalMsgChannelRef.current?.remove) globalMsgChannelRef.current.remove()
+      globalMsgChannelRef.current = null
+    }
+  }, [bookings, user?.id])
 
   useEffect(() => {
     const activeBooking = bookings.find(
@@ -648,16 +702,9 @@ const OperatorView = () => {
       }, (payload) => {
         const msg = payload.new
         if (msg.sender_role === 'cliente') {
-          if (msg.booking_id === chatBookingId) {
-            // Chat abierto → marcar como leído inmediatamente
-            markMessagesRead(msg.booking_id)
-          } else {
-            // Chat cerrado → incrementar badge y notificar
-            playNotificationSound()
-            vibrateDevice()
-            showSystemNotification('💬 Mensaje del cliente', msg.content)
-            setUnreadByBooking(prev => ({ ...prev, [msg.booking_id]: (prev[msg.booking_id] || 0) + 1 }))
-          }
+          // Chat abierto → marcar como leído inmediatamente
+          // El canal global maneja el badge cuando el chat está cerrado
+          markMessagesRead(msg.booking_id)
         }
         setChatMessages(prev => {
           const tempIdx = prev.findIndex(m =>
