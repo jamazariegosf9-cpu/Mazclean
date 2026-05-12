@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { Clock } from 'lucide-react';
 import { LevelBadge } from './OperatorHelpers';
 
@@ -11,92 +11,24 @@ const WORK_DAYS_LABELS = {
   jueves: 'Jue', viernes: 'Vie', sabado: 'Sab', domingo: 'Dom',
 };
 
-// ── ZoneMapPicker — mapa interactivo con marcador arrastrable ─────────────────
-function ZoneMapPicker({ lat, lng, onMove }) {
-  const mapRef     = useRef(null)
-  const markerRef  = useRef(null)
-  const mapInstRef = useRef(null)
-  const initedRef  = useRef(false)
-
-  useEffect(() => {
-    if (!mapRef.current || initedRef.current) return
-
-    const initMap = () => {
-      // Verificar que google.maps.Map esté disponible como constructor
-      if (!window.google?.maps?.Map) return
-      initedRef.current = true
-      const center = { lat, lng }
-      const map = new window.google.maps.Map(mapRef.current, {
-        center, zoom: 15,
-        disableDefaultUI: true,
-        zoomControl: true,
-        gestureHandling: 'cooperative',
-      })
-      mapInstRef.current = map
-      const marker = new window.google.maps.Marker({
-        position: center, map, draggable: true,
-        title: 'Arrastra para ajustar tu ubicación',
-      })
-      markerRef.current = marker
-      marker.addListener('dragend', async (e) => {
-        const newLat = e.latLng.lat()
-        const newLng = e.latLng.lng()
-        try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${newLat}&lon=${newLng}&format=json&accept-language=es`,
-            { headers: { 'Accept-Language': 'es' } }
-          )
-          const data = await res.json()
-          onMove(newLat, newLng, data?.display_name || '')
-        } catch {
-          onMove(newLat, newLng, '')
-        }
-      })
-    }
-
-    // Si ya está cargado y listo → usar directo
-    if (window.google?.maps?.Map) {
-      initMap()
-      return
-    }
-
-    // Si el script de BookingView ya está en el DOM → esperar con polling
-    const existingScript = document.getElementById('google-maps-script')
-    if (existingScript) {
-      // Polling hasta que google.maps.Map esté disponible
-      let attempts = 0
-      const poll = setInterval(() => {
-        attempts++
-        if (window.google?.maps?.Map) {
-          clearInterval(poll)
-          initMap()
-        } else if (attempts > 50) {
-          clearInterval(poll) // timeout 5s
-        }
-      }, 100)
-      return () => clearInterval(poll)
-    }
-
-    // No hay script → cargar uno nuevo
-    const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || ''
-    const script = document.createElement('script')
-    script.id = 'google-maps-script'
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_KEY}&libraries=places&v=weekly&loading=async`
-    script.async = true
-    script.defer = true
-    script.onload = () => {
-      // Esperar un tick para que la API inicialice completamente
-      setTimeout(initMap, 100)
-    }
-    document.head.appendChild(script)
-  }, [lat, lng])
-
+// ── ZoneMapPicker — mapa de referencia con OpenStreetMap ─────────────────────
+function ZoneMapPicker({ lat, lng }) {
+  const delta = 0.015
+  const osmUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - delta},${lat - delta},${lng + delta},${lat + delta}&layer=mapnik&marker=${lat},${lng}`
   return (
     <div style={{ marginTop: 10 }}>
       <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>🗺️ Tu nueva zona de operación</div>
-      <div ref={mapRef} style={{ width: '100%', height: 200, borderRadius: 12, border: '1.5px solid #bfdbfe', overflow: 'hidden' }} />
+      <div style={{ borderRadius: 12, overflow: 'hidden', border: '1.5px solid #bfdbfe', height: 200 }}>
+        <iframe
+          src={osmUrl}
+          width="100%" height="200"
+          frameBorder="0" scrolling="no"
+          title="Mapa nueva zona"
+          style={{ display: 'block', border: 'none' }}
+        />
+      </div>
       <p style={{ fontSize: 11, color: '#9ca3af', margin: '6px 0 0' }}>
-        📍 {lat?.toFixed(4)}, {lng?.toFixed(4)} · Arrastra el pin para ajustar la posición exacta
+        📍 {lat?.toFixed(4)}, {lng?.toFixed(4)} · Si la ubicación no es exacta, escribe una dirección más específica
       </p>
     </div>
   )
