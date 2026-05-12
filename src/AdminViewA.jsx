@@ -117,6 +117,12 @@ const AdminViewA = ({
   const [bookingsPage, setBookingsPage] = useState(1);
   const BOOKINGS_PER_PAGE = 20;
 
+  // ── Dashboard operacional ────────────────────────────────────────────────
+  const [dash, setDash]           = useState(null)   // métricas calculadas
+  const [dashLoading, setDashLoading] = useState(false)
+  const [activeCard, setActiveCard]   = useState(null) // card abierta actualmente
+  const [dashDetail, setDashDetail]   = useState([])   // lista del panel abierto
+
   useEffect(() => {
     const fetchServerTime = async () => {
       const { data } = await supabase.rpc('get_server_time');
@@ -126,6 +132,66 @@ const AdminViewA = ({
     const interval = setInterval(fetchServerTime, 60000);
     return () => clearInterval(interval);
   }, []);
+
+  // ── Fetch métricas del dashboard ─────────────────────────────────────────
+  const fetchDashboard = async () => {
+    setDashLoading(true)
+    try {
+      const token = getToken()
+      const h = { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY }
+      const today = new Date().toISOString().slice(0, 10)
+
+      const [bkRes, opRes, zoneRes, depRes, incRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/bookings?select=id,status,scheduled_date,operator_id,booking_ref,service_name,total_price,client_id,scheduled_time_from`, { headers: h }),
+        fetch(`${SUPABASE_URL}/rest/v1/profiles?role=eq.operador&select=id,full_name,phone,operator_status,is_certified,membership_status,membership_end_at,operator_level,rating_avg`, { headers: h }),
+        fetch(`${SUPABASE_URL}/rest/v1/operator_zone_requests?status=eq.pendiente&select=id,operator_id,new_address,new_radius,reason_type,created_at,operator:operator_id(full_name,phone)`, { headers: h }),
+        fetch(`${SUPABASE_URL}/rest/v1/membership_requests?status=eq.pendiente&select=id,user_id,amount,created_at,referral_code,profile:user_id(full_name,phone)`, { headers: h }),
+        fetch(`${SUPABASE_URL}/rest/v1/incidents?status=eq.abierto&select=id,description,operator_id,booking_id,created_at,operator:operator_id(full_name)`, { headers: h }),
+      ])
+
+      const [bks, ops, zones, deps, incs] = await Promise.all([
+        bkRes.ok ? bkRes.json() : [],
+        opRes.ok ? opRes.json() : [],
+        zoneRes.ok ? zoneRes.json() : [],
+        depRes.ok ? depRes.json() : [],
+        incRes.ok ? incRes.json() : [],
+      ])
+
+      const now = new Date()
+      const in7days = new Date(now); in7days.setDate(in7days.getDate() + 7)
+
+      // Calcular métricas
+      const desfasados   = bks.filter(b => ['pendiente','confirmado','en_camino','en_proceso'].includes(b.status) && b.scheduled_date < today)
+      const sinOperador  = bks.filter(b => b.status === 'pendiente' && !b.operator_id)
+      const hoy          = bks.filter(b => b.scheduled_date === today)
+      const enCurso      = bks.filter(b => ['en_camino','en_proceso'].includes(b.status))
+      const mesActual    = bks.filter(b => b.status === 'finalizado' && b.scheduled_date?.slice(0,7) === today.slice(0,7))
+      const ingresosMes  = mesActual.reduce((acc, b) => acc + parseFloat(b.total_price || 0), 0)
+      const opsActivos   = ops.filter(o => o.operator_status === 'aprobado' && o.is_certified && o.membership_status === 'activa')
+      const opsPendientes= ops.filter(o => ['pending_review','pendiente'].includes(o.operator_status))
+      const opsDocsCorr  = ops.filter(o => o.operator_status === 'docs_required')
+      const opsVencen    = ops.filter(o => o.membership_status === 'activa' && o.membership_end_at && new Date(o.membership_end_at) <= in7days)
+      const opsNoRenov   = ops.filter(o => o.operator_status === 'aprobado' && o.membership_status !== 'activa')
+      const ratingProm   = opsActivos.length ? (opsActivos.reduce((a,o) => a + parseFloat(o.rating_avg||0), 0) / opsActivos.length).toFixed(1) : '—'
+
+      setDash({
+        desfasados, sinOperador, hoy, enCurso, ingresosMes,
+        opsActivos, opsPendientes, opsDocsCorr, opsVencen, opsNoRenov,
+        zones, deps, incs, ratingProm,
+        totalHoy: hoy.length,
+        finalizadosHoy: hoy.filter(b => b.status === 'finalizado').length,
+      })
+    } catch (err) { console.error('fetchDashboard:', err) }
+    finally { setDashLoading(false) }
+  }
+
+  const openCard = (key, data) => {
+    if (activeCard === key) { setActiveCard(null); setDashDetail([]); return }
+    setActiveCard(key)
+    setDashDetail(data)
+  }
+
+  useEffect(() => { fetchDashboard() }, [])
 
   const isDelayed = (booking) => {
     if (!['confirmado','en_camino','en_proceso'].includes(booking.status)) return false;
@@ -333,8 +399,254 @@ const AdminViewA = ({
   const inputStyle = { padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 };
   const labelStyle = { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 5, display: 'block' };
 
+  // ── Componente tarjeta del dashboard ────────────────────────────────────
+  const DashCard = ({ id, icon, label, value, sub, color, urgent, data, formatter }) => {
+    const isOpen = activeCard === id
+    const hasData = data && data.length > 0
+    return (
+      <div style={{ borderRadius: 14, overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.08)', cursor: hasData ? 'pointer' : 'default', border: `2px solid ${urgent && hasData ? '#fca5a5' : '#e5e7eb'}`, transition: 'all 0.2s', animation: urgent && hasData ? 'pulse-border 2s infinite' : 'none' }}
+        onClick={() => hasData && openCard(id, data)}>
+        <div style={{ background: urgent && hasData ? '#fef2f2' : '#fff', padding: '16px 18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontSize: 22, marginBottom: 4 }}>{icon}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: urgent && hasData ? '#dc2626' : color || '#1f2937', lineHeight: 1.1, marginTop: 2 }}>{value}</div>
+              {sub && <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>{sub}</div>}
+            </div>
+            {hasData && <div style={{ background: isOpen ? '#3b82f6' : '#f3f4f6', color: isOpen ? '#fff' : '#6b7280', borderRadius: 8, padding: '4px 8px', fontSize: 11, fontWeight: 700 }}>{isOpen ? '▲ Cerrar' : '▼ Ver'}</div>}
+          </div>
+        </div>
+        {isOpen && (
+          <div style={{ background: '#f9fafb', borderTop: '1px solid #e5e7eb', padding: '12px 16px', maxHeight: 320, overflowY: 'auto' }}>
+            {formatter ? formatter(dashDetail) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {dashDetail.map((item, i) => (
+                  <div key={item.id || i} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #e5e7eb', fontSize: 13, color: '#374151' }}>
+                    {item._label || JSON.stringify(item)}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div style={{ marginTop: 16 }}>
+
+      {/* ── DASHBOARD OPERACIONAL ── */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#1f2937' }}>⚡ Panel Operacional</div>
+          <button onClick={fetchDashboard} disabled={dashLoading}
+            style={{ padding: '8px 14px', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#1e40af', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {dashLoading ? '⏳' : '↻'} Actualizar
+          </button>
+        </div>
+
+        {dashLoading && !dash ? (
+          <div style={{ background: '#fff', borderRadius: 14, padding: 40, textAlign: 'center', color: '#9ca3af' }}>⏳ Cargando métricas...</div>
+        ) : dash ? (
+          <>
+            {/* 🚨 ALERTAS URGENTES */}
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#dc2626', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>🚨 Alertas urgentes</div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
+              <DashCard id="desfasados" icon="⏰" label="Servicios desfasados" value={dash.desfasados.length} sub="Fecha pasada" color="#dc2626" urgent={dash.desfasados.length > 0}
+                data={dash.desfasados}
+                formatter={items => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {items.map(b => (
+                      <div key={b.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #fecaca' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{b.booking_ref} · {b.service_name}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>📅 {b.scheduled_date} · Estado: {b.status}</div>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                          <button onClick={() => { openCard(null, []); openEmergencyPanel(b) }}
+                            style={{ flex: 1, padding: '6px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>👷 Asignar</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+              <DashCard id="sinOperador" icon="🚨" label="Sin operador" value={dash.sinOperador.length} sub="Sin asignar" color="#dc2626" urgent={dash.sinOperador.length > 0}
+                data={dash.sinOperador}
+                formatter={items => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {items.map(b => (
+                      <div key={b.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #fecaca' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{b.booking_ref} · {b.service_name}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>📅 {b.scheduled_date}</div>
+                        <button onClick={() => { openCard(null, []); openEmergencyPanel(b) }}
+                          style={{ marginTop: 8, width: '100%', padding: '6px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>🚨 Asignar ahora</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+              <DashCard id="incidencias" icon="⚠️" label="Incidencias abiertas" value={dash.incs.length} sub="Sin resolver" color="#f97316" urgent={dash.incs.length > 0}
+                data={dash.incs}
+                formatter={items => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {items.map(inc => (
+                      <div key={inc.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #fed7aa' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>👷 {inc.operator?.full_name}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>{inc.description}</div>
+                        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{new Date(inc.created_at).toLocaleString('es-MX')}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+            </div>
+
+            {/* ⏳ PENDIENTES DE REVISIÓN */}
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>⏳ Pendientes de revisión</div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+              <DashCard id="opsPendientes" icon="👤" label="Ops por autorizar" value={dash.opsPendientes.length} sub="Nuevos registros" color="#92400e" urgent={dash.opsPendientes.length > 0}
+                data={dash.opsPendientes}
+                formatter={items => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {items.map(op => (
+                      <div key={op.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #fde68a' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{op.full_name}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>📱 {op.phone}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+              <DashCard id="zonas" icon="🗺️" label="Cambios de zona" value={dash.zones.length} sub="Pendientes" color="#92400e" urgent={dash.zones.length > 0}
+                data={dash.zones}
+                formatter={items => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {items.map(z => (
+                      <div key={z.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #fde68a' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{z.operator?.full_name}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>→ {z.new_address} · {z.new_radius}km</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+              <DashCard id="depositos" icon="🏦" label="Depósitos bancarios" value={dash.deps.length} sub="Por verificar" color="#92400e" urgent={dash.deps.length > 0}
+                data={dash.deps}
+                formatter={items => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {items.map(d => (
+                      <div key={d.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #fde68a' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{d.profile?.full_name}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>💰 ${d.amount} MXN · Ref: {d.referral_code}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+              <DashCard id="docsCorr" icon="📋" label="Docs a corregir" value={dash.opsDocsCorr.length} sub="Requieren revisión" color="#92400e" urgent={dash.opsDocsCorr.length > 0}
+                data={dash.opsDocsCorr}
+                formatter={items => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {items.map(op => (
+                      <div key={op.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #fde68a' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{op.full_name}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>📱 {op.phone}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+            </div>
+
+            {/* 📊 ESTADO OPERACIONAL */}
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#1e40af', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>📊 Estado operacional</div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: 10, marginBottom: 20 }}>
+              <DashCard id="hoy" icon="📅" label="Servicios hoy" value={dash.totalHoy} sub={`${dash.finalizadosHoy} finalizados`} color="#1e40af"
+                data={dash.hoy}
+                formatter={items => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {items.map(b => (
+                      <div key={b.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #bfdbfe' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{b.booking_ref} · {b.service_name}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>Estado: {b.status} · {b.scheduled_time_from?.slice(0,5)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+              <DashCard id="enCurso" icon="⚡" label="En curso ahora" value={dash.enCurso.length} sub="Activos" color="#059669"
+                data={dash.enCurso}
+                formatter={items => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {items.map(b => (
+                      <div key={b.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #bbf7d0' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{b.booking_ref}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>{b.status === 'en_camino' ? '🚗 En camino' : '🧼 Lavando'}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+              <DashCard id="opsActivos" icon="👷" label="Ops activos" value={dash.opsActivos.length} sub={`Prom ⭐${dash.ratingProm}`} color="#059669"
+                data={dash.opsActivos}
+                formatter={items => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {items.sort((a,b) => parseFloat(b.rating_avg||0) - parseFloat(a.rating_avg||0)).map(op => (
+                      <div key={op.id} style={{ background: '#fff', borderRadius: 10, padding: '8px 12px', border: '1px solid #bbf7d0', display: 'flex', justifyContent: 'space-between' }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 12 }}>{op.full_name}</div>
+                          <div style={{ fontSize: 11, color: '#6b7280' }}>{op.operator_level}</div>
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#059669' }}>⭐{parseFloat(op.rating_avg||0).toFixed(1)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+              <DashCard id="vencen" icon="⏱️" label="Memb. por vencer" value={dash.opsVencen.length} sub="≤7 días" color="#d97706" urgent={dash.opsVencen.length > 0}
+                data={dash.opsVencen}
+                formatter={items => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {items.map(op => (
+                      <div key={op.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #fde68a' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{op.full_name}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>Vence: {new Date(op.membership_end_at).toLocaleDateString('es-MX')}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+              <DashCard id="noRenov" icon="💳" label="Sin membresía" value={dash.opsNoRenov.length} sub="No renovaron" color="#6b7280"
+                data={dash.opsNoRenov}
+                formatter={items => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {items.map(op => (
+                      <div key={op.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{op.full_name}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>📱 {op.phone} · {op.membership_status}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+            </div>
+
+            {/* Ingreso del mes — barra completa */}
+            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', borderRadius: 14, padding: '16px 20px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#bfdbfe', textTransform: 'uppercase', letterSpacing: 1 }}>💰 Ingresos del mes</div>
+                <div style={{ fontSize: 32, fontWeight: 800, color: '#fff', marginTop: 4 }}>${Math.round(dash.ingresosMes).toLocaleString('es-MX')} MXN</div>
+                <div style={{ fontSize: 12, color: '#93c5fd', marginTop: 2 }}>{dash.hoy.filter(b=>b.status==='finalizado').length} servicios finalizados hoy</div>
+              </div>
+              <div style={{ fontSize: 48 }}>📈</div>
+            </div>
+          </>
+        ) : null}
+      </div>
+
+      {/* ── SEPARADOR ── */}
+      <div style={{ height: 1, background: '#e5e7eb', marginBottom: 16 }} />
 
       {/* Filtros */}
       <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? '12px' : '16px 20px', marginBottom: 14, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
