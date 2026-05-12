@@ -218,9 +218,11 @@ const AdminViewB = ({
   const fetchAllZoneRequests = async () => {
     setLoadingZoneReqs(true)
     try {
+      let token = SUPABASE_ANON_KEY
+      try { const s = localStorage.getItem('mazclean-auth'); if (s) { const p = JSON.parse(s); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY } } catch {}
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/operator_zone_requests?status=eq.pendiente&order=created_at.desc&select=*,operator:operator_id(full_name,phone,base_address,coverage_radius)`,
-        { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+        { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
       )
       if (res.ok) setAllZoneRequests(await res.json())
     } catch (err) { console.error('fetchAllZoneRequests:', err) }
@@ -230,7 +232,9 @@ const AdminViewB = ({
   const handleZoneReqAction = async (req, action) => {
     setApprovingZoneReq(req.id)
     try {
-      const headers = { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }
+      let token = SUPABASE_ANON_KEY
+      try { const s = localStorage.getItem('mazclean-auth'); if (s) { const p = JSON.parse(s); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY } } catch {}
+      const headers = { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }
       await fetch(`${SUPABASE_URL}/rest/v1/operator_zone_requests?id=eq.${req.id}`, {
         method: 'PATCH', headers,
         body: JSON.stringify({ status: action === 'approve' ? 'aprobada' : 'rechazada', reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
@@ -490,9 +494,11 @@ const AdminViewB = ({
   // Docs que el operador acaba de corregir (status = 'corregido')
   const fetchZoneRequests = async (operatorId) => {
     try {
+      let token = SUPABASE_ANON_KEY
+      try { const s = localStorage.getItem('mazclean-auth'); if (s) { const p = JSON.parse(s); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY } } catch {}
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/operator_zone_requests?operator_id=eq.${operatorId}&order=created_at.desc`,
-        { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+        { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
       )
       if (res.ok) setZoneRequests(await res.json())
     } catch (err) { console.error('fetchZoneRequests:', err) }
@@ -501,7 +507,9 @@ const AdminViewB = ({
   const handleZoneRequest = async (requestId, action, operatorId) => {
     setApprovingZone(requestId)
     try {
-      const headers = { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }
+      let token = SUPABASE_ANON_KEY
+      try { const s = localStorage.getItem('mazclean-auth'); if (s) { const p = JSON.parse(s); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY } } catch {}
+      const headers = { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }
       // Actualizar status de la solicitud
       await fetch(`${SUPABASE_URL}/rest/v1/operator_zone_requests?id=eq.${requestId}`, {
         method: 'PATCH', headers,
