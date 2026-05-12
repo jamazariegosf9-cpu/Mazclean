@@ -432,6 +432,103 @@ function ActivationScreen({ profile, membershipStatus, membershipPrice, effectiv
   )
 }
 
+// ── LevelBadge ─────────────────────────────────────────────────────────────
+function LevelBadge({ level, variant }) {
+  const accountStyles = {
+    elite:    { bg: 'rgba(251,191,36,0.2)',  color: '#fbbf24', border: '1px solid rgba(251,191,36,0.4)',  label: '⭐ Elite' },
+    proplus:  { bg: 'rgba(167,139,250,0.2)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.4)', label: '🟣 Pro+' },
+    pro:      { bg: 'rgba(96,165,250,0.2)',  color: '#60a5fa', border: '1px solid rgba(96,165,250,0.4)',  label: '🔵 Pro' },
+    operador: { bg: 'rgba(156,163,175,0.2)', color: '#9ca3af', border: '1px solid rgba(156,163,175,0.4)', label: '⚪ Operador' },
+  }
+  const ratingStyles = {
+    elite:    { bg: 'rgba(251,191,36,0.12)',  color: '#92400e', label: '⭐ Elite' },
+    proplus:  { bg: 'rgba(167,139,250,0.12)', color: '#5b21b6', label: '🟣 Pro+' },
+    pro:      { bg: 'rgba(96,165,250,0.12)',  color: '#1e40af', label: '🔵 Pro' },
+    operador: { bg: 'rgba(156,163,175,0.12)', color: '#374151', label: '⚪ Operador' },
+  }
+  const styles = variant === 'account' ? accountStyles : ratingStyles
+  const s = styles[level] || styles.operador
+  return variant === 'account'
+    ? <div style={{ background: s.bg, color: s.color, border: s.border, borderRadius: 99, padding: '4px 10px', fontSize: 12, fontWeight: 700 }}>{s.label}</div>
+    : <div style={{ background: s.bg, color: s.color, borderRadius: 99, padding: '4px 12px', fontSize: 12, fontWeight: 700 }}>{s.label}</div>
+}
+
+// ── FotoModal ───────────────────────────────────────────────────────────────
+function FotoModal({ photoStep, photoPhase, photosData, photoBooking, isMobile, pendingFinalize, handleNextPhotoStep, setPhotoModalSafe, setPhotosData, setPhotoBooking, setPendingFinalize, setBookings, setSelectedBooking, selectedBooking, supabase }) {
+  const FOTO_CONFIG = [
+    { step: 1, key: 'front_before',   column: 'photo_front_before',   label: 'Foto Frontal ANTES',    desc: 'Frente del auto con placa visible', color: '#f97316' },
+    { step: 2, key: 'side_before',    column: 'photo_side_before',    label: 'Foto Lateral ANTES',    desc: 'Lado más expuesto del auto',        color: '#f97316' },
+    { step: 3, key: 'front_after',    column: 'photo_front_after',    label: 'Foto Frontal DESPUÉS',  desc: 'Frente del auto ya lavado',         color: '#10b981' },
+    { step: 4, key: 'interior_after', column: 'photo_interior_after', label: 'Foto Interior DESPUÉS', desc: 'Interior o cajuela del auto',        color: '#10b981' },
+  ]
+  const cfg = FOTO_CONFIG.find(f => f.step === photoStep) || FOTO_CONFIG[0]
+  const isLast = photoStep === (photoPhase === 'before' ? 2 : 4)
+  const currentValue = photosData[cfg.key] || photoBooking[`photo_${cfg.key}`]
+  const canGoNext = !!photosData[cfg.key]
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 110, background: '#f3f4f6', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <div style={{ maxWidth: 520, margin: '0 auto', padding: isMobile ? '16px 12px 80px' : '32px 16px' }}>
+        <div style={{ background: `linear-gradient(135deg,${cfg.color},${cfg.color}dd)`, borderRadius: 16, padding: '20px', marginBottom: 20, color: '#fff' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.8 }}>Foto {photoStep} de {photoPhase === 'before' ? 2 : 4}</span>
+            <button onClick={() => { setPhotoModalSafe(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', fontSize: 20, width: 36, height: 36, borderRadius: 8, cursor: 'pointer' }}>✕</button>
+          </div>
+          <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 4px' }}>{cfg.label}</h2>
+          <p style={{ fontSize: 13, opacity: 0.9, margin: 0 }}>{cfg.desc}</p>
+          <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
+            {FOTO_CONFIG.filter(f => photoPhase === 'before' ? f.step <= 2 : f.step >= 3).map(f => (
+              <div key={f.step} style={{ flex: 1, height: 4, borderRadius: 4, background: photosData[f.key] ? '#fff' : f.step === photoStep ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)' }} />
+            ))}
+          </div>
+        </div>
+        <div style={{ background: '#fff', borderRadius: 16, padding: '20px', marginBottom: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+          <PhotoUploadServicio label={cfg.label} value={currentValue} capture="environment"
+            onChange={(path) => {
+              supabase.from('bookings').update({ [cfg.column]: path, updated_at: new Date().toISOString() }).eq('id', photoBooking.id).then(({ error }) => { if (error) console.error('Error DB:', error) })
+              setBookings(prev => prev.map(b => b.id === photoBooking.id ? { ...b, [cfg.column]: path } : b))
+              if (selectedBooking?.id === photoBooking.id) setSelectedBooking(prev => ({ ...prev, [cfg.column]: path }))
+              setPhotoBooking(prev => ({ ...prev, [cfg.column]: path }))
+              setPhotosData(prev => ({ ...prev, [cfg.key]: path }))
+            }}
+          />
+        </div>
+        <button onClick={handleNextPhotoStep} disabled={!canGoNext}
+          style={{ width: '100%', padding: '16px 0', background: canGoNext ? cfg.color : '#94a3b8', color: '#fff', border: 'none', borderRadius: 16, fontSize: 16, fontWeight: 700, cursor: canGoNext ? 'pointer' : 'not-allowed', minHeight: 56 }}>
+          {isLast ? (pendingFinalize ? 'Ir al Checklist' : 'Listo') : 'Siguiente foto →'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── InfografiaItem ──────────────────────────────────────────────────────────
+function InfografiaItem({ mod, idx, total, setSelectedInfografia, setShowInfografias }) {
+  const hasPrev = idx > 0
+  const hasNext = idx < total - 1
+  return (
+    <>
+      <div style={{ background: 'linear-gradient(135deg,#0c4a6e,#0369a1)', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <button onClick={() => setSelectedInfografia(null)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, padding: '6px 10px', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 34, whiteSpace: 'nowrap' }}>← Regresar</button>
+        <div style={{ flex: 1, textAlign: 'center' }}>
+          <div style={{ color: '#fff', fontWeight: 700, fontSize: 13 }}>Módulo {mod.order_index}</div>
+          <div style={{ color: '#bae6fd', fontSize: 11 }}>{idx + 1} / {total}</div>
+        </div>
+        <button onClick={() => { setShowInfografias(false); setSelectedInfografia(null); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 34, height: 34, color: '#fff', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+      </div>
+      <div style={{ overflowY: 'auto', flex: 1, WebkitOverflowScrolling: 'touch', background: '#f8fafc' }}>
+        <img src={mod.infografia.content_url} alt={`Infografía ${mod.title}`} style={{ width: '100%', display: 'block' }}
+          onError={e => { e.target.parentElement.innerHTML = '<div style="padding:48px;text-align:center;color:#9ca3af;font-size:13px">⚠️ No se pudo cargar la imagen</div>' }} />
+      </div>
+      <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, flexShrink: 0 }}>
+        <button onClick={() => setSelectedInfografia(i => i - 1)} disabled={!hasPrev}
+          style={{ flex: 1, padding: '12px', background: hasPrev ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${hasPrev ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, fontSize: 14, fontWeight: 700, color: hasPrev ? '#1e40af' : '#d1d5db', cursor: hasPrev ? 'pointer' : 'not-allowed', minHeight: 46 }}>← Anterior</button>
+        <button onClick={() => setSelectedInfografia(i => i + 1)} disabled={!hasNext}
+          style={{ flex: 1, padding: '12px', background: hasNext ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${hasNext ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, fontSize: 14, fontWeight: 700, color: hasNext ? '#1e40af' : '#d1d5db', cursor: hasNext ? 'pointer' : 'not-allowed', minHeight: 46 }}>Siguiente →</button>
+      </div>
+    </>
+  )
+}
+
 const OperatorView = () => {
   const { user, profile, signOut, loadProfileDirect } = useAuth();
   const { showToast } = useToast();
@@ -1636,14 +1733,12 @@ const OperatorView = () => {
     if (user && activeTab === 'horarios') { fetchExceptions(); fetchZoneRequest() }
   }, [activeTab, user?.id])
 
-  // Generar URL de mapa cuando cambia la ubicación del formulario de zona
-  // Usa OpenStreetMap embed — sin dependencia de API key
+  // Generar mapa estático cuando cambia la ubicación del formulario de zona
   useEffect(() => {
     const { new_lat, new_lng, new_radius } = zoneForm
     if (new_lat && new_lng) {
-      const zoom = new_radius > 10 ? 11 : new_radius > 5 ? 12 : 13
-      // OpenStreetMap embed con marcador
-      const url = `https://www.openstreetmap.org/export/embed.html?bbox=${new_lng - 0.02},${new_lat - 0.02},${new_lng + 0.02},${new_lat + 0.02}&layer=mapnik&marker=${new_lat},${new_lng}`
+      const delta = new_radius > 10 ? 0.08 : new_radius > 5 ? 0.05 : 0.02
+      const url = `https://www.openstreetmap.org/export/embed.html?bbox=${new_lng - delta},${new_lat - delta},${new_lng + delta},${new_lat + delta}&layer=mapnik&marker=${new_lat},${new_lng}`
       setZoneMapUrl(url)
     } else {
       setZoneMapUrl(null)
@@ -1822,18 +1917,15 @@ const OperatorView = () => {
                 {cancellingMembership ? '⏳...' : '✕ Cancelar membresía'}
               </button>
             )}
-            {effectiveProfile?.membership_status === 'activa' && effectiveProfile?.membership_end_at && (() => {
-              const daysLeft = Math.ceil((new Date(effectiveProfile.membership_end_at) - new Date()) / (1000 * 60 * 60 * 24));
-              if (daysLeft > 15) return null;
-              return (
+            {effectiveProfile?.membership_status === 'activa' && effectiveProfile?.membership_end_at &&
+              Math.ceil((new Date(effectiveProfile.membership_end_at) - new Date()) / 86400000) <= 15 && (
                 <div style={{ marginTop: 6 }}>
                   <button onClick={handleSubscribeOperator} disabled={payingMembership}
                     style={{ padding: '5px 12px', background: 'rgba(251,191,36,0.25)', border: '1px solid rgba(251,191,36,0.5)', borderRadius: 20, color: '#fde68a', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 28 }}>
-                    {payingMembership ? '⏳...' : `🔄 Renovar anticipado (${daysLeft}d restantes)`}
+                    {payingMembership ? '⏳...' : `🔄 Renovar anticipado (${Math.ceil((new Date(effectiveProfile.membership_end_at) - new Date()) / 86400000)}d restantes)`}
                   </button>
                 </div>
-              );
-            })()}
+              )}
             {/* Ver historial */}
             <button onClick={() => { setShowMembershipHistory(!showMembershipHistory); if (!showMembershipHistory) fetchMembershipHistory(); }}
               style={{ marginTop: 6, padding: '4px 10px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 20, color: 'rgba(255,255,255,0.8)', fontSize: 10, fontWeight: 600, cursor: 'pointer', minHeight: 26 }}>
@@ -1926,20 +2018,7 @@ const OperatorView = () => {
                 )}
               </div>
               {/* Badge de nivel */}
-              {(() => {
-                const levelStyles = {
-                  elite:    { bg: 'rgba(251,191,36,0.2)',  color: '#fbbf24', border: 'rgba(251,191,36,0.4)',  label: '⭐ Elite' },
-                  proplus:  { bg: 'rgba(167,139,250,0.2)', color: '#a78bfa', border: 'rgba(167,139,250,0.4)', label: '🟣 Pro+' },
-                  pro:      { bg: 'rgba(96,165,250,0.2)',  color: '#60a5fa', border: 'rgba(96,165,250,0.4)',  label: '🔵 Pro' },
-                  operador: { bg: 'rgba(156,163,175,0.2)', color: '#9ca3af', border: 'rgba(156,163,175,0.4)', label: '⚪ Operador' },
-                }
-                const s = levelStyles[commissionData.level] || levelStyles.operador
-                return (
-                  <div style={{ background: s.bg, color: s.color, border: `1px solid ${s.border}`, borderRadius: 99, padding: '4px 10px', fontSize: 12, fontWeight: 700 }}>
-                    {s.label}
-                  </div>
-                )
-              })()}
+              <LevelBadge level={commissionData.level} variant="account" />
             </div>
             {/* Cuerpo */}
             <div style={{ padding: '14px 16px' }}>
@@ -2023,15 +2102,7 @@ const OperatorView = () => {
             {/* Header */}
             <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f3f4f6' }}>
               <div style={{ fontWeight: 700, fontSize: 14, color: '#1f2937' }}>⭐ Mi calificación</div>
-              {(() => {
-                const s = {
-                  elite:    { bg: 'rgba(251,191,36,0.12)',  color: '#92400e', label: '⭐ Elite' },
-                  proplus:  { bg: 'rgba(167,139,250,0.12)', color: '#5b21b6', label: '🟣 Pro+' },
-                  pro:      { bg: 'rgba(96,165,250,0.12)',  color: '#1e40af', label: '🔵 Pro' },
-                  operador: { bg: 'rgba(156,163,175,0.12)', color: '#374151', label: '⚪ Operador' },
-                }[ratingData.level] || { bg: '#f3f4f6', color: '#374151', label: '⚪ Operador' }
-                return <div style={{ background: s.bg, color: s.color, borderRadius: 99, padding: '4px 12px', fontSize: 12, fontWeight: 700 }}>{s.label}</div>
-              })()}
+              <LevelBadge level={ratingData.level} variant="rating" />
             </div>
             <div style={{ padding: '14px 16px' }}>
               {/* Promedio grande */}
@@ -2453,21 +2524,14 @@ const OperatorView = () => {
                         <div style={{ marginTop: 10 }}>
                           <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>🗺️ Tu nueva zona de operación</div>
                           <div style={{ borderRadius: 12, overflow: 'hidden', border: '1.5px solid #bfdbfe', height: 200 }}>
-                            <iframe
-                              src={zoneMapUrl}
-                              width="100%"
-                              height="200"
-                              frameBorder="0"
-                              scrolling="no"
-                              title="Mapa nueva zona"
-                              style={{ display: 'block', border: 'none' }}
-                            />
+                            <iframe src={zoneMapUrl} width="100%" height="200" frameBorder="0" scrolling="no" title="Mapa nueva zona" style={{ display: 'block', border: 'none' }} />
                           </div>
                           <p style={{ fontSize: 11, color: '#9ca3af', margin: '6px 0 0' }}>
-                            📍 Zona base con {zoneForm.new_radius} km de radio · {zoneForm.new_lat?.toFixed(4)}, {zoneForm.new_lng?.toFixed(4)}
+                            📍 Zona base · {zoneForm.new_lat?.toFixed(4)}, {zoneForm.new_lng?.toFixed(4)} · Radio: {zoneForm.new_radius} km
                           </p>
                         </div>
                       )}
+                    </div>
 
                     {/* Radio de cobertura */}
                     <div style={{ marginBottom: 14 }}>
@@ -2710,71 +2774,17 @@ const OperatorView = () => {
       )}
 
       {/* MODAL FOTOS - Una pantalla por foto igual que el Onboarding */}
-      {photoModal && photoBooking && (() => {
-        const FOTO_CONFIG = [
-          { step: 1, key: 'front_before',   column: 'photo_front_before',   label: 'Foto Frontal ANTES',    desc: 'Frente del auto con placa visible', color: '#f97316' },
-          { step: 2, key: 'side_before',    column: 'photo_side_before',    label: 'Foto Lateral ANTES',    desc: 'Lado más expuesto del auto',        color: '#f97316' },
-          { step: 3, key: 'front_after',    column: 'photo_front_after',    label: 'Foto Frontal DESPUÉS',  desc: 'Frente del auto ya lavado',         color: '#10b981' },
-          { step: 4, key: 'interior_after', column: 'photo_interior_after', label: 'Foto Interior DESPUÉS', desc: 'Interior o cajuela del auto',        color: '#10b981' },
-        ]
-        const cfg = FOTO_CONFIG.find(f => f.step === photoStep) || FOTO_CONFIG[0]
-        const isLast = photoStep === (photoPhase === 'before' ? 2 : 4)
-        const currentValue = photosData[cfg.key] || photoBooking[`photo_${cfg.key}`]
-        const canGoNext = !!photosData[cfg.key]
+      {photoModal && photoBooking && <FotoModal
+        photoStep={photoStep} photoPhase={photoPhase} photosData={photosData}
+        photoBooking={photoBooking} isMobile={isMobile} pendingFinalize={pendingFinalize}
+        handleNextPhotoStep={handleNextPhotoStep} setPhotoModalSafe={setPhotoModalSafe}
+        setPhotosData={setPhotosData} setPhotoBooking={setPhotoBooking}
+        setPendingFinalize={setPendingFinalize} setBookings={setBookings}
+        setSelectedBooking={setSelectedBooking} selectedBooking={selectedBooking}
+        supabase={supabase}
+      />}
 
-        return (
-          <div style={{ position: 'fixed', inset: 0, zIndex: 110, background: '#f3f4f6', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-            <div style={{ maxWidth: 520, margin: '0 auto', padding: isMobile ? '16px 12px 80px' : '32px 16px' }}>
-
-              {/* Header */}
-              <div style={{ background: `linear-gradient(135deg,${cfg.color},${cfg.color}dd)`, borderRadius: 16, padding: '20px', marginBottom: 20, color: '#fff' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.8 }}>Foto {photoStep} de {photoPhase === 'before' ? 2 : 4}</span>
-                  <button onClick={() => { setPhotoModalSafe(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', fontSize: 20, width: 36, height: 36, borderRadius: 8, cursor: 'pointer' }}>✕</button>
-                </div>
-                <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 4px' }}>{cfg.label}</h2>
-                <p style={{ fontSize: 13, opacity: 0.9, margin: 0 }}>{cfg.desc}</p>
-                {/* Barra de progreso */}
-                <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
-                  {FOTO_CONFIG.filter(f => photoPhase === 'before' ? f.step <= 2 : f.step >= 3).map(f => (
-                    <div key={f.step} style={{ flex: 1, height: 4, borderRadius: 4, background: photosData[f.key] ? '#fff' : f.step === photoStep ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)' }} />
-                  ))}
-                </div>
-              </div>
-
-              {/* PhotoUploadServicio — mismo componente que Onboarding */}
-              <div style={{ background: '#fff', borderRadius: 16, padding: '20px', marginBottom: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-                <PhotoUploadServicio
-                  label={cfg.label}
-                  value={currentValue}
-                  capture="environment"
-                  onChange={(path) => {
-                    supabase.from('bookings')
-                      .update({ [cfg.column]: path, updated_at: new Date().toISOString() })
-                      .eq('id', photoBooking.id)
-                      .then(({ error }) => { if (error) console.error('Error DB:', error) })
-                    setBookings(prev => prev.map(b => b.id === photoBooking.id ? { ...b, [cfg.column]: path } : b))
-                    if (selectedBooking?.id === photoBooking.id) setSelectedBooking(prev => ({ ...prev, [cfg.column]: path }))
-                    setPhotoBooking(prev => ({ ...prev, [cfg.column]: path }))
-                    setPhotosData(prev => ({ ...prev, [cfg.key]: path }))
-                  }}
-                />
-              </div>
-
-              {/* Botón siguiente */}
-              <button
-                onClick={handleNextPhotoStep}
-                disabled={!canGoNext}
-                style={{ width: '100%', padding: '16px 0', background: canGoNext ? cfg.color : '#94a3b8', color: '#fff', border: 'none', borderRadius: 16, fontSize: 16, fontWeight: 700, cursor: canGoNext ? 'pointer' : 'not-allowed', minHeight: 56 }}
-              >
-                {isLast ? (pendingFinalize ? 'Ir al Checklist' : 'Listo') : 'Siguiente foto →'}
-              </button>
-            </div>
-          </div>
-        )
-      })()}
-
-            {/* MODAL CHECKLIST */}
+      {/* MODAL CHECKLIST */}
       {checklistModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 110, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 }}>
           <div style={{ background: '#fff', borderRadius: isMobile ? '20px 20px 0 0' : 20, width: '100%', maxWidth: isMobile ? '100%' : 460, display: 'flex', flexDirection: 'column', maxHeight: isMobile ? 'calc(92vh - 60px)' : '85vh' }}>
@@ -3026,53 +3036,13 @@ const OperatorView = () => {
             )}
 
             {/* ── VISTA INFOGRAFÍA INDIVIDUAL ── */}
-            {selectedInfografia !== null && infografias[selectedInfografia] && (() => {
-              const mod = infografias[selectedInfografia];
-              const total = infografias.length;
-              const hasPrev = selectedInfografia > 0;
-              const hasNext = selectedInfografia < total - 1;
-              return (
-                <>
-                  {/* Header con navegación */}
-                  <div style={{ background: 'linear-gradient(135deg,#0c4a6e,#0369a1)', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                    <button onClick={() => setSelectedInfografia(null)}
-                      style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, padding: '6px 10px', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 34, whiteSpace: 'nowrap' }}>
-                      ← Regresar
-                    </button>
-                    <div style={{ flex: 1, textAlign: 'center' }}>
-                      <div style={{ color: '#fff', fontWeight: 700, fontSize: 13 }}>
-                        Módulo {mod.order_index}
-                      </div>
-                      <div style={{ color: '#bae6fd', fontSize: 11 }}>
-                        {selectedInfografia + 1} / {total}
-                      </div>
-                    </div>
-                    <button onClick={() => { setShowInfografias(false); setSelectedInfografia(null); }}
-                      style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 34, height: 34, color: '#fff', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
-                  </div>
-                  {/* Imagen con scroll */}
-                  <div style={{ overflowY: 'auto', flex: 1, WebkitOverflowScrolling: 'touch', background: '#f8fafc' }}>
-                    <img
-                      src={mod.infografia.content_url}
-                      alt={`Infografía ${mod.title}`}
-                      style={{ width: '100%', display: 'block' }}
-                      onError={e => { e.target.parentElement.innerHTML = '<div style="padding:48px;text-align:center;color:#9ca3af;font-size:13px">⚠️ No se pudo cargar la imagen</div>' }}
-                    />
-                  </div>
-                  {/* Footer navegación ← → */}
-                  <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, flexShrink: 0 }}>
-                    <button onClick={() => setSelectedInfografia(i => i - 1)} disabled={!hasPrev}
-                      style={{ flex: 1, padding: '12px', background: hasPrev ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${hasPrev ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, fontSize: 14, fontWeight: 700, color: hasPrev ? '#1e40af' : '#d1d5db', cursor: hasPrev ? 'pointer' : 'not-allowed', minHeight: 46 }}>
-                      ← Anterior
-                    </button>
-                    <button onClick={() => setSelectedInfografia(i => i + 1)} disabled={!hasNext}
-                      style={{ flex: 1, padding: '12px', background: hasNext ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${hasNext ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, fontSize: 14, fontWeight: 700, color: hasNext ? '#1e40af' : '#d1d5db', cursor: hasNext ? 'pointer' : 'not-allowed', minHeight: 46 }}>
-                      Siguiente →
-                    </button>
-                  </div>
-                </>
-              );
-            })()}
+            {selectedInfografia !== null && infografias[selectedInfografia] && <InfografiaItem
+              mod={infografias[selectedInfografia]}
+              idx={selectedInfografia}
+              total={infografias.length}
+              setSelectedInfografia={setSelectedInfografia}
+              setShowInfografias={setShowInfografias}
+            />}
 
           </div>
         </div>
