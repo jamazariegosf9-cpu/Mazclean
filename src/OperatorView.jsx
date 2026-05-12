@@ -141,6 +141,7 @@ const OperatorView = () => {
     fetchEffectivePromo();
     fetchCommissionData();
     fetchRatingData();
+    fetchBillingHistory();
 
     // ── Detectar regreso desde Stripe con pago exitoso ────────────────────
     const params = new URLSearchParams(window.location.search);
@@ -1238,6 +1239,24 @@ const OperatorView = () => {
   }, [zoneForm.new_lat, zoneForm.new_lng, zoneForm.new_radius])
 
   // ── Solicitud cambio de zona ─────────────────────────────────────────────
+  // ── Historial de billing ─────────────────────────────────────────────────
+  const [billingHistory, setBillingHistory] = useState([])
+  const [loadingBilling, setLoadingBilling] = useState(false)
+
+  const fetchBillingHistory = async () => {
+    if (!user?.id) return
+    setLoadingBilling(true)
+    try {
+      const token = getToken()
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/operator_billing?operator_id=eq.${user.id}&order=period_start.desc&limit=12`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
+      )
+      if (res.ok) setBillingHistory(await res.json())
+    } catch (err) { console.error('fetchBillingHistory:', err) }
+    finally { setLoadingBilling(false) }
+  }
+
   const fetchZoneRequest = async () => {
     if (!user?.id) return
     try {
@@ -1527,6 +1546,7 @@ const OperatorView = () => {
           savingZone={savingZone} zoneSuccess={zoneSuccess} zoneError={zoneError}
           submitZoneRequest={submitZoneRequest} geocodeZoneAddress={geocodeZoneAddress}
           profile={profile} isMobile={isMobile}
+          billingHistory={billingHistory} loadingBilling={loadingBilling} fetchBillingHistory={fetchBillingHistory}
         />
         {/* ── TAB SOLICITUDES ── */}
         {activeTab === 'solicitudes' && (

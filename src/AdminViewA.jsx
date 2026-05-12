@@ -174,12 +174,38 @@ const AdminViewA = ({
       const opsNoRenov   = ops.filter(o => o.operator_status === 'aprobado' && o.membership_status !== 'activa')
       const ratingProm   = opsActivos.length ? (opsActivos.reduce((a,o) => a + parseFloat(o.rating_avg||0), 0) / opsActivos.length).toFixed(1) : '—'
 
+      // Billing del mes desde operator_billing
+      const billingRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/operator_billing?paid_at=gte.${today.slice(0,7)}-01&select=membership_amount,commission_amount,gmv,total_charged`,
+        { headers: h }
+      )
+      const billingData = billingRes.ok ? await billingRes.json() : []
+      const commCobradas    = billingData.reduce((s, r) => s + parseFloat(r.commission_amount||0), 0)
+      const memCobradas     = billingData.reduce((s, r) => s + parseFloat(r.membership_amount||0), 0)
+      // Comisiones devengadas (servicios del mes × pct nivel operador)
+      const mesBookings = bks.filter(b => b.status === 'finalizado' && b.scheduled_date?.slice(0,7) === today.slice(0,7))
+      const gmvMes = mesBookings.reduce((s, b) => s + parseFloat(b.total_price||0), 0)
+      // Membresías por cobrar: activas que vencen este mes
+      const thisMonthEnd = new Date(today.slice(0,7) + '-31')
+      const memDevOps = ops.filter(o => o.membership_status === 'activa' && o.membership_end_at && new Date(o.membership_end_at) <= thisMonthEnd && o.role !== 'cliente')
+      const memDevengadas = memDevOps.reduce((s, o) => s + 200, 0) // precio base operador
+
       setDash({
         desfasados, sinOperador, hoy, enCurso, ingresosMes,
         opsActivos, opsPendientes, opsDocsCorr, opsVencen, opsNoRenov,
         zones, deps, incs, ratingProm,
         totalHoy: hoy.length,
         finalizadosHoy: hoy.filter(b => b.status === 'finalizado').length,
+        billing: {
+          memCobradas:       Math.round(memCobradas * 100) / 100,
+          countMemCobradas:  billingData.length,
+          memDevengadas:     Math.round(memDevengadas * 100) / 100,
+          countMemDevengadas: memDevOps.length,
+          commDevengadas:    Math.round(gmvMes * 0.04 * 100) / 100, // estimado promedio 4%
+          commCobradas:      Math.round(commCobradas * 100) / 100,
+          countCommCobradas: billingData.length,
+          gmvMes:            Math.round(gmvMes * 100) / 100,
+        },
       })
     } catch (err) { console.error('fetchDashboard:', err) }
     finally { setDashLoading(false) }
@@ -632,14 +658,43 @@ const AdminViewA = ({
               />
             </div>
 
-            {/* Ingreso del mes — barra completa */}
-            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', borderRadius: 14, padding: '16px 20px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#bfdbfe', textTransform: 'uppercase', letterSpacing: 1 }}>💰 Ingresos del mes</div>
-                <div style={{ fontSize: 32, fontWeight: 800, color: '#fff', marginTop: 4 }}>${Math.round(dash.ingresosMes).toLocaleString('es-MX')} MXN</div>
-                <div style={{ fontSize: 12, color: '#93c5fd', marginTop: 2 }}>{dash.hoy.filter(b=>b.status==='finalizado').length} servicios finalizados hoy</div>
+            {/* Panel de ingresos segregado */}
+            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', borderRadius: 14, padding: '16px 20px', marginBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#bfdbfe', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>💰 Ingresos del mes — {new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: 10 }}>
+                {/* Membresías cobradas */}
+                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 10, padding: '12px 14px' }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>✅ Membresías cobradas</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>
+                    ${dash.billing ? Math.round(dash.billing.memCobradas).toLocaleString('es-MX') : '—'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{dash.billing?.countMemCobradas || 0} renovaciones</div>
+                </div>
+                {/* Membresías por cobrar */}
+                <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: '12px 14px', border: '1px solid rgba(255,255,255,0.15)' }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>⏳ Membresías por cobrar</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: '#fde68a' }}>
+                    ${dash.billing ? Math.round(dash.billing.memDevengadas).toLocaleString('es-MX') : '—'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{dash.billing?.countMemDevengadas || 0} vencen este mes</div>
+                </div>
+                {/* Comisiones devengadas */}
+                <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: '12px 14px', border: '1px solid rgba(255,255,255,0.15)' }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>📊 Comisiones devengadas</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: '#fde68a' }}>
+                    ${dash.billing ? Math.round(dash.billing.commDevengadas).toLocaleString('es-MX') : '—'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>sobre ${dash.billing ? Math.round(dash.billing.gmvMes).toLocaleString('es-MX') : 0} GMV</div>
+                </div>
+                {/* Comisiones cobradas */}
+                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 10, padding: '12px 14px' }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>✅ Comisiones cobradas</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>
+                    ${dash.billing ? Math.round(dash.billing.commCobradas).toLocaleString('es-MX') : '—'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{dash.billing?.countCommCobradas || 0} liquidaciones</div>
+                </div>
               </div>
-              <div style={{ fontSize: 48 }}>📈</div>
             </div>
           </>
         ) : null}

@@ -128,6 +128,8 @@ export default function OperatorAccount({
   savingZone, zoneSuccess, zoneError,
   submitZoneRequest, geocodeZoneAddress,
   profile, isMobile,
+  // Billing
+  billingHistory, loadingBilling, fetchBillingHistory,
 }) {
   return (
     <>
@@ -290,6 +292,54 @@ export default function OperatorAccount({
             </div>
           </div>
         )}
+
+          {/* ── HISTORIAL DE COBROS ── */}
+          <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', border: '1.5px solid #e5e7eb', marginBottom: 4 }}>
+            <button onClick={() => { if (!billingHistory?.length) fetchBillingHistory && fetchBillingHistory() }}
+              style={{ width: '100%', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', borderBottom: billingHistory?.length ? '1px solid #f3f4f6' : 'none' }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#1f2937' }}>📄 Historial de cobros</div>
+              <div style={{ fontSize: 12, color: '#6b7280' }}>{billingHistory?.length ? `${billingHistory.length} ciclos` : 'Ver'} →</div>
+            </button>
+            {loadingBilling && (
+              <div style={{ padding: 16, textAlign: 'center', color: '#9ca3af', fontSize: 12 }}>⏳ Cargando...</div>
+            )}
+            {billingHistory?.length > 0 && !loadingBilling && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc' }}>
+                      <th style={{ padding: '8px 12px', textAlign: 'left', color: '#6b7280', fontWeight: 600, fontSize: 11 }}>Período</th>
+                      <th style={{ padding: '8px 8px', textAlign: 'right', color: '#6b7280', fontWeight: 600, fontSize: 11 }}>Servicios</th>
+                      <th style={{ padding: '8px 8px', textAlign: 'right', color: '#6b7280', fontWeight: 600, fontSize: 11 }}>GMV</th>
+                      <th style={{ padding: '8px 8px', textAlign: 'right', color: '#dc2626', fontWeight: 600, fontSize: 11 }}>Comisión</th>
+                      <th style={{ padding: '8px 8px', textAlign: 'right', color: '#dc2626', fontWeight: 600, fontSize: 11 }}>Membresía</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right', color: '#1e40af', fontWeight: 600, fontSize: 11 }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {billingHistory.map(row => (
+                      <tr key={row.id} style={{ borderBottom: '0.5px solid #f3f4f6' }}>
+                        <td style={{ padding: '8px 12px', color: '#374151', whiteSpace: 'nowrap' }}>
+                          {new Date(row.period_start).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })} →{' '}
+                          {new Date(row.period_end).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}
+                        </td>
+                        <td style={{ padding: '8px', textAlign: 'right', color: '#374151' }}>{row.services_count}</td>
+                        <td style={{ padding: '8px', textAlign: 'right', color: '#374151' }}>${parseFloat(row.gmv||0).toLocaleString('es-MX')}</td>
+                        <td style={{ padding: '8px', textAlign: 'right', color: '#dc2626' }}>−${parseFloat(row.commission_amount||0).toLocaleString('es-MX')}</td>
+                        <td style={{ padding: '8px', textAlign: 'right', color: '#dc2626' }}>−${parseFloat(row.membership_amount||0).toLocaleString('es-MX')}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: '#1e40af' }}>${parseFloat(row.total_charged||0).toLocaleString('es-MX')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {!billingHistory?.length && !loadingBilling && (
+              <div style={{ padding: '16px', textAlign: 'center', color: '#9ca3af', fontSize: 12 }}>
+                El historial de cobros aparecerá aquí al renovar tu membresía.
+              </div>
+            )}
+          </div>
 
           {/* Placeholder si no hay datos aún */}
           {!commissionData && !ratingData && (

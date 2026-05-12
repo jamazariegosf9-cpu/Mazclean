@@ -367,6 +367,57 @@ const AdminViewB = ({
         headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({ status: 'aprobado', updated_at: now.toISOString() }),
       });
+      // ── Registrar billing si es operador ────────────────────────────
+      if (req.user_type === 'operador') {
+        try {
+          // Obtener perfil con nivel para calcular comisión
+          const profRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/profiles?id=eq.${req.user_id}&select=operator_level,membership_start_at`,
+            { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
+          )
+          const profData = profRes.ok ? await profRes.json() : []
+          const prof = profData[0] || {}
+          const level = prof.operator_level || 'operador'
+          const commPct   = { elite: 0.02, proplus: 0.03, pro: 0.04, operador: 0.05 }[level] ?? 0.05
+          const discPct   = { elite: 0.35, proplus: 0.20, pro: 0.10, operador: 0.00 }[level] ?? 0.00
+          const membershipBase = discPct < 1 ? Math.round((req.amount / (1 - discPct)) * 100) / 100 : req.amount
+          // Servicios y GMV del período
+          const periodStart = now.toISOString().slice(0, 10)
+          const periodEnd   = endAt.toISOString().slice(0, 10)
+          const bkRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/bookings?operator_id=eq.${req.user_id}&status=eq.finalizado&scheduled_date=gte.${prof.membership_start_at?.slice(0,10) || periodStart}&scheduled_date=lte.${periodStart}&select=id,total_price`,
+            { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
+          )
+          const bkData = bkRes.ok ? await bkRes.json() : []
+          const gmv = bkData.reduce((s, b) => s + parseFloat(b.total_price || 0), 0)
+          const commissionAmount = Math.round(gmv * commPct * 100) / 100
+          const totalCharged = Math.round((commissionAmount + req.amount) * 100) / 100
+          await fetch(`${SUPABASE_URL}/rest/v1/operator_billing`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify({
+              operator_id:             req.user_id,
+              period_start:            periodStart,
+              period_end:              periodEnd,
+              services_count:          bkData.length,
+              gmv:                     gmv,
+              commission_pct:          commPct * 100,
+              commission_amount:       commissionAmount,
+              membership_base:         membershipBase,
+              membership_discount_pct: discPct * 100,
+              membership_amount:       req.amount,
+              total_charged:           totalCharged,
+              payment_method:          'deposito',
+              status:                  'cobrado',
+              paid_at:                 now.toISOString(),
+            }),
+          })
+          console.log('operator_billing registrado por depósito', req.user_id)
+        } catch (billingErr) {
+          console.error('Error registrando billing por depósito:', billingErr)
+          // No interrumpir el flujo — billing es secundario
+        }
+      }
       // Enviar WA de confirmación al usuario
       if (req.profile?.phone) {
         const msg = `✅ *MAZ CLEAN* — ¡Tu membresía ${req.user_type === 'operador' ? 'de Operador' : 'Premium'} ha sido activada! Válida del ${now.toLocaleDateString('es-MX')} al ${endAt.toLocaleDateString('es-MX')}. ¡Bienvenido! 🚗`;
