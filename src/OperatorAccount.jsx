@@ -13,15 +13,18 @@ const WORK_DAYS_LABELS = {
 
 // ── ZoneMapPicker — mapa interactivo con marcador arrastrable ─────────────────
 function ZoneMapPicker({ lat, lng, onMove }) {
-  const mapRef    = useRef(null)
-  const markerRef = useRef(null)
+  const mapRef     = useRef(null)
+  const markerRef  = useRef(null)
   const mapInstRef = useRef(null)
+  const initedRef  = useRef(false)
 
   useEffect(() => {
-    if (!mapRef.current) return
-    const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || ''
+    if (!mapRef.current || initedRef.current) return
+
     const initMap = () => {
-      if (!window.google?.maps) return
+      // Verificar que google.maps.Map esté disponible como constructor
+      if (!window.google?.maps?.Map) return
+      initedRef.current = true
       const center = { lat, lng }
       const map = new window.google.maps.Map(mapRef.current, {
         center, zoom: 15,
@@ -38,35 +41,54 @@ function ZoneMapPicker({ lat, lng, onMove }) {
       marker.addListener('dragend', async (e) => {
         const newLat = e.latLng.lat()
         const newLng = e.latLng.lng()
-        // Reverse geocoding con Nominatim
         try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${newLat}&lon=${newLng}&format=json&accept-language=es`)
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${newLat}&lon=${newLng}&format=json&accept-language=es`,
+            { headers: { 'Accept-Language': 'es' } }
+          )
           const data = await res.json()
-          const address = data?.display_name || ''
-          onMove(newLat, newLng, address)
+          onMove(newLat, newLng, data?.display_name || '')
         } catch {
           onMove(newLat, newLng, '')
         }
       })
     }
-    // Cargar Google Maps si no está ya cargado
-    if (window.google?.maps) {
+
+    // Si ya está cargado y listo → usar directo
+    if (window.google?.maps?.Map) {
       initMap()
-    } else {
-      const existing = document.getElementById('google-maps-script-zone')
-      if (!existing) {
-        const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || ''
-        const script = document.createElement('script')
-        script.id = 'google-maps-script-zone'
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_KEY}&libraries=places&v=weekly&loading=async`
-        script.async = true
-        script.defer = true
-        script.onload = initMap
-        document.head.appendChild(script)
-      } else {
-        existing.addEventListener('load', initMap)
-      }
+      return
     }
+
+    // Si el script de BookingView ya está en el DOM → esperar con polling
+    const existingScript = document.getElementById('google-maps-script')
+    if (existingScript) {
+      // Polling hasta que google.maps.Map esté disponible
+      let attempts = 0
+      const poll = setInterval(() => {
+        attempts++
+        if (window.google?.maps?.Map) {
+          clearInterval(poll)
+          initMap()
+        } else if (attempts > 50) {
+          clearInterval(poll) // timeout 5s
+        }
+      }, 100)
+      return () => clearInterval(poll)
+    }
+
+    // No hay script → cargar uno nuevo
+    const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || ''
+    const script = document.createElement('script')
+    script.id = 'google-maps-script'
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_KEY}&libraries=places&v=weekly&loading=async`
+    script.async = true
+    script.defer = true
+    script.onload = () => {
+      // Esperar un tick para que la API inicialice completamente
+      setTimeout(initMap, 100)
+    }
+    document.head.appendChild(script)
   }, [lat, lng])
 
   return (
