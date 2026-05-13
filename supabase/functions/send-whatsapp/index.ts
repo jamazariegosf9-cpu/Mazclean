@@ -1,9 +1,9 @@
-// send-whatsapp v8 — agrega booking_searching (notificación al cliente cuando 3 rondas fallan)
+// send-whatsapp v9 — número propio +5215539377258 + Content Templates aprobados
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID') ?? ''
 const TWILIO_AUTH_TOKEN  = Deno.env.get('TWILIO_AUTH_TOKEN') ?? ''
-const TWILIO_FROM        = 'whatsapp:+14155238886'
+const TWILIO_FROM        = 'whatsapp:+5215539377258'
 const TWILIO_FROM_SMS    = Deno.env.get('TWILIO_FROM_SMS') ?? ''
 const APP_URL            = 'https://mazclean.vercel.app'
 
@@ -12,234 +12,115 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-function getMessage(event: string, data: any): string {
-  const ref       = data.booking_ref    || ''
-  const svc       = data.service_name   || 'tu lavado'
-  const date      = data.scheduled_date || ''
-  const time      = data.scheduled_time || ''
-  const timeFrom  = data.scheduled_time_from?.slice(0,5) || ''
-  const timeTo    = data.scheduled_time_to?.slice(0,5)   || ''
-  const price     = data.total_price    || ''
-  const op        = data.operator_name  || 'tu operador'
-  const address   = data.address_line   || ''
-  const bookingId = data.booking_id     || ''
+// ── Content Template SIDs ───────────────────────────────────────────────────
+const TEMPLATE_SIDS: Record<string, string> = {
+  booking_created:              'HX1f453ed66c36623cac84a2906d1f3a4c',
+  operator_assigned:            'HX22d43581e868f0287be84a75d2987129',
+  on_the_way:                   'HXd2a05ad2870ddc9299a7f845faa9088a',
+  llegando:                     'HX40f974fc28c8c86904b68226df46b87b',
+  arrived:                      'HXc5b8063babff2fb775dc9e6505a42965',
+  washing:                      'HXd82f427e886a5cfe4c91a2e70a19e7f1',
+  done:                         'HX2ffac597975c104dbeaaad4f3bdbce44',
+  booking_cancelled:            'HXc9e107717c0464b47a43d6d3327d8d8e',
+  booking_searching:            'HXfaf03fa2fca00d41bfd8fd58f371caa2',
+  operator_service_request:     'HXdd7406feca5d26bc978928f125c3a650',
+  operator_request_taken:       'HX3c5584f4f4b8a44f7549b8ff14aad300',
+  operator_request_expired:     'HXeca8d8b6007d2802cf88825270c6c5c9',
+  operator_docs_required:       'HX9d976a938e1932c4cadb12d4a9d26b91',
+  operator_approved:            'HX30cddade3f8f08e9121d30c601edffdc',
+  operator_rejected:            'HXe67103a838257b3edc1026638c82c4fd',
+  admin_assignment_needed:      'HXb5eab312286b44167a137912c49d0338',
+}
+
+// ── Variables por template (orden exacto de {{1}}, {{2}}...) ───────────────
+function getTemplateVariables(event: string, data: any): Record<string, string> {
+  const ref        = data.booking_ref          || ''
+  const svc        = data.service_name         || 'tu lavado'
+  const date       = data.scheduled_date       || ''
+  const time       = data.scheduled_time       || ''
+  const timeFrom   = data.scheduled_time_from?.slice(0, 5) || ''
+  const timeTo     = data.scheduled_time_to?.slice(0, 5)   || ''
+  const price      = data.total_price          || ''
+  const op         = data.operator_name        || 'tu operador'
+  const address    = data.address_line         || ''
+  const bookingId  = data.booking_id           || ''
   const trackingUrl = bookingId ? `${APP_URL}/tracking/${bookingId}` : APP_URL
+  const clientName = data.client_name          || ''
+  const minutes    = data.minutes_away         || '5'
+  const docsList   = data.docs_list            || ''
+  const reason     = data.rejection_reason     || 'No cumple con los requisitos.'
 
   switch (event) {
-
-    // ── Mensajes al cliente ─────────────────────────────────────────────────
     case 'booking_created':
-      return [
-        `Maz Clean - Reservacion recibida!`,
-        ``,
-        `Ref: ${ref}`,
-        `Servicio: ${svc}`,
-        `Fecha: ${date}`,
-        `Horario solicitado: ${timeFrom} a ${timeTo} hrs`,
-        `Total: $${price} MXN`,
-        ``,
-        `Estamos buscando el mejor operador para ti. Te avisamos en breve!`,
-      ].join('\n')
-
-    case 'booking_searching':
-      return [
-        `⏳ Maz Clean — Seguimos buscando tu operador`,
-        ``,
-        `Ref: ${ref}`,
-        ``,
-        `Hola${data.client_name ? ` ${data.client_name}` : ''}! Tu reservacion para el ${date} sigue activa.`,
-        ``,
-        `No encontramos un operador disponible de forma automatica en tu zona, pero nuestro equipo ya esta buscando uno manualmente para ti.`,
-        ``,
-        `Te notificaremos en cuanto tengamos a alguien asignado. Disculpa la espera!`,
-        ``,
-        `Si deseas cancelar o tienes dudas, respondenos a este mensaje.`,
-      ].join('\n')
-
+      return { '1': ref, '2': svc, '3': date, '4': timeFrom, '5': timeTo, '6': String(price) }
     case 'operator_assigned':
-      return [
-        `Maz Clean - Operador asignado!`,
-        ``,
-        `Ref: ${ref}`,
-        `Operador: ${op}`,
-        `Fecha: ${date} a las ${time}`,
-        ``,
-        `Te avisaremos cuando este en camino.`,
-      ].join('\n')
-
+      return { '1': ref, '2': op, '3': date, '4': time }
     case 'on_the_way':
-      return [
-        `Maz Clean - Tu experto ya va en camino! 🚗💨`,
-        ``,
-        `Ref: ${ref}`,
-        `${op} se dirige a tu ubicacion.`,
-        ``,
-        `Sigue su llegada en tiempo real aqui:`,
-        `${trackingUrl}`,
-        ``,
-        `Preparate para dejar tu auto IMPECABLE! ✨`,
-      ].join('\n')
-
+      return { '1': ref, '2': op, '3': trackingUrl }
     case 'llegando':
-      return [
-        `Maz Clean - Estamos a ${data.minutes_away || 5} minutos! 🕒`,
-        ``,
-        `Ref: ${ref}`,
-        `Por favor ten las llaves a la mano o el acceso listo.`,
-        ``,
-        `Vamos a dejar tu auto IMPECABLE! ✨`,
-      ].join('\n')
-
+      return { '1': String(minutes), '2': ref }
     case 'arrived':
-      return [
-        `Maz Clean - Tu operador ha llegado!`,
-        ``,
-        `Ref: ${ref}`,
-        `${op} esta en tu ubicacion. El lavado comenzara en unos momentos!`,
-      ].join('\n')
-
+      return { '1': ref, '2': op }
     case 'washing':
-      return [
-        `Maz Clean - Tu vehiculo esta siendo lavado!`,
-        ``,
-        `Ref: ${ref}`,
-        ``,
-        `Te avisaremos cuando este listo.`,
-      ].join('\n')
-
+      return { '1': ref }
     case 'done':
-      return [
-        `Maz Clean - Tu vehiculo esta listo! 🎉`,
-        ``,
-        `Ref: ${ref}`,
-        `Servicio completado: ${svc}`,
-        `Total: $${price} MXN`,
-        ``,
-        `Gracias por usar Maz Clean! Tu opinion nos importa, calificanos en la app.`,
-      ].join('\n')
-
+      return { '1': ref, '2': svc, '3': String(price) }
     case 'booking_cancelled':
-      return [
-        `Maz Clean - Reservacion cancelada`,
-        ``,
-        `Ref: ${ref}`,
-        `Lamentablemente no encontramos un operador disponible para tu zona en este momento.`,
-        ``,
-        `Te invitamos a intentar de nuevo mas tarde o en un horario diferente.`,
-        `Disculpa los inconvenientes.`,
-      ].join('\n')
-
-    // ── Mensajes al operador ────────────────────────────────────────────────
+      return { '1': ref }
+    case 'booking_searching':
+      return { '1': ref, '2': clientName, '3': date }
     case 'operator_service_request':
-      if (data.custom_message) return data.custom_message
-      return [
-        `🚗 Maz Clean — Nueva solicitud de servicio!`,
-        ``,
-        `Ref: ${ref}`,
-        `Servicio: ${svc}`,
-        `Fecha: ${date}`,
-        `Horario: ${timeFrom} a ${timeTo} hrs`,
-        `Pago: $${price} MXN`,
-        ``,
-        `⏱ Tienes 5 minutos para aceptar.`,
-        ``,
-        `Entra a la app para aceptar:`,
-        `${APP_URL}`,
-      ].join('\n')
-
+      return { '1': ref, '2': svc, '3': date, '4': timeFrom, '5': timeTo, '6': String(price), '7': APP_URL }
     case 'operator_request_taken':
-      return [
-        `Maz Clean - Solicitud asignada a otro operador`,
-        ``,
-        `Ref: ${ref}`,
-        `El servicio del ${date} ya fue tomado por otro operador.`,
-        ``,
-        `Sigue pendiente de nuevas solicitudes en la app!`,
-      ].join('\n')
-
+      return { '1': ref, '2': date }
     case 'operator_request_expired':
-      return [
-        `Maz Clean - Solicitud expirada`,
-        ``,
-        `Ref: ${ref}`,
-        `El tiempo para aceptar el servicio del ${date} ha expirado.`,
-        ``,
-        `Mantente activo en la app para no perder proximas oportunidades.`,
-      ].join('\n')
-
+      return { '1': ref, '2': date }
     case 'operator_docs_required':
-      return [
-        `⚠️ Maz Clean — Documentos requeridos`,
-        ``,
-        `Hola ${data.operator_name || 'operador'},`,
-        ``,
-        `Revisamos tu solicitud y necesitamos que corrijas los siguientes documentos:`,
-        ``,
-        data.docs_list || '',
-        ``,
-        `Ingresa a la app para corregirlos:`,
-        `${APP_URL}`,
-        ``,
-        `Una vez que los corrijas tu solicitud sera revisada nuevamente.`,
-      ].join('\n')
-
+      return { '1': op, '2': docsList, '3': APP_URL }
     case 'operator_approved':
-      return [
-        `✅ Maz Clean — Solicitud aprobada!`,
-        ``,
-        `Hola ${data.operator_name || 'operador'},`,
-        ``,
-        `Tu solicitud ha sido aprobada. Ya puedes recibir servicios en la app.`,
-        ``,
-        `Bienvenido al equipo Maz Clean! 🎉`,
-        ``,
-        `${APP_URL}`,
-      ].join('\n')
-
+      return { '1': op, '2': APP_URL }
     case 'operator_rejected':
-      return [
-        `❌ Maz Clean — Solicitud rechazada`,
-        ``,
-        `Hola ${data.operator_name || 'operador'},`,
-        ``,
-        `Lamentablemente tu solicitud no fue aprobada.`,
-        ``,
-        `Motivo: ${data.rejection_reason || 'No cumple con los requisitos.'}`,
-        ``,
-        `Si tienes dudas contacta a nuestro equipo.`,
-      ].join('\n')
-
-    // ── Mensajes al admin ───────────────────────────────────────────────────
+      return { '1': op, '2': reason }
     case 'admin_assignment_needed':
-      return [
-        `⚠️ Maz Clean Admin — Servicio sin operador`,
-        ``,
-        `Ref: ${ref}`,
-        `Servicio: ${svc}`,
-        `Fecha: ${date}`,
-        `Horario: ${timeFrom} a ${timeTo} hrs`,
-        `Direccion: ${address}`,
-        `Total: $${price} MXN`,
-        ``,
-        `Ningun operador acepto en las 3 rondas automaticas.`,
-        `Ingresa al panel de admin para asignar manualmente o cancelar.`,
-        ``,
-        `${APP_URL}`,
-      ].join('\n')
-
+      return { '1': ref, '2': svc, '3': date, '4': timeFrom, '5': timeTo, '6': address, '7': String(price), '8': APP_URL }
     default:
-      return `Maz Clean - Actualizacion reservacion ${ref}`
+      return {}
   }
+}
+
+function getFallbackMessage(event: string, data: any): string {
+  const ref = data.booking_ref || ''
+  return `Maz Clean — Actualizacion reservacion ${ref}`
 }
 
 const getBase64Auth = () => {
   const auth    = `${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`
   const encoder = new TextEncoder()
-  const data    = encoder.encode(auth)
-  return btoa(String.fromCharCode(...data))
+  const bytes   = encoder.encode(auth)
+  return btoa(String.fromCharCode(...bytes))
 }
 
-const sendTwilioMessage = async (from: string, to: string, body: string) => {
+const sendWithTemplate = async (to: string, contentSid: string, variables: Record<string, string>) => {
+  const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`
+  const params = new URLSearchParams({
+    From:             TWILIO_FROM,
+    To:               to,
+    ContentSid:       contentSid,
+    ContentVariables: JSON.stringify(variables),
+  })
+  const response = await fetch(twilioUrl, {
+    method:  'POST',
+    headers: {
+      'Authorization': `Basic ${getBase64Auth()}`,
+      'Content-Type':  'application/x-www-form-urlencoded',
+    },
+    body: params.toString(),
+  })
+  const result = await response.json()
+  return { ok: response.ok, data: result }
+}
+
+const sendSMS = async (to: string, body: string) => {
   const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`
   const response  = await fetch(twilioUrl, {
     method:  'POST',
@@ -247,7 +128,7 @@ const sendTwilioMessage = async (from: string, to: string, body: string) => {
       'Authorization': `Basic ${getBase64Auth()}`,
       'Content-Type':  'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams({ From: from, To: to, Body: body }).toString(),
+    body: new URLSearchParams({ From: TWILIO_FROM_SMS, To: to, Body: body }).toString(),
   })
   const result = await response.json()
   return { ok: response.ok, data: result }
@@ -263,7 +144,7 @@ serve(async (req) => {
 
     if (!phone) {
       return new Response(JSON.stringify({ error: 'phone requerido' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
@@ -271,36 +152,45 @@ serve(async (req) => {
     if (normalizedPhone.length === 10) normalizedPhone = '52' + normalizedPhone
     if (!normalizedPhone.startsWith('+')) normalizedPhone = '+' + normalizedPhone
 
-    const message = getMessage(event, booking || {})
+    const data       = booking || {}
+    const contentSid = TEMPLATE_SIDS[event]
+    const variables  = getTemplateVariables(event, data)
     const results: any = {}
 
-    // ── WhatsApp ────────────────────────────────────────────────────────────
-    const waTo     = 'whatsapp:' + normalizedPhone
-    const waResult = await sendTwilioMessage(TWILIO_FROM, waTo, message)
-    results.whatsapp = { ok: waResult.ok, sid: waResult.data.sid, error: waResult.data.message }
+    if (contentSid) {
+      const waTo     = 'whatsapp:' + normalizedPhone
+      const waResult = await sendWithTemplate(waTo, contentSid, variables)
+      results.whatsapp = { ok: waResult.ok, sid: waResult.data.sid, error: waResult.data.message }
+    } else {
+      console.warn(`[send-whatsapp] Sin template para evento: ${event}`)
+      results.whatsapp = { ok: false, error: `Sin template para evento: ${event}` }
+    }
 
-    // ── SMS paralelo ────────────────────────────────────────────────────────
     if (TWILIO_FROM_SMS) {
-      const smsResult = await sendTwilioMessage(TWILIO_FROM_SMS, normalizedPhone, message)
+      const smsBody   = getFallbackMessage(event, data)
+      const smsResult = await sendSMS(normalizedPhone, smsBody)
       results.sms = { ok: smsResult.ok, sid: smsResult.data.sid, error: smsResult.data.message }
     }
 
     const anySuccess = results.whatsapp?.ok || results.sms?.ok
 
     if (!anySuccess) {
-      return new Response(JSON.stringify({ error: results.whatsapp?.error || results.sms?.error, results }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
+      return new Response(
+        JSON.stringify({ error: results.whatsapp?.error || results.sms?.error, results }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
     }
 
-    return new Response(JSON.stringify({ success: true, results }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    })
+    return new Response(
+      JSON.stringify({ success: true, results }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    )
 
   } catch (err) {
-    console.error('Error:', err.message)
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    })
+    console.error('[send-whatsapp] Error:', err.message)
+    return new Response(
+      JSON.stringify({ error: err.message }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    )
   }
 })
