@@ -1294,7 +1294,7 @@ const OperatorView = () => {
     showToast('Excepción eliminada', 'success')
   }
 
-  // Normaliza días: quita acentos y deduplica — previene acumulación de duplicados en DB
+  // Normaliza días: quita acentos, deduplica y ordena lunes→domingo
   const VALID_DAYS = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo']
   const normalizeDays = (days) => {
     if (!days) return []
@@ -1302,7 +1302,7 @@ const OperatorView = () => {
       days
         .map(d => d.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim())
         .filter(d => VALID_DAYS.includes(d))
-    )]
+    )].sort((a, b) => VALID_DAYS.indexOf(a) - VALID_DAYS.indexOf(b))
   }
 
   const saveScheduleChange = async () => {
@@ -1896,7 +1896,7 @@ const OperatorView = () => {
                 <div style={{ marginBottom: 16 }}>
                   <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 8 }}>Días de trabajo</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {['lunes','martes','miércoles','jueves','viernes','sábado','domingo'].map(day => {
+                    {['lunes','martes','miercoles','jueves','viernes','sabado','domingo'].map(day => {
                       const active = newWorkDays.includes(day);
                       return (
                         <button key={day} onClick={() => setNewWorkDays(prev => active ? prev.filter(d => d !== day) : [...prev, day])}
