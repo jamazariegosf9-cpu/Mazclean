@@ -801,7 +801,7 @@ export default function OnboardingView({ onComplete }) {
                   </div>
                 </div>
                 <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginTop: 16 }}>
-                  <p style={{ fontSize: 12, color: '#854d0e', margin: 0, lineHeight: 1.5 }}>🔒 Solo mostramos los últimos 4 dígitos de tu CLABE. Las liquidaciones se realizan cada lunes.</p>
+                  <p style={{ fontSize: 12, color: '#854d0e', margin: 0, lineHeight: 1.5 }}>🔒 Solo mostramos los últimos 4 dígitos de tu CLABE. Las liquidaciones se realizan cada 7 días desde tu fecha de activación.</p>
                 </div>
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 16, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
                 <NavButtons onBack={prevSub} onNext={handleStep2} nextLabel="Guardar y continuar →" nextColor="#10b981" />
@@ -1051,9 +1051,9 @@ export default function OnboardingView({ onComplete }) {
 
                   <p><strong>II. OBJETO.</strong> El presente contrato regula los términos bajo los cuales el Operador accede a la plataforma tecnológica MAZ CLEAN para ofrecer servicios de estética automotriz a domicilio de manera <strong>independiente</strong>, sin que exista relación laboral alguna con MAZ CLEAN. MAZ CLEAN actúa exclusivamente como intermediario tecnológico.</p>
 
-                  <p><strong>III. MEMBRESÍA.</strong> Para acceder a la plataforma, el Operador pagará una <strong>membresía mensual de ${membershipConfig?.operator_price || 200} MXN</strong>, renovable automáticamente. Este monto podrá modificarse con al menos 30 días de anticipación. La membresía no garantiza un número mínimo de servicios.</p>
+                  <p><strong>III. MEMBRESÍA.</strong> Para acceder a la plataforma, el Operador pagará una <strong>membresía semanal de ${membershipConfig?.operator_price || 50} MXN</strong>, renovable automáticamente cada 7 días desde la fecha de activación. Este monto podrá modificarse con al menos 7 días de anticipación. La membresía no garantiza un número mínimo de servicios.</p>
 
-                  <p><strong>IV. COMISIONES POR SERVICIO.</strong> MAZ CLEAN aplica una comisión sobre el precio total de cada servicio finalizado, conforme al nivel de calificación del Operador: <strong>Operador (0–3.9 ⭐) 5% · Pro (4.0–4.4 ⭐) 4% · Pro+ (4.5–4.7 ⭐) 3% · Elite (4.8–5.0 ⭐) 2%</strong>. Dicha comisión se acumula durante el ciclo de 30 días del Operador y se suma a la membresía en la fecha de renovación. MAZ CLEAN podrá modificar estos porcentajes notificando al Operador con mínimo <strong>30 días naturales de anticipación</strong>. El nivel de calificación se calcula sobre los últimos 30 servicios calificados y se actualiza automáticamente.</p>
+                  <p><strong>IV. COMISIONES POR SERVICIO.</strong> MAZ CLEAN aplica una comisión sobre el precio total de cada servicio finalizado, conforme al nivel de calificación del Operador: <strong>Operador (0–3.9 ⭐) 10% · Pro (4.0–4.4 ⭐) 9% · Pro+ (4.5–4.7 ⭐) 8% · Elite (4.8–5.0 ⭐) 7%</strong>. Dicha comisión se acumula durante el ciclo de 7 días del Operador y se suma a la membresía en la fecha de renovación. MAZ CLEAN podrá modificar estos porcentajes notificando al Operador con mínimo <strong>7 días naturales de anticipación</strong>. El nivel de calificación se calcula sobre los últimos 7 días y se actualiza automáticamente.</p>
 
                   <p><strong>V. PRECIOS.</strong> Los precios de cada servicio son establecidos exclusivamente por MAZ CLEAN. El Operador se compromete a respetar los precios publicados en la App.</p>
 
