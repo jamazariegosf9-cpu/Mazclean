@@ -193,6 +193,7 @@ export default function BookingView({ onNavigate }) {
 
   // Step 1
   const [selectedService, setSelectedService] = useState(null)
+  const [expandedService, setExpandedService] = useState(null)
   const [vehicleType, setVehicleType]         = useState('')
   const [vehicleBrand, setVehicleBrand]       = useState('')
   const [vehicleColor, setVehicleColor]       = useState('')
@@ -733,6 +734,7 @@ export default function BookingView({ onNavigate }) {
               ) : services.map(s => {
                 const p = vehicleType ? s.prices[VEHICLE_TYPES.find(v=>v.id===vehicleType)?.priceKey] : s.prices.sedan
                 const isSingle = services.length === 1
+                const isExpanded = expandedService === s.id
                 return (
                   <div key={s.id} onClick={() => { if (!isSingle) setSelectedService(s.id) }}
                     style={{ padding: isMobile ? 10 : 12, borderRadius: 10, cursor: isSingle ? 'default' : 'pointer', transition: 'all 0.2s', border: isSingle ? '2px solid #3b82f6' : selectedService===s.id ? '2px solid #3b82f6' : '2px solid #e5e7eb', background: isSingle ? '#eff6ff' : selectedService===s.id ? '#eff6ff' : '#fff', minHeight: 44 }}>
@@ -740,11 +742,18 @@ export default function BookingView({ onNavigate }) {
                       <span style={{ fontSize: isMobile ? 20 : 22 }}>{s.icon}</span>
                       <span style={{ fontWeight: 600, fontSize: 13, color: '#1f2937' }}>{s.name}</span>
                     </div>
-                    <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{s.description}</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, alignItems: 'center' }}>
+                    {isExpanded && (
+                      <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2, marginBottom: 4, lineHeight: 1.5 }}>{s.description}</div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, alignItems: 'center' }}>
                       <span style={{ fontWeight: 700, color: '#3b82f6', fontSize: 14 }}>${p}</span>
                       <span style={{ fontSize: 10, color: '#9ca3af' }}>⏱ {s.duration}</span>
                     </div>
+                    <button
+                      onClick={e => { e.stopPropagation(); setExpandedService(isExpanded ? null : s.id) }}
+                      style={{ marginTop: 6, width: '100%', background: 'none', border: 'none', padding: '4px 0', fontSize: 11, color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                      {isExpanded ? '▲ Ocultar detalles' : '▼ Ver detalles'}
+                    </button>
                   </div>
                 )
               })}
