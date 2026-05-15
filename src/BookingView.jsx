@@ -737,23 +737,23 @@ export default function BookingView({ onNavigate }) {
                 const isExpanded = expandedService === s.id
                 return (
                   <div key={s.id} onClick={() => { if (!isSingle) setSelectedService(s.id) }}
-                    style={{ padding: isMobile ? 10 : 12, borderRadius: 10, cursor: isSingle ? 'default' : 'pointer', transition: 'all 0.2s', border: isSingle ? '2px solid #3b82f6' : selectedService===s.id ? '2px solid #3b82f6' : '2px solid #e5e7eb', background: isSingle ? '#eff6ff' : selectedService===s.id ? '#eff6ff' : '#fff', minHeight: 44 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    style={{ padding: isMobile ? 10 : 12, borderRadius: 10, cursor: isSingle ? 'default' : 'pointer', transition: 'all 0.2s', border: isSingle ? '2px solid #3b82f6' : selectedService===s.id ? '2px solid #3b82f6' : '2px solid #e5e7eb', background: isSingle ? '#eff6ff' : selectedService===s.id ? '#eff6ff' : '#fff', minHeight: 44, display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                       <span style={{ fontSize: isMobile ? 20 : 22 }}>{s.icon}</span>
                       <span style={{ fontWeight: 600, fontSize: 13, color: '#1f2937' }}>{s.name}</span>
                     </div>
-                    {isExpanded && (
-                      <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2, marginBottom: 4, lineHeight: 1.5 }}>{s.description}</div>
-                    )}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, alignItems: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                       <span style={{ fontWeight: 700, color: '#3b82f6', fontSize: 14 }}>${p}</span>
                       <span style={{ fontSize: 10, color: '#9ca3af' }}>⏱ {s.duration}</span>
                     </div>
                     <button
                       onClick={e => { e.stopPropagation(); setExpandedService(isExpanded ? null : s.id) }}
-                      style={{ marginTop: 6, width: '100%', background: 'none', border: 'none', padding: '4px 0', fontSize: 11, color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                      style={{ width: '100%', background: 'none', border: 'none', padding: '4px 0', fontSize: 11, color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                       {isExpanded ? '▲ Ocultar detalles' : '▼ Ver detalles'}
                     </button>
+                    {isExpanded && (
+                      <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6, lineHeight: 1.5, borderTop: '1px solid #e5e7eb', paddingTop: 8 }}>{s.description}</div>
+                    )}
                   </div>
                 )
               })}
