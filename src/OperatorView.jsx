@@ -1898,9 +1898,20 @@ const OperatorView = () => {
                   <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 8 }}>Días de trabajo</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {['lunes','martes','miercoles','jueves','viernes','sabado','domingo'].map(day => {
-                      const active = newWorkDays.includes(day);
+                      // Normalizar newWorkDays en comparacion para manejar valores con/sin acento en memoria
+                      const normalizedCurrent = newWorkDays.map(d => d.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim())
+                      const active = normalizedCurrent.includes(day);
                       return (
-                        <button key={day} onClick={() => setNewWorkDays(prev => active ? prev.filter(d => d !== day) : [...prev, day])}
+                        <button key={day} onClick={() => setNewWorkDays(prev => {
+                          const normalizedPrev = prev.map(d => d.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim())
+                          if (normalizedPrev.includes(day)) {
+                            // Eliminar — filtra tanto con acento como sin acento
+                            return normalizeDays(prev.filter((_, i) => normalizedPrev[i] !== day))
+                          } else {
+                            // Agregar — normalizar todo el array
+                            return normalizeDays([...prev, day])
+                          }
+                        })}
                           style={{ padding: '8px 14px', borderRadius: 20, border: `2px solid ${active ? '#3b82f6' : '#e5e7eb'}`,
                             background: active ? '#eff6ff' : '#f9fafb',
                             color: active ? '#1e40af' : '#6b7280',
