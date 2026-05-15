@@ -1294,6 +1294,17 @@ const OperatorView = () => {
     showToast('Excepción eliminada', 'success')
   }
 
+  // Normaliza días: quita acentos y deduplica — previene acumulación de duplicados en DB
+  const VALID_DAYS = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo']
+  const normalizeDays = (days) => {
+    if (!days) return []
+    return [...new Set(
+      days
+        .map(d => d.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim())
+        .filter(d => VALID_DAYS.includes(d))
+    )]
+  }
+
   const saveScheduleChange = async () => {
     setScheduleError('')
     if (newWorkDays.length === 0) { setScheduleError('Selecciona al menos un día'); return }
@@ -1307,6 +1318,8 @@ const OperatorView = () => {
         const stored = localStorage.getItem('mazclean-auth')
         if (stored) { const p = JSON.parse(stored); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY }
       } catch {}
+      // Normalizar días antes de guardar: sin acentos, sin duplicados
+      const cleanDays = normalizeDays(newWorkDays)
       const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}`, {
         method: 'PATCH',
         headers: {
@@ -1315,7 +1328,7 @@ const OperatorView = () => {
           'Content-Type': 'application/json',
           'Prefer': 'return=minimal',
         },
-        body: JSON.stringify({ work_days: newWorkDays, work_start: newWorkStart, work_end: newWorkEnd, updated_at: new Date().toISOString() }),
+        body: JSON.stringify({ work_days: cleanDays, work_start: newWorkStart, work_end: newWorkEnd, updated_at: new Date().toISOString() }),
       })
       if (!res.ok) {
         const body = await res.text().catch(() => '')
@@ -1326,9 +1339,9 @@ const OperatorView = () => {
     setSavingSchedule(false)
   }
 
-  // Inicializar horario editable con valores del perfil
+  // Inicializar horario editable con valores del perfil — normalizar al cargar
   useEffect(() => {
-    if (profile?.work_days) setNewWorkDays(profile.work_days)
+    if (profile?.work_days) setNewWorkDays(normalizeDays(profile.work_days))
     if (profile?.work_start) setNewWorkStart(profile.work_start.slice(0,5))
     if (profile?.work_end)   setNewWorkEnd(profile.work_end.slice(0,5))
   }, [profile?.id])
