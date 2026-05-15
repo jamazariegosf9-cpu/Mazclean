@@ -192,10 +192,49 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
     if (password.length < 8)
       return setError('La contrasena debe tener al menos 8 caracteres.')
     setLoading(true)
-    const { error } = await signUp({ email, password, fullName, phone })
-    setLoading(false)
-    if (error) return setError(translateError(error.message))
-    setSuccess('Cuenta creada! Revisa tu correo para confirmar tu registro.')
+    try {
+      // 1. Crear usuario en auth con role cliente en metadata
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email, password,
+        options: { data: { full_name: fullName, phone, role: 'cliente' } }
+      })
+      if (signUpError) throw signUpError
+
+      // 2. Upsert explícito del profile como cliente
+      //    No dependemos solo del trigger — garantiza profile disponible para loadProfileWithRetry
+      if (data?.user?.id) {
+        const { error: profileError } = await supabase.from('profiles').upsert({
+          id: data.user.id,
+          full_name: fullName,
+          phone: phone || null,
+          role: 'cliente',
+          status: 'activo',
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' })
+        if (profileError) console.warn('[AuthModal] upsert profile cliente error:', profileError.message)
+      }
+
+      // 3. Delay para que Supabase procese el trigger y el upsert
+      await new Promise(resolve => setTimeout(resolve, 800))
+
+      // 4. Auto-login inmediato — sin pedir confirmación de correo
+      const { error: loginError } = await signIn({ email, password })
+      if (loginError) {
+        if (loginError.message.includes('Email not confirmed')) {
+          setSuccess('Cuenta creada! Confirma tu correo y luego inicia sesion.')
+        } else {
+          setSuccess('Cuenta creada! Inicia sesion para continuar.')
+        }
+        return
+      }
+      // Login exitoso — App.jsx detecta role='cliente' y renderiza ClientView
+      onClose()
+    } catch (err) {
+      setError(translateError(err.message))
+    } finally {
+      setLoading(false)
+    }
   }
 
   // REGISTRO OPERADOR
