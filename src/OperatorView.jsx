@@ -1340,11 +1340,12 @@ const OperatorView = () => {
   }
 
   // Inicializar horario editable con valores del perfil — normalizar al cargar
+  // Dependencia en work_days para re-sincronizar si el perfil cambia post-mount
   useEffect(() => {
     if (profile?.work_days) setNewWorkDays(normalizeDays(profile.work_days))
     if (profile?.work_start) setNewWorkStart(profile.work_start.slice(0,5))
     if (profile?.work_end)   setNewWorkEnd(profile.work_end.slice(0,5))
-  }, [profile?.id])
+  }, [profile?.id, JSON.stringify(profile?.work_days), profile?.work_start, profile?.work_end])
 
   // Cargar excepciones cuando está activo el tab
   useEffect(() => {
