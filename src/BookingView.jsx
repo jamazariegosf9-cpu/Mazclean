@@ -728,7 +728,7 @@ export default function BookingView({ onNavigate }) {
             {services.length !== 1 && (
               <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Qué servicio necesitas?</h3>
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: services.length === 1 ? '1fr' : 'repeat(2,1fr)', gap: isMobile ? 8 : 10, alignItems: 'start' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: services.length === 1 ? '1fr' : 'repeat(2,1fr)', gap: isMobile ? 8 : 10, alignItems: 'stretch' }}>
               {loadingServices ? (
                 <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 32, color: '#9ca3af' }}>Cargando servicios...</div>
               ) : services.map(s => {
@@ -737,27 +737,27 @@ export default function BookingView({ onNavigate }) {
                 const isExpanded = expandedService === s.id
                 return (
                   <div key={s.id} onClick={() => { if (!isSingle) setSelectedService(s.id) }}
-                    style={{ padding: isMobile ? 10 : 12, borderRadius: 10, cursor: isSingle ? 'default' : 'pointer', transition: 'all 0.2s', border: isSingle ? '2px solid #3b82f6' : selectedService===s.id ? '2px solid #3b82f6' : '2px solid #e5e7eb', background: isSingle ? '#eff6ff' : selectedService===s.id ? '#eff6ff' : '#fff', display: 'flex', flexDirection: 'column' }}>
-                    {/* Nombre — flex-grow empuja precio siempre al mismo nivel sin importar líneas de texto */}
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 10, flexGrow: 1 }}>
+                    style={{ padding: isMobile ? 10 : 12, borderRadius: 10, cursor: isSingle ? 'default' : 'pointer', transition: 'all 0.2s', border: isSingle ? '2px solid #3b82f6' : selectedService===s.id ? '2px solid #3b82f6' : '2px solid #e5e7eb', background: isSingle ? '#eff6ff' : selectedService===s.id ? '#eff6ff' : '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    {/* Bloque superior: ícono + nombre */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 10 }}>
                       <span style={{ fontSize: isMobile ? 18 : 20, flexShrink: 0, marginTop: 1 }}>{s.icon}</span>
                       <span style={{ fontWeight: 600, fontSize: 13, color: '#1f2937', lineHeight: 1.4 }}>{s.name}</span>
                     </div>
-                    {/* Precio — siempre en la misma posición vertical */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                      <span style={{ fontWeight: 700, color: '#3b82f6', fontSize: 14 }}>${p}</span>
-                      <span style={{ fontSize: 10, color: '#9ca3af' }}>⏱ {s.duration}</span>
+                    {/* Bloque inferior: precio + botón — siempre al fondo de la tarjeta */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <span style={{ fontWeight: 700, color: '#3b82f6', fontSize: 14 }}>${p}</span>
+                        <span style={{ fontSize: 10, color: '#9ca3af' }}>⏱ {s.duration}</span>
+                      </div>
+                      <button
+                        onClick={e => { e.stopPropagation(); setExpandedService(isExpanded ? null : s.id) }}
+                        style={{ width: '100%', background: 'none', border: 'none', borderTop: '1px solid #e5e7eb', padding: '6px 0 2px', fontSize: 11, color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                        {isExpanded ? '▲ Ocultar detalles' : '▼ Ver detalles'}
+                      </button>
+                      {isExpanded && (
+                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 8, lineHeight: 1.6 }}>{s.description}</div>
+                      )}
                     </div>
-                    {/* Botón acordeón */}
-                    <button
-                      onClick={e => { e.stopPropagation(); setExpandedService(isExpanded ? null : s.id) }}
-                      style={{ width: '100%', background: 'none', border: 'none', borderTop: '1px solid #e5e7eb', padding: '6px 0 2px', fontSize: 11, color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                      {isExpanded ? '▲ Ocultar detalles' : '▼ Ver detalles'}
-                    </button>
-                    {/* Descripción expandible */}
-                    {isExpanded && (
-                      <div style={{ fontSize: 11, color: '#6b7280', marginTop: 8, lineHeight: 1.6 }}>{s.description}</div>
-                    )}
                   </div>
                 )
               })}
