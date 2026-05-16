@@ -971,8 +971,13 @@ export default function ClientView() {
                     <div style={{ maxWidth: '78%', padding: '8px 12px', borderRadius: isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: isMe ? '#1e40af' : '#fff', color: isMe ? '#fff' : '#1f2937', fontSize: 13, lineHeight: 1.5, boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
                       {!isMe && <div style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', marginBottom: 3 }}>Operador</div>}
                       {msg.content}
-                      <div style={{ fontSize: 10, opacity: 0.7, marginTop: 3, textAlign: 'right' }}>
-                        {new Date(msg.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                      <div style={{ fontSize: 10, opacity: 0.7, marginTop: 3, textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
+                        <span>{new Date(msg.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</span>
+                        {isMe && (
+                          <span style={{ fontSize: 11, color: msg.read_at ? '#60a5fa' : 'rgba(255,255,255,0.6)', letterSpacing: -2, fontWeight: 700 }}>
+                            {msg.read_at ? '✓✓' : (msg.id?.toString().startsWith('temp-') ? '○' : '✓')}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

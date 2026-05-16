@@ -1294,17 +1294,6 @@ const OperatorView = () => {
     showToast('Excepción eliminada', 'success')
   }
 
-  // Normaliza días: quita acentos, deduplica y ordena lunes→domingo
-  const VALID_DAYS = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo']
-  const normalizeDays = (days) => {
-    if (!days) return []
-    return [...new Set(
-      days
-        .map(d => d.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim())
-        .filter(d => VALID_DAYS.includes(d))
-    )].sort((a, b) => VALID_DAYS.indexOf(a) - VALID_DAYS.indexOf(b))
-  }
-
   const saveScheduleChange = async () => {
     setScheduleError('')
     if (newWorkDays.length === 0) { setScheduleError('Selecciona al menos un día'); return }
@@ -1318,8 +1307,6 @@ const OperatorView = () => {
         const stored = localStorage.getItem('mazclean-auth')
         if (stored) { const p = JSON.parse(stored); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY }
       } catch {}
-      // Normalizar días antes de guardar: sin acentos, sin duplicados
-      const cleanDays = normalizeDays(newWorkDays)
       const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}`, {
         method: 'PATCH',
         headers: {
@@ -1328,7 +1315,7 @@ const OperatorView = () => {
           'Content-Type': 'application/json',
           'Prefer': 'return=minimal',
         },
-        body: JSON.stringify({ work_days: cleanDays, work_start: newWorkStart, work_end: newWorkEnd, updated_at: new Date().toISOString() }),
+        body: JSON.stringify({ work_days: newWorkDays, work_start: newWorkStart, work_end: newWorkEnd, updated_at: new Date().toISOString() }),
       })
       if (!res.ok) {
         const body = await res.text().catch(() => '')
@@ -1339,13 +1326,12 @@ const OperatorView = () => {
     setSavingSchedule(false)
   }
 
-  // Inicializar horario editable con valores del perfil — normalizar al cargar
-  // Dependencia en work_days para re-sincronizar si el perfil cambia post-mount
+  // Inicializar horario editable con valores del perfil
   useEffect(() => {
-    if (profile?.work_days) setNewWorkDays(normalizeDays(profile.work_days))
+    if (profile?.work_days) setNewWorkDays(profile.work_days)
     if (profile?.work_start) setNewWorkStart(profile.work_start.slice(0,5))
     if (profile?.work_end)   setNewWorkEnd(profile.work_end.slice(0,5))
-  }, [profile?.id, JSON.stringify(profile?.work_days), profile?.work_start, profile?.work_end])
+  }, [profile?.id])
 
   // Cargar excepciones cuando está activo el tab
   useEffect(() => {
@@ -1885,6 +1871,73 @@ const OperatorView = () => {
               </div>
             )}
 
+            {/* ── SUB-TAB HORARIO PERMANENTE ── */}
+            {excTab === 'horario' && (
+              <div style={{ background: '#fff', borderRadius: 16, padding: '18px 16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: '#1f2937', marginBottom: 6 }}>🕐 Cambiar horario de trabajo</div>
+                <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 16, lineHeight: 1.5 }}>
+                  Este cambio afecta tu disponibilidad permanente. El sistema de asignación usará este horario para enviarte servicios.
+                </div>
+
+                {/* Días de la semana */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 8 }}>Días de trabajo</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {['lunes','martes','miércoles','jueves','viernes','sábado','domingo'].map(day => {
+                      const active = newWorkDays.includes(day);
+                      return (
+                        <button key={day} onClick={() => setNewWorkDays(prev => active ? prev.filter(d => d !== day) : [...prev, day])}
+                          style={{ padding: '8px 14px', borderRadius: 20, border: `2px solid ${active ? '#3b82f6' : '#e5e7eb'}`,
+                            background: active ? '#eff6ff' : '#f9fafb',
+                            color: active ? '#1e40af' : '#6b7280',
+                            fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                            textTransform: 'capitalize', minHeight: 38 }}>
+                          {day.slice(0,3).toUpperCase()}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Horas */}
+                <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>Inicio (mín. 6:00)</label>
+                    <input type="time" value={newWorkStart} min="06:00" max="20:00"
+                      onChange={e => setNewWorkStart(e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>Cierre (máx. 21:00)</label>
+                    <input type="time" value={newWorkEnd} min="07:00" max="21:00"
+                      onChange={e => setNewWorkEnd(e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                  </div>
+                </div>
+
+                {/* Horario actual del perfil */}
+                {profile?.work_days && (
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#065f46' }}>
+                    <strong>Horario actual:</strong>{' '}
+                    {(profile.work_days || []).join(', ')} · {profile.work_start?.slice(0,5)} – {profile.work_end?.slice(0,5)} hrs
+                  </div>
+                )}
+
+                {scheduleError && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 13, color: '#dc2626' }}>
+                    ⚠️ {scheduleError}
+                  </div>
+                )}
+
+                <button onClick={saveScheduleChange} disabled={savingSchedule}
+                  style={{ width: '100%', padding: '13px 0', background: savingSchedule ? '#9ca3af' : 'linear-gradient(135deg,#059669,#10b981)',
+                    color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
+                    cursor: savingSchedule ? 'not-allowed' : 'pointer', minHeight: 48 }}>
+                  {savingSchedule ? '⏳ Guardando...' : '💾 Guardar horario permanente'}
+                </button>
+              </div>
+            )}
+
             {/* ── SUB-TAB MI ZONA ── */}
             {excTab === 'zona' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -2371,8 +2424,13 @@ const OperatorView = () => {
                     <div style={{ maxWidth: '78%', padding: '8px 12px', borderRadius: isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: isMe ? '#1e40af' : '#fff', color: isMe ? '#fff' : '#1f2937', fontSize: 13, lineHeight: 1.5, boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
                       {!isMe && <div style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', marginBottom: 3 }}>Cliente</div>}
                       {msg.content}
-                      <div style={{ fontSize: 10, opacity: 0.7, marginTop: 3, textAlign: 'right' }}>
-                        {new Date(msg.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                      <div style={{ fontSize: 10, opacity: 0.7, marginTop: 3, textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
+                        <span>{new Date(msg.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</span>
+                        {isMe && (
+                          <span style={{ fontSize: 11, color: msg.read_at ? '#60a5fa' : 'rgba(255,255,255,0.6)', letterSpacing: -2, fontWeight: 700 }}>
+                            {msg.read_at ? '✓✓' : (msg.id?.toString().startsWith('temp-') ? '○' : '✓')}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
