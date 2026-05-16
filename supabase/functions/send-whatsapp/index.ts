@@ -3,9 +3,28 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID') ?? ''
 const TWILIO_AUTH_TOKEN  = Deno.env.get('TWILIO_AUTH_TOKEN') ?? ''
-const TWILIO_FROM        = Deno.env.get('TWILIO_FROM_WHATSAPP') ?? 'whatsapp:+5215539377258'
 const TWILIO_FROM_SMS    = Deno.env.get('TWILIO_FROM_SMS') ?? ''
 const APP_URL            = 'https://mazclean.vercel.app'
+const SUPABASE_URL       = Deno.env.get('SUPABASE_URL') ?? ''
+const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+
+// Leer número de WhatsApp saliente desde membership_config en DB
+// Permite cambiarlo desde el panel de Admin sin tocar código
+async function getTwilioFrom(): Promise<string> {
+  const fallback = Deno.env.get('TWILIO_FROM_WHATSAPP') ?? 'whatsapp:+5215539377258'
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/membership_config?select=whatsapp_from&limit=1`,
+      { headers: { 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`, 'apikey': SUPABASE_SERVICE_KEY } }
+    )
+    if (!res.ok) return fallback
+    const rows = await res.json()
+    const from = rows?.[0]?.whatsapp_from
+    return from || fallback
+  } catch {
+    return fallback
+  }
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -100,10 +119,10 @@ const getBase64Auth = () => {
   return btoa(String.fromCharCode(...bytes))
 }
 
-const sendWithTemplate = async (to: string, contentSid: string, variables: Record<string, string>) => {
+const sendWithTemplate = async (to: string, contentSid: string, variables: Record<string, string>, twilioFrom: string) => {
   const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`
   const params = new URLSearchParams({
-    From:             TWILIO_FROM,
+    From:             twilioFrom,
     To:               to,
     ContentSid:       contentSid,
     ContentVariables: JSON.stringify(variables),
@@ -159,7 +178,8 @@ serve(async (req) => {
 
     if (contentSid) {
       const waTo     = 'whatsapp:' + normalizedPhone
-      const waResult = await sendWithTemplate(waTo, contentSid, variables)
+      const twilioFrom = await getTwilioFrom()
+      const waResult = await sendWithTemplate(waTo, contentSid, variables, twilioFrom)
       results.whatsapp = { ok: waResult.ok, sid: waResult.data.sid, error: waResult.data.message }
     } else {
       console.warn(`[send-whatsapp] Sin template para evento: ${event}`)

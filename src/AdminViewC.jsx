@@ -66,6 +66,9 @@ const MembresiaConfig = ({ isMobile }) => {
         // Detectar si hay promo activa al cargar
         operator_promo_active: !!data.operator_promo_price,
         client_promo_active:   !!data.client_promo_price,
+        // WhatsApp: extraer solo el número sin el prefijo 'whatsapp:+52'
+        whatsapp_number: (data.whatsapp_from || 'whatsapp:+5215539377258')
+          .replace('whatsapp:+52', '').replace('whatsapp:+', '').replace('whatsapp:', ''),
       });
     } catch (err) { setError('Error cargando configuración: ' + err.message); }
   };
@@ -105,6 +108,10 @@ const MembresiaConfig = ({ isMobile }) => {
         commission_pct_proplus:  parseFloat(form.commission_pct_proplus) || 3,
         commission_pct_elite:    parseFloat(form.commission_pct_elite)   || 2,
         updated_at:              new Date().toISOString(),
+        // WhatsApp — guardar número completo en formato whatsapp:+52XXXXXXXXXX
+        whatsapp_from: form.whatsapp_number
+          ? 'whatsapp:+52' + form.whatsapp_number.replace(/\D/g, '').slice(-10)
+          : 'whatsapp:+5215539377258',
       };
       const res = await fetch(`${supabaseUrl}/rest/v1/membership_config?id=eq.${config.id}`, {
         method: 'PATCH',
@@ -331,6 +338,42 @@ const MembresiaConfig = ({ isMobile }) => {
               })}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* ── WHATSAPP ── */}
+      <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+        <div style={{ background: 'linear-gradient(135deg,#065f46,#25d366)', padding: '14px 20px' }}>
+          <h2 style={{ color: '#fff', fontWeight: 700, fontSize: 15, margin: 0 }}>📱 Número de WhatsApp saliente</h2>
+          <p style={{ color: '#d1fae5', fontSize: 12, margin: '2px 0 0' }}>Número registrado en Twilio desde donde salen todas las notificaciones</p>
+        </div>
+        <div style={{ padding: isMobile ? '14px' : '18px 22px', display: 'grid', gap: 14 }}>
+          <div style={{ background: '#f0fdf4', borderRadius: 10, padding: '10px 14px', border: '1px solid #bbf7d0', fontSize: 12, color: '#065f46' }}>
+            📋 El número debe estar registrado y aprobado en Twilio como WhatsApp Sender. Solo ingresa los 10 dígitos sin código de país.
+          </div>
+          <div>
+            <label style={lbl}>Número de WhatsApp (10 dígitos)</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ padding: '10px 12px', background: '#f3f4f6', borderRadius: '8px 0 0 8px', border: '1.5px solid #e5e7eb', borderRight: 'none', fontSize: 14, color: '#6b7280', fontWeight: 600, whiteSpace: 'nowrap' }}>+52</span>
+              <input
+                type="tel" maxLength={10}
+                value={form.whatsapp_number || ''}
+                onChange={e => setForm(p => ({ ...p, whatsapp_number: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+                placeholder="5539377258"
+                style={{ ...inp, borderRadius: '0 8px 8px 0', borderLeft: 'none' }}
+              />
+            </div>
+            {form.whatsapp_number?.length === 10 && (
+              <div style={{ marginTop: 6, fontSize: 12, color: '#059669' }}>
+                ✅ Número configurado: <strong>+52{form.whatsapp_number}</strong> → se guardará como <strong>whatsapp:+52{form.whatsapp_number}</strong>
+              </div>
+            )}
+            {form.whatsapp_number && form.whatsapp_number.length !== 10 && (
+              <div style={{ marginTop: 6, fontSize: 12, color: '#dc2626' }}>
+                ⚠️ El número debe tener exactamente 10 dígitos
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
