@@ -383,6 +383,16 @@ export default function ClientView() {
           return [...prev, msg]
         })
       })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'messages',
+        filter: `booking_id=eq.${bookingId}`
+      }, (payload) => {
+        // Actualizar read_at en tiempo real — activa el doble tick azul sin refrescar
+        const updated = payload.new
+        setChatMessages(prev => prev.map(m => m.id === updated.id ? { ...m, read_at: updated.read_at } : m))
+      })
       .subscribe((status) => {
         console.log('[Chat] Realtime status:', status)
       })
