@@ -3,7 +3,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID') ?? ''
 const TWILIO_AUTH_TOKEN  = Deno.env.get('TWILIO_AUTH_TOKEN') ?? ''
-const TWILIO_FROM        = 'whatsapp:+5215539377258'
+const TWILIO_FROM        = Deno.env.get('TWILIO_FROM_WHATSAPP') ?? 'whatsapp:+5215539377258'
 const TWILIO_FROM_SMS    = Deno.env.get('TWILIO_FROM_SMS') ?? ''
 const APP_URL            = 'https://mazclean.vercel.app'
 
