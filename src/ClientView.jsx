@@ -404,23 +404,8 @@ export default function ClientView() {
     setChatInput('')
     setChatError('')
     if (chatChannelRef.current) { supabase.removeChannel(chatChannelRef.current); chatChannelRef.current = null }
-    // Restaurar canal background para seguir recibiendo notificaciones
-    if (bookingId) {
-      bgChannelRef.current = supabase
-        .channel(`chat-bg-${bookingId}-${Date.now()}`)
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `booking_id=eq.${bookingId}` },
-          (payload) => {
-            if (payload.new.sender_role === 'operador') {
-              setUnreadCount(prev => prev + 1)
-              setUnreadByBooking(prev => ({ ...prev, [activeBooking.id]: (prev[activeBooking.id] || 0) + 1 }))
-              playNotificationSound()
-              vibrateDevice()
-              showSystemNotification('💬 Tu operador te escribió', payload.new.content)
-            }
-          }
-        )
-        .subscribe()
-    }
+    // El canal background global (setupBackgroundChannels) ya maneja todos los bookings
+    // No crear canal individual aquí para evitar doble conteo del badge
   }
 
   const sendMessage = async (bookingId) => {
