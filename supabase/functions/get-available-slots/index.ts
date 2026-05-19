@@ -135,8 +135,8 @@ serve(async (req) => {
       const slotMinutes = slotH * 60 + slotM
       const slotEndMinutes = slotMinutes + serviceDuration
 
-      // Fin de jornada
-      if (slotEndMinutes > BUSINESS_END * 60) {
+      // Fin de jornada — usar maxEnd dinámico en lugar de BUSINESS_END hardcodeado
+      if (slotEndMinutes > maxEnd * 60) {
         return { time: slot, available: false, suggested: false, reason: 'Fuera de horario' }
       }
 
