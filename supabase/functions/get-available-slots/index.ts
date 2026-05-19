@@ -99,7 +99,9 @@ serve(async (req) => {
     const todayCDMX = nowCDMX.toISOString().split('T')[0]
     const isToday = fecha === todayCDMX
     const currentMinutesCDMX = nowCDMX.getUTCHours() * 60 + nowCDMX.getUTCMinutes()
-    const MIN_ADVANCE_MINUTES = 60 // mínimo 1 hora de anticipación
+    // Para reservas del mismo día: 15 min de anticipación mínima
+    // Para reservas futuras: no aplica restricción de anticipación
+    const MIN_ADVANCE_MINUTES = isToday ? 15 : 0
 
     // Día de la semana en español para filtrar operadores
     const diasSemana = ['domingo','lunes','martes','miercoles','jueves','viernes','sabado']
@@ -123,10 +125,11 @@ serve(async (req) => {
     }, BUSINESS_END)
 
     // Generar slots dinámicamente según horario real de operadores
+    // Incluir el slot exacto de maxEnd (hora límite para recibir servicios)
     const allSlots: string[] = []
-    for (let h = minStart; h < maxEnd; h++) {
+    for (let h = minStart; h <= maxEnd; h++) {
       allSlots.push(`${String(h).padStart(2,'0')}:00`)
-      allSlots.push(`${String(h).padStart(2,'0')}:30`)
+      if (h < maxEnd) allSlots.push(`${String(h).padStart(2,'0')}:30`)
     }
 
     // 7. Para cada slot, verificar disponibilidad por operador
@@ -135,8 +138,8 @@ serve(async (req) => {
       const slotMinutes = slotH * 60 + slotM
       const slotEndMinutes = slotMinutes + serviceDuration
 
-      // Fin de jornada — usar maxEnd dinámico en lugar de BUSINESS_END hardcodeado
-      if (slotEndMinutes > maxEnd * 60) {
+      // Fin de jornada — el operador recibe servicios HASTA maxEnd inclusive
+      if (slotMinutes > maxEnd * 60) {
         return { time: slot, available: false, suggested: false, reason: 'Fuera de horario' }
       }
 
@@ -150,7 +153,8 @@ serve(async (req) => {
         // Verificar que el slot está dentro del horario del operador
         const opStart = operator.work_start ? parseInt(operator.work_start.split(':')[0]) * 60 + parseInt(operator.work_start.split(':')[1]) : BUSINESS_START * 60
         const opEnd = operator.work_end ? parseInt(operator.work_end.split(':')[0]) * 60 + parseInt(operator.work_end.split(':')[1]) : BUSINESS_END * 60
-        if (slotMinutes < opStart || slotEndMinutes > opEnd) continue
+        // work_end = hora límite para RECIBIR servicios, no para terminarlos
+        if (slotMinutes < opStart || slotMinutes >= opEnd) continue
         // Reservaciones asignadas a este operador
         const opBookings = (bookings || [])
           .filter(b => b.operator_id === operator.id)
