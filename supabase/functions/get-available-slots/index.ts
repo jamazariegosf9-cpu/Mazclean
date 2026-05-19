@@ -93,20 +93,9 @@ serve(async (req) => {
     }
 
     // 6. Calcular hora actual en CDMX
-    // México usa UTC-6 en invierno y UTC-5 en verano (horario de verano)
-    // Horario de verano: primer domingo de abril → último domingo de octubre
+    // México abolió el horario de verano en 2023 — siempre UTC-6
     const nowUTC = new Date()
-    const year = nowUTC.getUTCFullYear()
-    // Primer domingo de abril
-    const dstStart = new Date(Date.UTC(year, 3, 1))
-    dstStart.setUTCDate(1 + (7 - dstStart.getUTCDay()) % 7)
-    // Último domingo de octubre
-    const dstEnd = new Date(Date.UTC(year, 10, 1))
-    dstEnd.setUTCDate(1 + (7 - dstEnd.getUTCDay()) % 7)
-    dstEnd.setUTCDate(dstEnd.getUTCDate() - 7) // retroceder una semana para el último
-    const isDST = nowUTC >= dstStart && nowUTC < dstEnd
-    const offsetHours = isDST ? 5 : 6 // UTC-5 en verano, UTC-6 en invierno
-    const nowCDMX = new Date(nowUTC.getTime() - offsetHours * 60 * 60 * 1000)
+    const nowCDMX = new Date(nowUTC.getTime() - 6 * 60 * 60 * 1000)
     const todayCDMX = nowCDMX.toISOString().split('T')[0]
     const isToday = fecha === todayCDMX
     const currentMinutesCDMX = nowCDMX.getUTCHours() * 60 + nowCDMX.getUTCMinutes()
