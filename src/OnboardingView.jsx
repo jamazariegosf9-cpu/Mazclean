@@ -935,10 +935,16 @@ export default function OnboardingView({ onComplete }) {
                   <div style={{ flex: 1 }}>
                     <label style={lbl}>Hora inicio *</label>
                     <input type="time" value={workStart} onChange={e => setWorkStart(e.target.value)} style={inp} />
+                    <p style={{ fontSize: 11, color: '#6b7280', margin: '4px 0 0', lineHeight: 1.5 }}>
+                      ⏰ Hora de tu <strong>primer servicio</strong>. Sé puntual — no se considera tiempo de traslado al inicio de jornada.
+                    </p>
                   </div>
                   <div style={{ flex: 1 }}>
                     <label style={lbl}>Hora cierre *</label>
                     <input type="time" value={workEnd} onChange={e => setWorkEnd(e.target.value)} style={inp} />
+                    <p style={{ fontSize: 11, color: '#6b7280', margin: '4px 0 0', lineHeight: 1.5 }}>
+                      🏁 Hora límite para <strong>recibir tu último servicio</strong>. El servicio puede terminar después.
+                    </p>
                   </div>
                 </div>
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 16, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}

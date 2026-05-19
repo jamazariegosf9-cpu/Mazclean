@@ -551,12 +551,18 @@ export default function OperatorAccount({
                     <input type="time" value={newWorkStart} min="06:00" max="20:00"
                       onChange={e => setNewWorkStart(e.target.value)}
                       style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                    <p style={{ fontSize: 11, color: '#6b7280', margin: '4px 0 0', lineHeight: 1.5 }}>
+                      ⏰ Hora de tu <strong>primer servicio</strong>. Sé puntual — no se considera tiempo de traslado al inicio de jornada.
+                    </p>
                   </div>
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>Cierre (máx. 21:00)</label>
                     <input type="time" value={newWorkEnd} min="07:00" max="21:00"
                       onChange={e => setNewWorkEnd(e.target.value)}
                       style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e5e7eb', fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                    <p style={{ fontSize: 11, color: '#6b7280', margin: '4px 0 0', lineHeight: 1.5 }}>
+                      🏁 Hora límite para <strong>recibir tu último servicio</strong>. El servicio puede terminar después.
+                    </p>
                   </div>
                 </div>
 
