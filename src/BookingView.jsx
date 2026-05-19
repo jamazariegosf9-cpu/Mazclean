@@ -861,7 +861,7 @@ export default function BookingView({ onNavigate }) {
               <input type="date"
                 style={{ padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 }}
                 value={date}
-                min={new Date().toISOString().split('T')[0]}
+                min={new Date().toLocaleDateString('en-CA', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })}
                 onChange={e => { setDate(e.target.value); setTimeFrom(''); setTimeTo(''); setAvailableSlots([]); setNoSlotsAvailable(false) }} />
             </div>
 
