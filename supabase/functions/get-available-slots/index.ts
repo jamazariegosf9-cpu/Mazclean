@@ -40,12 +40,15 @@ serve(async (req) => {
     }
     const serviceDuration = durationMap[vehicle_type] ?? service.duration_sedan
 
-    // 2. Obtener todos los operadores activos
+    // 2. Obtener todos los operadores activos con su horario real
     const { data: operators, error: oError } = await supabase
       .from('profiles')
-      .select('id, full_name')
+      .select('id, full_name, work_start, work_end, work_days, membership_status, is_certified, operator_status')
       .eq('role', 'operador')
       .eq('is_active', true)
+      .eq('operator_status', 'aprobado')
+      .eq('is_certified', true)
+      .eq('membership_status', 'activa')
     if (oError) throw oError
 
     if (!operators || operators.length === 0) {
@@ -89,19 +92,52 @@ serve(async (req) => {
       }
     }
 
-    // 6. Generar slots de 8:00 a 19:00 cada 30 minutos
-    // Calcular hora actual en CDMX (UTC-6)
+    // 6. Calcular hora actual en CDMX
+    // México usa UTC-6 en invierno y UTC-5 en verano (horario de verano)
+    // Horario de verano: primer domingo de abril → último domingo de octubre
     const nowUTC = new Date()
-    const nowCDMX = new Date(nowUTC.getTime() - 6 * 60 * 60 * 1000)
+    const year = nowUTC.getUTCFullYear()
+    // Primer domingo de abril
+    const dstStart = new Date(Date.UTC(year, 3, 1))
+    dstStart.setUTCDate(1 + (7 - dstStart.getUTCDay()) % 7)
+    // Último domingo de octubre
+    const dstEnd = new Date(Date.UTC(year, 10, 1))
+    dstEnd.setUTCDate(1 + (7 - dstEnd.getUTCDay()) % 7)
+    dstEnd.setUTCDate(dstEnd.getUTCDate() - 7) // retroceder una semana para el último
+    const isDST = nowUTC >= dstStart && nowUTC < dstEnd
+    const offsetHours = isDST ? 5 : 6 // UTC-5 en verano, UTC-6 en invierno
+    const nowCDMX = new Date(nowUTC.getTime() - offsetHours * 60 * 60 * 1000)
     const todayCDMX = nowCDMX.toISOString().split('T')[0]
     const isToday = fecha === todayCDMX
     const currentMinutesCDMX = nowCDMX.getUTCHours() * 60 + nowCDMX.getUTCMinutes()
     const MIN_ADVANCE_MINUTES = 60 // mínimo 1 hora de anticipación
 
+    // Día de la semana en español para filtrar operadores
+    const diasSemana = ['domingo','lunes','martes','miercoles','jueves','viernes','sabado']
+    const fechaDate = new Date(fecha + 'T12:00:00Z')
+    const diaSemana = diasSemana[fechaDate.getUTCDay()]
+
+    // Filtrar operadores que trabajan ese día
+    const operadoresDelDia = (operators || []).filter(op => {
+      if (!op.work_days || op.work_days.length === 0) return true
+      return op.work_days.includes(diaSemana)
+    })
+
+    // Calcular rango de slots dinámico según horario más amplio de operadores activos ese día
+    const minStart = operadoresDelDia.reduce((min, op) => {
+      const h = op.work_start ? parseInt(op.work_start.split(':')[0]) : BUSINESS_START
+      return Math.min(min, h)
+    }, BUSINESS_START)
+    const maxEnd = operadoresDelDia.reduce((max, op) => {
+      const h = op.work_end ? parseInt(op.work_end.split(':')[0]) : BUSINESS_END
+      return Math.max(max, h)
+    }, BUSINESS_END)
+
+    // Generar slots dinámicamente según horario real de operadores
     const allSlots: string[] = []
-    for (let h = BUSINESS_START; h < BUSINESS_END; h++) {
+    for (let h = minStart; h < maxEnd; h++) {
       allSlots.push(`${String(h).padStart(2,'0')}:00`)
-      if (h < BUSINESS_END - 1) allSlots.push(`${String(h).padStart(2,'0')}:30`)
+      allSlots.push(`${String(h).padStart(2,'0')}:30`)
     }
 
     // 7. Para cada slot, verificar disponibilidad por operador
@@ -120,8 +156,12 @@ serve(async (req) => {
         return { time: slot, available: false, suggested: false, reason: 'Horario ya pasado' }
       }
 
-      // Verificar cada operador
-      for (const operator of operators) {
+      // Verificar cada operador que trabaja ese día
+      for (const operator of operadoresDelDia) {
+        // Verificar que el slot está dentro del horario del operador
+        const opStart = operator.work_start ? parseInt(operator.work_start.split(':')[0]) * 60 + parseInt(operator.work_start.split(':')[1]) : BUSINESS_START * 60
+        const opEnd = operator.work_end ? parseInt(operator.work_end.split(':')[0]) * 60 + parseInt(operator.work_end.split(':')[1]) : BUSINESS_END * 60
+        if (slotMinutes < opStart || slotEndMinutes > opEnd) continue
         // Reservaciones asignadas a este operador
         const opBookings = (bookings || [])
           .filter(b => b.operator_id === operator.id)
