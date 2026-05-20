@@ -1,5 +1,12 @@
+// update-operator-location v2
+// Fix: usa ANON_KEY (fetch directo) para llamar send-whatsapp en lugar de
+// supabase.functions.invoke() que usa SERVICE_KEY internamente
+
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const SUPABASE_URL      = Deno.env.get('SUPABASE_URL')              ?? ''
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')         ?? ''
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,8 +22,9 @@ serve(async (req) => {
   try {
     const { booking_id, operator_id, lat, lng } = await req.json()
 
+    // SERVICE_KEY solo para leer/escribir DB — correcto
     const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
+      SUPABASE_URL,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
@@ -59,13 +67,13 @@ serve(async (req) => {
       })
     }
 
-    const matrixUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${lat},${lng}&destinations=${clientLat},${clientLng}&mode=driving&key=${GOOGLE_MAPS_KEY}`
+    const matrixUrl  = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${lat},${lng}&destinations=${clientLat},${clientLng}&mode=driving&key=${GOOGLE_MAPS_KEY}`
     const matrixRes  = await fetch(matrixUrl)
     const matrixData = await matrixRes.json()
 
-    const element       = matrixData?.rows?.[0]?.elements?.[0]
-    const durationSecs  = element?.duration?.value ?? 9999
-    const distanceMeters = element?.distance?.value ?? 9999
+    const element        = matrixData?.rows?.[0]?.elements?.[0]
+    const durationSecs   = element?.duration?.value  ?? 9999
+    const distanceMeters = element?.distance?.value  ?? 9999
 
     // 4. Verificar si ya se envió el aviso "llegando" para este booking
     const { data: alreadySent } = await supabase
@@ -79,20 +87,26 @@ serve(async (req) => {
     if (distanceMeters <= NEAR_THRESHOLD_METERS && !alreadySent) {
       const phone = booking.customer?.phone
       if (phone) {
-        // Disparar WhatsApp "llegando"
-        await supabase.functions.invoke('send-whatsapp', {
-          body: {
+        // IMPORTANTE: fetch directo con ANON_KEY — NO supabase.functions.invoke()
+        await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'apikey':        SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({
             event:   'llegando',
             phone,
             booking: {
-              booking_ref:    booking.booking_ref,
-              service_name:   booking.service_name,
-              operator_lat:   lat,
-              operator_lng:   lng,
-              address_line:   booking.address_line,
-              minutes_away:   Math.ceil(durationSecs / 60),
+              booking_ref:   booking.booking_ref,
+              service_name:  booking.service_name,
+              operator_lat:  lat,
+              operator_lng:  lng,
+              address_line:  booking.address_line,
+              minutes_away:  Math.ceil(durationSecs / 60),
             }
-          }
+          }),
         })
       }
 
@@ -105,16 +119,20 @@ serve(async (req) => {
         created_at: new Date().toISOString()
       })
 
-      return new Response(JSON.stringify({ success: true, action: 'whatsapp_llegando_sent', distance_m: distanceMeters }), {
+      return new Response(JSON.stringify({
+        success:     true,
+        action:      'whatsapp_llegando_sent',
+        distance_m:  distanceMeters,
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
     return new Response(JSON.stringify({
-      success:     true,
-      action:      'location_updated',
-      distance_m:  distanceMeters,
-      duration_s:  durationSecs,
+      success:    true,
+      action:     'location_updated',
+      distance_m: distanceMeters,
+      duration_s: durationSecs,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })

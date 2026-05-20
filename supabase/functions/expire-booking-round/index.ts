@@ -1,4 +1,5 @@
-// expire-booking-round v1
+// expire-booking-round v2
+// Fix: usa SUPABASE_ANON_KEY para llamar process-booking-request
 // Se llama después del delay de 5 minutos para verificar si alguien aceptó.
 // Si nadie aceptó → lanza la siguiente ronda vía process-booking-request.
 // Si alguien aceptó → no hace nada (el trigger de DB ya manejó la asignación).
@@ -6,8 +7,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const SUPABASE_URL         = Deno.env.get('SUPABASE_URL') ?? ''
+const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')              ?? ''
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+const SUPABASE_ANON_KEY    = Deno.env.get('SUPABASE_ANON_KEY')         ?? ''
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -28,6 +30,7 @@ serve(async (req) => {
       })
     }
 
+    // SERVICE_KEY solo para leer/escribir DB — correcto
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
     // ── 1. Verificar si el booking ya fue asignado ────────────────────────────
@@ -74,7 +77,8 @@ serve(async (req) => {
       console.error('Error expirando booking_requests:', expireError)
     }
 
-    // ── 3. Lanzar siguiente ronda ─────────────────────────────────────────────
+    // ── 3. Lanzar siguiente ronda usando ANON_KEY ─────────────────────────────
+    // IMPORTANTE: process-booking-request tiene Verify JWT ON → requiere ANON_KEY
     const nextRonda = ronda + 1
     console.log(`Ronda ${ronda} expirada para booking ${booking_id}, lanzando ronda ${nextRonda}`)
 
@@ -82,8 +86,8 @@ serve(async (req) => {
       method:  'POST',
       headers: {
         'Content-Type':  'application/json',
-        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-        'apikey':        SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'apikey':        SUPABASE_ANON_KEY,
       },
       body: JSON.stringify({ booking_id, ronda: nextRonda }),
     })
@@ -92,10 +96,10 @@ serve(async (req) => {
     console.log(`Resultado ronda ${nextRonda}:`, result)
 
     return new Response(JSON.stringify({
-      success:     true,
+      success:          true,
       booking_id,
-      ronda_expirada:  ronda,
-      ronda_siguiente: nextRonda,
+      ronda_expirada:   ronda,
+      ronda_siguiente:  nextRonda,
       result,
     }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
