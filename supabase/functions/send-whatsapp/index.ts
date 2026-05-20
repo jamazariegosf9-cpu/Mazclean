@@ -1,30 +1,14 @@
-// send-whatsapp v9 — número propio +5215539377258 + Content Templates aprobados
+// send-whatsapp v11.1 — retry automático + whatsapp_log
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID') ?? ''
-const TWILIO_AUTH_TOKEN  = Deno.env.get('TWILIO_AUTH_TOKEN') ?? ''
-const TWILIO_FROM_SMS    = Deno.env.get('TWILIO_FROM_SMS') ?? ''
-const APP_URL            = 'https://mazclean.vercel.app'
-const SUPABASE_URL       = Deno.env.get('SUPABASE_URL') ?? ''
-const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-
-// Leer número de WhatsApp saliente desde membership_config en DB
-// Permite cambiarlo desde el panel de Admin sin tocar código
-async function getTwilioFrom(): Promise<string> {
-  const fallback = Deno.env.get('TWILIO_FROM_WHATSAPP') ?? 'whatsapp:+5215539377258'
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/membership_config?select=whatsapp_from&limit=1`,
-      { headers: { 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`, 'apikey': SUPABASE_SERVICE_KEY } }
-    )
-    if (!res.ok) return fallback
-    const rows = await res.json()
-    const from = rows?.[0]?.whatsapp_from
-    return from || fallback
-  } catch {
-    return fallback
-  }
-}
+const TWILIO_ACCOUNT_SID   = Deno.env.get('TWILIO_ACCOUNT_SID')          ?? ''
+const TWILIO_AUTH_TOKEN    = Deno.env.get('TWILIO_AUTH_TOKEN')            ?? ''
+const TWILIO_FROM          = Deno.env.get('TWILIO_FROM_WHATSAPP')         ?? 'whatsapp:+5215539377258'
+const TWILIO_FROM_SMS      = Deno.env.get('TWILIO_FROM_SMS')              ?? ''
+const APP_URL              = 'https://mazclean.vercel.app'
+const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')                 ?? ''
+const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')    ?? ''
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -33,41 +17,41 @@ const corsHeaders = {
 
 // ── Content Template SIDs ───────────────────────────────────────────────────
 const TEMPLATE_SIDS: Record<string, string> = {
-  booking_created:              'HX1f453ed66c36623cac84a2906d1f3a4c',
-  operator_assigned:            'HX22d43581e868f0287be84a75d2987129',
-  on_the_way:                   'HXd2a05ad2870ddc9299a7f845faa9088a',
-  llegando:                     'HX40f974fc28c8c86904b68226df46b87b',
-  arrived:                      'HXc5b8063babff2fb775dc9e6505a42965',
-  washing:                      'HXd82f427e886a5cfe4c91a2e70a19e7f1',
-  done:                         'HX2ffac597975c104dbeaaad4f3bdbce44',
-  booking_cancelled:            'HXc9e107717c0464b47a43d6d3327d8d8e',
-  booking_searching:            'HXfaf03fa2fca00d41bfd8fd58f371caa2',
-  operator_service_request:     'HXdd7406feca5d26bc978928f125c3a650',
-  operator_request_taken:       'HX3c5584f4f4b8a44f7549b8ff14aad300',
-  operator_request_expired:     'HXeca8d8b6007d2802cf88825270c6c5c9',
-  operator_docs_required:       'HX9d976a938e1932c4cadb12d4a9d26b91',
-  operator_approved:            'HX30cddade3f8f08e9121d30c601edffdc',
-  operator_rejected:            'HXe67103a838257b3edc1026638c82c4fd',
-  admin_assignment_needed:      'HXb5eab312286b44167a137912c49d0338',
+  booking_created:          'HX1f453ed66c36623cac84a2906d1f3a4c',
+  operator_assigned:        'HX22d43581e868f0287be84a75d2987129',
+  on_the_way:               'HXd2a05ad2870ddc9299a7f845faa9088a',
+  llegando:                 'HX40f974fc28c8c86904b68226df46b87b',
+  arrived:                  'HXc5b8063babff2fb775dc9e6505a42965',
+  washing:                  'HXd82f427e886a5cfe4c91a2e70a19e7f1',
+  done:                     'HX2ffac597975c104dbeaaad4f3bdbce44',
+  booking_cancelled:        'HXc9e107717c0464b47a43d6d3327d8d8e',
+  booking_searching:        'HXfaf03fa2fca00d41bfd8fd58f371caa2',
+  operator_service_request: 'HX5b291424e298026b897d278bb5353b64', // v3 ✅
+  operator_request_taken:   'HX3c5584f4f4b8a44f7549b8ff14aad300',
+  operator_request_expired: 'HXeca8d8b6007d2802cf88825270c6c5c9',
+  operator_docs_required:   'HX9d976a938e1932c4cadb12d4a9d26b91',
+  operator_approved:        'HXfacd0cf1816e308d26f3baf3d65c0bde', // v2 ✅
+  operator_rejected:        'HXe67103a838257b3edc1026638c82c4fd',
+  admin_assignment_needed:  'HX1d59669c141a59ab2b20fff7e894fa68', // v2 ✅
 }
 
-// ── Variables por template (orden exacto de {{1}}, {{2}}...) ───────────────
+// ── Variables por template ──────────────────────────────────────────────────
 function getTemplateVariables(event: string, data: any): Record<string, string> {
-  const ref        = data.booking_ref          || ''
-  const svc        = data.service_name         || 'tu lavado'
-  const date       = data.scheduled_date       || ''
-  const time       = data.scheduled_time       || ''
-  const timeFrom   = data.scheduled_time_from?.slice(0, 5) || ''
-  const timeTo     = data.scheduled_time_to?.slice(0, 5)   || ''
-  const price      = data.total_price          || ''
-  const op         = data.operator_name        || 'tu operador'
-  const address    = data.address_line         || ''
-  const bookingId  = data.booking_id           || ''
+  const ref         = data.booking_ref          || ''
+  const svc         = data.service_name         || 'tu lavado'
+  const date        = data.scheduled_date       || ''
+  const time        = data.scheduled_time       || ''
+  const timeFrom    = data.scheduled_time_from?.slice(0, 5) || ''
+  const timeTo      = data.scheduled_time_to?.slice(0, 5)   || ''
+  const price       = data.total_price          || ''
+  const op          = data.operator_name        || 'tu operador'
+  const address     = data.address_line         || ''
+  const bookingId   = data.booking_id           || ''
   const trackingUrl = bookingId ? `${APP_URL}/tracking/${bookingId}` : APP_URL
-  const clientName = data.client_name          || ''
-  const minutes    = data.minutes_away         || '5'
-  const docsList   = data.docs_list            || ''
-  const reason     = data.rejection_reason     || 'No cumple con los requisitos.'
+  const clientName  = data.client_name          || ''
+  const minutes     = data.minutes_away         || '5'
+  const docsList    = data.docs_list            || ''
+  const reason      = data.rejection_reason     || 'No cumple con los requisitos.'
 
   switch (event) {
     case 'booking_created':
@@ -119,10 +103,15 @@ const getBase64Auth = () => {
   return btoa(String.fromCharCode(...bytes))
 }
 
-const sendWithTemplate = async (to: string, contentSid: string, variables: Record<string, string>, twilioFrom: string) => {
+// ── Envío individual a Twilio ───────────────────────────────────────────────
+const sendWithTemplate = async (
+  to: string,
+  contentSid: string,
+  variables: Record<string, string>
+) => {
   const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`
   const params = new URLSearchParams({
-    From:             twilioFrom,
+    From:             TWILIO_FROM,
     To:               to,
     ContentSid:       contentSid,
     ContentVariables: JSON.stringify(variables),
@@ -153,6 +142,71 @@ const sendSMS = async (to: string, body: string) => {
   return { ok: response.ok, data: result }
 }
 
+// ── Nivel 1: Retry automático (1 reintento tras 2s) ────────────────────────
+const sendWithRetry = async (
+  to: string,
+  contentSid: string,
+  variables: Record<string, string>
+): Promise<{ ok: boolean; data: any; retried: boolean }> => {
+  const first = await sendWithTemplate(to, contentSid, variables)
+  if (first.ok) return { ...first, retried: false }
+  await new Promise(resolve => setTimeout(resolve, 2000))
+  const second = await sendWithTemplate(to, contentSid, variables)
+  return { ...second, retried: true }
+}
+
+// ── Nivel 2: Insertar en whatsapp_log ──────────────────────────────────────
+const logWhatsApp = async (params: {
+  booking_id:   string | null
+  operator_id:  string | null
+  event:        string
+  phone:        string
+  booking_data: any
+  status:       'sent' | 'failed' | 'retried'
+  error:        string | null
+}) => {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+    console.warn('[whatsapp_log] Faltan variables SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY')
+    return
+  }
+  try {
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+      auth: {
+        persistSession:   false,
+        autoRefreshToken: false,
+      },
+    })
+    const { error } = await supabase.from('whatsapp_log').insert({
+      booking_id:   params.booking_id  || null,
+      operator_id:  params.operator_id || null,
+      event:        params.event,
+      phone:        params.phone,
+      booking_data: params.booking_data,
+      status:       params.status,
+      error:        params.error,
+      attempted_at: new Date().toISOString(),
+      resolved_at:  params.status === 'sent' || params.status === 'retried'
+                      ? new Date().toISOString()
+                      : null,
+    })
+    if (error) console.error('[whatsapp_log] Error insert:', error.message)
+  } catch (logErr) {
+    console.error('[whatsapp_log] Error inesperado:', logErr)
+  }
+}
+
+// ── Eventos de operador (para operator_id en log) ──────────────────────────
+const OPERATOR_EVENTS = new Set([
+  'operator_service_request',
+  'operator_request_taken',
+  'operator_request_expired',
+  'operator_docs_required',
+  'operator_approved',
+  'operator_rejected',
+  'admin_assignment_needed',
+])
+
+// ── Handler principal ───────────────────────────────────────────────────────
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -176,14 +230,47 @@ serve(async (req) => {
     const variables  = getTemplateVariables(event, data)
     const results: any = {}
 
+    const bookingId  = data.booking_id  || null
+    const operatorId = OPERATOR_EVENTS.has(event) ? (data.operator_id || null) : null
+
     if (contentSid) {
       const waTo     = 'whatsapp:' + normalizedPhone
-      const twilioFrom = await getTwilioFrom()
-      const waResult = await sendWithTemplate(waTo, contentSid, variables, twilioFrom)
-      results.whatsapp = { ok: waResult.ok, sid: waResult.data.sid, error: waResult.data.message }
+      const waResult = await sendWithRetry(waTo, contentSid, variables)
+
+      results.whatsapp = {
+        ok:      waResult.ok,
+        sid:     waResult.data.sid,
+        error:   waResult.data.message,
+        retried: waResult.retried,
+      }
+
+      const logStatus = waResult.ok
+        ? (waResult.retried ? 'retried' : 'sent')
+        : 'failed'
+
+      await logWhatsApp({
+        booking_id:   bookingId,
+        operator_id:  operatorId,
+        event,
+        phone:        normalizedPhone,
+        booking_data: data,
+        status:       logStatus,
+        error:        waResult.ok ? null : (waResult.data.message || 'Error desconocido'),
+      })
+
     } else {
       console.warn(`[send-whatsapp] Sin template para evento: ${event}`)
       results.whatsapp = { ok: false, error: `Sin template para evento: ${event}` }
+
+      await logWhatsApp({
+        booking_id:   bookingId,
+        operator_id:  operatorId,
+        event,
+        phone:        normalizedPhone,
+        booking_data: data,
+        status:       'failed',
+        error:        `Sin template para evento: ${event}`,
+      })
     }
 
     if (TWILIO_FROM_SMS) {

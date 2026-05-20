@@ -1,7 +1,5 @@
-// AdminViewA.jsx — Tab Reservaciones
-// Contiene: Panel de bookings sin operador, lista filtrable, modales de asignación y edición
-
-import React, { useState, useEffect } from 'react';
+// AdminViewA.jsx — Tab Reservaciones + WhatsApp Log contextual (Nivel 3)
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from './lib/supabase';
 import { sendWhatsApp } from './lib/whatsapp';
 import { useToast } from './App';
@@ -20,6 +18,216 @@ const getStatusStyle = (status) => {
     case 'rechazado':  return { bg: '#fae8ff', text: '#7e22ce', border: '#e9d5ff' };
     default:           return { bg: '#f3f4f6', text: '#374151', border: '#e5e7eb' };
   }
+};
+
+// ── Etiquetas legibles para eventos WA ─────────────────────────────────────
+const EVENT_LABELS = {
+  booking_created:          '📋 Reservación creada',
+  operator_assigned:        '👷 Operador asignado',
+  on_the_way:               '🚗 En camino',
+  llegando:                 '📍 Llegando',
+  arrived:                  '✅ Llegó',
+  washing:                  '🧽 Lavando',
+  done:                     '🏁 Servicio finalizado',
+  booking_cancelled:        '❌ Cancelación',
+  booking_searching:        '🔍 Buscando operador',
+  operator_service_request: '📨 Solicitud a operador',
+  operator_request_taken:   '✋ Solicitud tomada',
+  operator_request_expired: '⏱ Solicitud expirada',
+  operator_docs_required:   '📋 Docs requeridos',
+  operator_approved:        '✅ Operador aprobado',
+  operator_rejected:        '🚫 Operador rechazado',
+  admin_assignment_needed:  '🚨 Asignación requerida',
+  free_message:             '✏️ Mensaje libre',
+};
+
+// ── Componente WhatsApp Log por booking ─────────────────────────────────────
+const BookingWALog = ({ bookingId, isMobile }) => {
+  const { showToast } = useToast();
+  const [logs, setLogs]               = useState([]);
+  const [loading, setLoading]         = useState(false);
+  const [resending, setResending]     = useState(null);
+  const [freeMsg, setFreeMsg]         = useState('');
+  const [freePhone, setFreePhone]     = useState('');
+  const [sendingFree, setSendingFree] = useState(false);
+  const [showFree, setShowFree]       = useState(false);
+
+  const getToken = () => {
+    try {
+      const stored = localStorage.getItem('mazclean-auth');
+      if (stored) { const p = JSON.parse(stored); return p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY; }
+    } catch {}
+    return SUPABASE_ANON_KEY;
+  };
+
+  const fetchLogs = useCallback(async () => {
+    if (!bookingId) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('whatsapp_log')
+        .select('*')
+        .eq('booking_id', bookingId)
+        .order('attempted_at', { ascending: false });
+      if (error) throw error;
+      setLogs(data || []);
+    } catch (err) {
+      showToast('Error cargando logs WA: ' + err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [bookingId]);
+
+  useEffect(() => { fetchLogs(); }, [fetchLogs]);
+
+  const resend = async (log) => {
+    setResending(log.id);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${getToken()}`,
+          'apikey': SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          event:   log.event,
+          phone:   log.phone,
+          booking: { ...log.booking_data, booking_id: bookingId },
+        }),
+      });
+      const result = await res.json();
+      if (result?.results?.whatsapp?.ok) {
+        showToast('✅ Mensaje reenviado correctamente', 'success');
+        fetchLogs();
+      } else {
+        showToast('❌ Error al reenviar: ' + (result?.results?.whatsapp?.error || 'Error desconocido'), 'error');
+      }
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      setResending(null);
+    }
+  };
+
+  const sendFreeMessage = async () => {
+    if (!freeMsg.trim() || !freePhone.trim()) {
+      showToast('Escribe el teléfono y el mensaje', 'error');
+      return;
+    }
+    setSendingFree(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${getToken()}`,
+          'apikey': SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          event:   'free_message',
+          phone:   freePhone,
+          booking: { booking_id: bookingId, free_text: freeMsg },
+        }),
+      });
+      const result = await res.json();
+      if (result?.results?.whatsapp?.ok || result?.results?.sms?.ok) {
+        showToast('✅ Mensaje enviado', 'success');
+        setFreeMsg('');
+        setShowFree(false);
+        fetchLogs();
+      } else {
+        showToast('❌ Error: ' + (result?.error || 'Error desconocido'), 'error');
+      }
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      setSendingFree(false);
+    }
+  };
+
+  const statusIcon  = (s) => s === 'sent' ? '✅' : s === 'retried' ? '🔄' : '❌';
+
+  return (
+    <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: 12, marginTop: 4 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>📱 Comunicaciones WhatsApp</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => setShowFree(p => !p)}
+            style={{ padding: '4px 10px', borderRadius: 6, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+            ✏️ Mensaje libre
+          </button>
+          <button onClick={fetchLogs}
+            style={{ padding: '4px 10px', borderRadius: 6, border: '1.5px solid #e5e7eb', background: '#f9fafb', color: '#6b7280', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+            ↻
+          </button>
+        </div>
+      </div>
+
+      {/* Mensaje libre */}
+      {showFree && (
+        <div style={{ background: '#eff6ff', borderRadius: 10, padding: '12px', marginBottom: 10, border: '1.5px solid #bfdbfe' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#1e40af', marginBottom: 8 }}>✏️ Enviar mensaje libre (SMS fallback si WA falla)</div>
+          <input
+            type="text"
+            placeholder="Teléfono (10 dígitos)"
+            value={freePhone}
+            onChange={e => setFreePhone(e.target.value)}
+            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1.5px solid #bfdbfe', fontSize: 13, marginBottom: 8, boxSizing: 'border-box', fontFamily: 'inherit' }}
+          />
+          <textarea
+            placeholder="Escribe tu mensaje..."
+            value={freeMsg}
+            onChange={e => setFreeMsg(e.target.value)}
+            rows={3}
+            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1.5px solid #bfdbfe', fontSize: 13, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }}
+          />
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            <button onClick={() => { setShowFree(false); setFreeMsg(''); setFreePhone(''); }}
+              style={{ flex: 1, padding: '8px', borderRadius: 6, border: '1.5px solid #e5e7eb', background: '#f9fafb', color: '#6b7280', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              Cancelar
+            </button>
+            <button onClick={sendFreeMessage} disabled={sendingFree}
+              style={{ flex: 2, padding: '8px', borderRadius: 6, border: 'none', background: sendingFree ? '#9ca3af' : '#3b82f6', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+              {sendingFree ? '⏳ Enviando...' : '📤 Enviar'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Lista de logs */}
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '12px 0', color: '#9ca3af', fontSize: 12 }}>Cargando mensajes...</div>
+      ) : logs.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '12px 0', color: '#9ca3af', fontSize: 12 }}>Sin mensajes registrados</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {logs.map(log => (
+            <div key={log.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f9fafb', borderRadius: 8, padding: '8px 10px', border: `1px solid ${log.status === 'failed' ? '#fecaca' : '#e5e7eb'}` }}>
+              <span style={{ fontSize: 14, flexShrink: 0 }}>{statusIcon(log.status)}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#1f2937', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {EVENT_LABELS[log.event] || log.event}
+                </div>
+                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>
+                  {new Date(log.attempted_at).toLocaleString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  {' · '}{log.phone}
+                  {log.status === 'retried' && <span style={{ color: '#f59e0b', marginLeft: 4 }}>· reintentado</span>}
+                </div>
+                {log.error && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 1 }}>⚠️ {log.error}</div>}
+              </div>
+              <button
+                onClick={() => resend(log)}
+                disabled={resending === log.id}
+                style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 6, border: `1.5px solid ${log.status === 'failed' ? '#fecaca' : '#e5e7eb'}`, background: log.status === 'failed' ? '#fef2f2' : '#f3f4f6', color: log.status === 'failed' ? '#dc2626' : '#6b7280', fontSize: 11, fontWeight: 700, cursor: 'pointer', minHeight: 28 }}>
+                {resending === log.id ? '⏳' : '↩ Reenviar'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
 const AdminViewA = ({
@@ -42,14 +250,12 @@ const AdminViewA = ({
     setAvailableOps([])
     try {
       const headers = { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY }
-      // Buscar operadores disponibles: aprobados, certificados, membresía activa, sin excepción activa
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/profiles?role=eq.operador&operator_status=eq.aprobado&is_certified=eq.true&membership_status=eq.activa&select=id,full_name,phone,rating_avg,base_address,coverage_radius,work_days,work_start,work_end`,
         { headers }
       )
       if (res.ok) {
         const ops = await res.json()
-        // Filtrar por día y horario del booking
         const bookingDate = new Date(booking.scheduled_date)
         const dayNames = ['domingo','lunes','martes','miercoles','jueves','viernes','sabado']
         const bookingDay = dayNames[bookingDate.getDay()]
@@ -74,7 +280,6 @@ const AdminViewA = ({
         body: JSON.stringify({ operator_id: operatorId, status: 'confirmado', updated_at: new Date().toISOString() }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      // WA al nuevo operador
       const op = availableOps.find(o => o.id === operatorId)
       if (op?.phone) {
         await sendWhatsApp('operator_service_request', op.phone, emergencyBooking)
@@ -98,30 +303,33 @@ const AdminViewA = ({
       setEmergencyModal(false)
     } catch (err) { showToast('Error: ' + err.message, 'error') }
   }
-  const [confirmAssign, setConfirmAssign] = useState(null); // { bookingId, operatorId, operatorName }
-  const [searchTerm, setSearchTerm]     = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFilter, setDateFilter]     = useState('all');
+
+  const [confirmAssign, setConfirmAssign]     = useState(null);
+  const [searchTerm, setSearchTerm]           = useState('');
+  const [statusFilter, setStatusFilter]       = useState('all');
+  const [dateFilter, setDateFilter]           = useState('all');
   const [selectedBooking, setSelectedBooking] = useState(null);
-  const [isModalOpen, setIsModalOpen]   = useState(false);
-  const [assigning, setAssigning]       = useState(null);
+  const [isModalOpen, setIsModalOpen]         = useState(false);
+  const [assigning, setAssigning]             = useState(null);
   const [assigningManual, setAssigningManual] = useState(null);
   const [cancellingBooking, setCancellingBooking] = useState(null);
-  const [rejectingBooking, setRejectingBooking] = useState(null);
-  const [editModal, setEditModal]       = useState(false);
-  const [editData, setEditData]         = useState({});
-  const [savingEdit, setSavingEdit]     = useState(false);
-  const [photoModal, setPhotoModal]     = useState(null);
-  const [serverNow, setServerNow]       = useState(null);
+  const [rejectingBooking, setRejectingBooking]   = useState(null);
+  const [editModal, setEditModal]             = useState(false);
+  const [editData, setEditData]               = useState({});
+  const [savingEdit, setSavingEdit]           = useState(false);
+  const [photoModal, setPhotoModal]           = useState(null);
+  const [serverNow, setServerNow]             = useState(null);
+  // WA Log expandido por booking
+  const [expandedWA, setExpandedWA]           = useState(null);
   // Paginación
-  const [bookingsPage, setBookingsPage] = useState(1);
+  const [bookingsPage, setBookingsPage]       = useState(1);
   const BOOKINGS_PER_PAGE = 20;
 
-  // ── Dashboard operacional ────────────────────────────────────────────────
-  const [dash, setDash]           = useState(null)   // métricas calculadas
+  // ── Dashboard operacional ─────────────────────────────────────────────────
+  const [dash, setDash]               = useState(null)
   const [dashLoading, setDashLoading] = useState(false)
-  const [activeCard, setActiveCard]   = useState(null) // card abierta actualmente
-  const [dashDetail, setDashDetail]   = useState([])   // lista del panel abierto
+  const [activeCard, setActiveCard]   = useState(null)
+  const [dashDetail, setDashDetail]   = useState([])
 
   useEffect(() => {
     const fetchServerTime = async () => {
@@ -133,7 +341,6 @@ const AdminViewA = ({
     return () => clearInterval(interval);
   }, []);
 
-  // ── Fetch métricas del dashboard ─────────────────────────────────────────
   const fetchDashboard = async () => {
     setDashLoading(true)
     try {
@@ -160,7 +367,6 @@ const AdminViewA = ({
       const now = new Date()
       const in7days = new Date(now); in7days.setDate(in7days.getDate() + 7)
 
-      // Calcular métricas
       const desfasados   = bks.filter(b => ['pendiente','confirmado','en_camino','en_proceso'].includes(b.status) && b.scheduled_date < today)
       const sinOperador  = bks.filter(b => b.status === 'pendiente' && !b.operator_id)
       const hoy          = bks.filter(b => b.scheduled_date === today)
@@ -174,7 +380,6 @@ const AdminViewA = ({
       const opsNoRenov   = ops.filter(o => o.operator_status === 'aprobado' && o.membership_status !== 'activa')
       const ratingProm   = opsActivos.length ? (opsActivos.reduce((a,o) => a + parseFloat(o.rating_avg||0), 0) / opsActivos.length).toFixed(1) : '—'
 
-      // Billing del mes desde operator_billing
       const billingRes = await fetch(
         `${SUPABASE_URL}/rest/v1/operator_billing?paid_at=gte.${today.slice(0,7)}-01&select=membership_amount,commission_amount,gmv,total_charged`,
         { headers: h }
@@ -182,13 +387,11 @@ const AdminViewA = ({
       const billingData = billingRes.ok ? await billingRes.json() : []
       const commCobradas    = billingData.reduce((s, r) => s + parseFloat(r.commission_amount||0), 0)
       const memCobradas     = billingData.reduce((s, r) => s + parseFloat(r.membership_amount||0), 0)
-      // Comisiones devengadas (servicios del mes × pct nivel operador)
       const mesBookings = bks.filter(b => b.status === 'finalizado' && b.scheduled_date?.slice(0,7) === today.slice(0,7))
       const gmvMes = mesBookings.reduce((s, b) => s + parseFloat(b.total_price||0), 0)
-      // Membresías por cobrar: activas que vencen este mes
       const thisMonthEnd = new Date(today.slice(0,7) + '-31')
       const memDevOps = ops.filter(o => o.membership_status === 'activa' && o.membership_end_at && new Date(o.membership_end_at) <= thisMonthEnd && o.role !== 'cliente')
-      const memDevengadas = memDevOps.reduce((s, o) => s + 200, 0) // precio base operador
+      const memDevengadas = memDevOps.reduce((s, o) => s + 200, 0)
 
       setDash({
         desfasados, sinOperador, hoy, enCurso, ingresosMes,
@@ -197,14 +400,14 @@ const AdminViewA = ({
         totalHoy: hoy.length,
         finalizadosHoy: hoy.filter(b => b.status === 'finalizado').length,
         billing: {
-          memCobradas:       Math.round(memCobradas * 100) / 100,
-          countMemCobradas:  billingData.length,
-          memDevengadas:     Math.round(memDevengadas * 100) / 100,
+          memCobradas:        Math.round(memCobradas * 100) / 100,
+          countMemCobradas:   billingData.length,
+          memDevengadas:      Math.round(memDevengadas * 100) / 100,
           countMemDevengadas: memDevOps.length,
-          commDevengadas:    Math.round(gmvMes * 0.04 * 100) / 100, // estimado promedio 4%
-          commCobradas:      Math.round(commCobradas * 100) / 100,
-          countCommCobradas: billingData.length,
-          gmvMes:            Math.round(gmvMes * 100) / 100,
+          commDevengadas:     Math.round(gmvMes * 0.04 * 100) / 100,
+          commCobradas:       Math.round(commCobradas * 100) / 100,
+          countCommCobradas:  billingData.length,
+          gmvMes:             Math.round(gmvMes * 100) / 100,
         },
       })
     } catch (err) { console.error('fetchDashboard:', err) }
@@ -240,7 +443,6 @@ const AdminViewA = ({
     return true;
   };
 
-  // Reset página al cambiar filtros
   useEffect(() => { setBookingsPage(1); }, [searchTerm, statusFilter, dateFilter]);
 
   const filteredBookings = bookings.filter(b => {
@@ -288,7 +490,6 @@ const AdminViewA = ({
   const assignOperator = async (bookingId, operatorId) => {
     if (!operatorId) return;
     const operator = operators.find(o => o.id === operatorId);
-    // Mostrar confirmación antes de asignar
     setConfirmAssign({ bookingId, operatorId, operatorName: operator?.full_name || 'este operador' });
   };
 
@@ -357,7 +558,6 @@ const AdminViewA = ({
     finally { setCancellingBooking(null); }
   };
 
-  // Rechazar reservación — status 'rechazado' para análisis de zonas sin cobertura
   const rejectBooking = async (booking) => {
     if (!confirm(`¿Rechazar la reservación ${booking.booking_ref}? Se notificará al cliente y quedará registrada para análisis de cobertura.`)) return;
     setRejectingBooking(booking.id);
@@ -367,27 +567,14 @@ const AdminViewA = ({
       let token = anonKey;
       try {
         const stored = localStorage.getItem('mazclean-auth');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          token = parsed?.access_token || parsed?.session?.access_token || anonKey;
-        }
+        if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || anonKey; }
       } catch {}
-
       const res = await fetch(`${supaUrl}/rest/v1/bookings?id=eq.${booking.id}`, {
         method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'apikey': anonKey,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal',
-        },
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': anonKey, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({ status: 'rechazado', updated_at: new Date().toISOString() }),
       });
-      if (!res.ok) {
-        const errBody = await res.text();
-        throw new Error(`HTTP ${res.status}: ${errBody}`);
-      }
-
+      if (!res.ok) { const errBody = await res.text(); throw new Error(`HTTP ${res.status}: ${errBody}`); }
       if (booking.customer?.phone) {
         try { await sendWhatsApp('booking_cancelled', booking.customer.phone, { booking_ref: booking.booking_ref, service_name: booking.service_name }); }
         catch (e) { console.warn('WhatsApp omitido:', e.message); }
@@ -425,9 +612,9 @@ const AdminViewA = ({
   const inputStyle = { padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 };
   const labelStyle = { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 5, display: 'block' };
 
-  // ── Componente tarjeta del dashboard ────────────────────────────────────
+  // ── DashCard ──────────────────────────────────────────────────────────────
   const DashCard = ({ id, icon, label, value, sub, color, urgent, data, formatter }) => {
-    const isOpen = activeCard === id
+    const isOpen  = activeCard === id
     const hasData = data && data.length > 0
     return (
       <div style={{ borderRadius: 14, overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.08)', cursor: hasData ? 'pointer' : 'default', border: `2px solid ${urgent && hasData ? '#fca5a5' : '#e5e7eb'}`, transition: 'all 0.2s', animation: urgent && hasData ? 'pulse-border 2s infinite' : 'none' }}
@@ -477,7 +664,6 @@ const AdminViewA = ({
           <div style={{ background: '#fff', borderRadius: 14, padding: 40, textAlign: 'center', color: '#9ca3af' }}>⏳ Cargando métricas...</div>
         ) : dash ? (
           <>
-            {/* 🚨 ALERTAS URGENTES */}
             <div style={{ fontSize: 12, fontWeight: 700, color: '#dc2626', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>🚨 Alertas urgentes</div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
               <DashCard id="desfasados" icon="⏰" label="Servicios desfasados" value={dash.desfasados.length} sub="Fecha pasada" color="#dc2626" urgent={dash.desfasados.length > 0}
@@ -528,7 +714,6 @@ const AdminViewA = ({
               />
             </div>
 
-            {/* ⏳ PENDIENTES DE REVISIÓN */}
             <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>⏳ Pendientes de revisión</div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
               <DashCard id="opsPendientes" icon="👤" label="Ops por autorizar" value={dash.opsPendientes.length} sub="Nuevos registros" color="#92400e" urgent={dash.opsPendientes.length > 0}
@@ -585,7 +770,6 @@ const AdminViewA = ({
               />
             </div>
 
-            {/* 📊 ESTADO OPERACIONAL */}
             <div style={{ fontSize: 12, fontWeight: 700, color: '#1e40af', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>📊 Estado operacional</div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: 10, marginBottom: 20 }}>
               <DashCard id="hoy" icon="📅" label="Servicios hoy" value={dash.totalHoy} sub={`${dash.finalizadosHoy} finalizados`} color="#1e40af"
@@ -601,100 +785,52 @@ const AdminViewA = ({
                   </div>
                 )}
               />
-              <DashCard id="enCurso" icon="⚡" label="En curso ahora" value={dash.enCurso.length} sub="Activos" color="#059669"
+              <DashCard id="enCurso" icon="🔵" label="En curso" value={dash.enCurso.length} sub="Activos ahora" color="#3b82f6"
                 data={dash.enCurso}
                 formatter={items => (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {items.map(b => (
-                      <div key={b.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #bbf7d0' }}>
-                        <div style={{ fontWeight: 700, fontSize: 13 }}>{b.booking_ref}</div>
-                        <div style={{ fontSize: 12, color: '#6b7280' }}>{b.status === 'en_camino' ? '🚗 En camino' : '🧼 Lavando'}</div>
+                      <div key={b.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #bfdbfe' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{b.booking_ref} · {b.service_name}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>Estado: {b.status}</div>
                       </div>
                     ))}
                   </div>
                 )}
               />
-              <DashCard id="opsActivos" icon="👷" label="Ops activos" value={dash.opsActivos.length} sub={`Prom ⭐${dash.ratingProm}`} color="#059669"
-                data={dash.opsActivos}
+              <DashCard id="opsActivos" icon="👷" label="Operadores activos" value={dash.opsActivos.length} sub={`⭐ ${dash.ratingProm} prom`} color="#059669" data={dash.opsActivos}
                 formatter={items => (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {items.sort((a,b) => parseFloat(b.rating_avg||0) - parseFloat(a.rating_avg||0)).map(op => (
-                      <div key={op.id} style={{ background: '#fff', borderRadius: 10, padding: '8px 12px', border: '1px solid #bbf7d0', display: 'flex', justifyContent: 'space-between' }}>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: 12 }}>{op.full_name}</div>
-                          <div style={{ fontSize: 11, color: '#6b7280' }}>{op.operator_level}</div>
-                        </div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#059669' }}>⭐{parseFloat(op.rating_avg||0).toFixed(1)}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {items.map(op => (
+                      <div key={op.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #bbf7d0' }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{op.full_name}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>⭐ {op.rating_avg || '—'} · {op.operator_level || 'base'}</div>
                       </div>
                     ))}
                   </div>
                 )}
               />
-              <DashCard id="vencen" icon="⏱️" label="Memb. por vencer" value={dash.opsVencen.length} sub="≤7 días" color="#d97706" urgent={dash.opsVencen.length > 0}
-                data={dash.opsVencen}
+              <DashCard id="opsVencen" icon="⚠️" label="Memb. por vencer" value={dash.opsVencen.length} sub="Próx. 7 días" color="#d97706" urgent={dash.opsVencen.length > 0} data={dash.opsVencen}
                 formatter={items => (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {items.map(op => (
                       <div key={op.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #fde68a' }}>
                         <div style={{ fontWeight: 700, fontSize: 13 }}>{op.full_name}</div>
-                        <div style={{ fontSize: 12, color: '#6b7280' }}>Vence: {new Date(op.membership_end_at).toLocaleDateString('es-MX')}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>Vence: {op.membership_end_at?.slice(0,10)}</div>
                       </div>
                     ))}
                   </div>
                 )}
               />
-              <DashCard id="noRenov" icon="💳" label="Sin membresía" value={dash.opsNoRenov.length} sub="No renovaron" color="#6b7280"
-                data={dash.opsNoRenov}
-                formatter={items => (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {items.map(op => (
-                      <div key={op.id} style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', border: '1px solid #e5e7eb' }}>
-                        <div style={{ fontWeight: 700, fontSize: 13 }}>{op.full_name}</div>
-                        <div style={{ fontSize: 12, color: '#6b7280' }}>📱 {op.phone} · {op.membership_status}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              />
+              <DashCard id="ingresosMes" icon="💰" label="Ingresos del mes" value={`$${dash.ingresosMes.toLocaleString()}`} sub="Servicios finalizados" color="#059669" data={[]} />
             </div>
 
-            {/* Panel de ingresos segregado */}
-            <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', borderRadius: 14, padding: '16px 20px', marginBottom: 20 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#bfdbfe', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>💰 Ingresos del mes — {new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })}</div>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: 10 }}>
-                {/* Membresías cobradas */}
-                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 10, padding: '12px 14px' }}>
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>✅ Membresías cobradas</div>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>
-                    ${dash.billing ? Math.round(dash.billing.memCobradas).toLocaleString('es-MX') : '—'}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{dash.billing?.countMemCobradas || 0} renovaciones</div>
-                </div>
-                {/* Membresías por cobrar */}
-                <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: '12px 14px', border: '1px solid rgba(255,255,255,0.15)' }}>
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>⏳ Membresías por cobrar</div>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: '#fde68a' }}>
-                    ${dash.billing ? Math.round(dash.billing.memDevengadas).toLocaleString('es-MX') : '—'}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{dash.billing?.countMemDevengadas || 0} vencen este mes</div>
-                </div>
-                {/* Comisiones devengadas */}
-                <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: '12px 14px', border: '1px solid rgba(255,255,255,0.15)' }}>
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>📊 Comisiones devengadas</div>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: '#fde68a' }}>
-                    ${dash.billing ? Math.round(dash.billing.commDevengadas).toLocaleString('es-MX') : '—'}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>sobre ${dash.billing ? Math.round(dash.billing.gmvMes).toLocaleString('es-MX') : 0} GMV</div>
-                </div>
-                {/* Comisiones cobradas */}
-                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 10, padding: '12px 14px' }}>
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>✅ Comisiones cobradas</div>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>
-                    ${dash.billing ? Math.round(dash.billing.commCobradas).toLocaleString('es-MX') : '—'}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{dash.billing?.countCommCobradas || 0} liquidaciones</div>
-                </div>
-              </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>💳 Billing del mes</div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
+              <DashCard id="memCobradas"   icon="💳" label="Memb. cobradas"   value={`$${dash.billing.memCobradas.toLocaleString()}`}  sub={`${dash.billing.countMemCobradas} ops`}   color="#0891b2" data={[]} />
+              <DashCard id="memDevengadas" icon="📅" label="Memb. devengadas" value={`$${dash.billing.memDevengadas.toLocaleString()}`} sub={`${dash.billing.countMemDevengadas} ops`} color="#0891b2" data={[]} />
+              <DashCard id="commCobradas"  icon="💰" label="Comis. cobradas"  value={`$${dash.billing.commCobradas.toLocaleString()}`}  sub={`${dash.billing.countCommCobradas} ops`}  color="#059669" data={[]} />
+              <DashCard id="gmvMes"        icon="📈" label="GMV del mes"      value={`$${dash.billing.gmvMes.toLocaleString()}`}        sub="Total facturado"                           color="#7c3aed" data={[]} />
             </div>
           </>
         ) : null}
@@ -717,14 +853,14 @@ const AdminViewA = ({
         </select>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
           {[
-            { id: 'all',       label: 'Todos' },
-            { id: 'pendiente', label: 'Pendientes' },
-            { id: 'confirmado',label: 'Confirmados' },
-            { id: 'en_camino', label: 'En Camino' },
-            { id: 'en_proceso',label: 'Lavando' },
-            { id: 'finalizado',label: 'Listos' },
-            { id: 'cancelado', label: 'Cancelados' },
-            { id: 'rechazado', label: 'Rechazados' },
+            { id: 'all',        label: 'Todos' },
+            { id: 'pendiente',  label: 'Pendientes' },
+            { id: 'confirmado', label: 'Confirmados' },
+            { id: 'en_camino',  label: 'En Camino' },
+            { id: 'en_proceso', label: 'Lavando' },
+            { id: 'finalizado', label: 'Listos' },
+            { id: 'cancelado',  label: 'Cancelados' },
+            { id: 'rechazado',  label: 'Rechazados' },
           ].map(f => (
             <button key={f.id} onClick={() => setStatusFilter(f.id)} style={{ padding: '8px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none', background: statusFilter === f.id ? '#3b82f6' : '#f3f4f6', color: statusFilter === f.id ? '#fff' : '#6b7280', minHeight: 36 }}>{f.label}</button>
           ))}
@@ -786,26 +922,22 @@ const AdminViewA = ({
       {loading ? (
         <div style={{ textAlign: 'center', padding: 48, color: '#9ca3af', background: '#fff', borderRadius: 14 }}>Cargando...</div>
       ) : filteredBookings.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 48, color: '#9ca3af', background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>No se encontraron reservaciones.</div>
+        <div style={{ textAlign: 'center', padding: 48, color: '#9ca3af', background: '#fff', borderRadius: 14 }}>No se encontraron reservaciones.</div>
       ) : (
         <div style={{ display: 'grid', gap: 10 }}>
           {paginatedBookings.map(booking => {
-            const sc = getStatusStyle(booking.status);
-            const urgent = isUrgent(booking);
+            const sc      = getStatusStyle(booking.status);
             const delayed = isDelayed(booking);
+            const urgent  = isUrgent(booking);
+            const waOpen  = expandedWA === booking.id;
             return (
-              <div key={booking.id} style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: isMobile ? 14 : '16px 20px', border: urgent ? '2px solid #f97316' : '2px solid transparent' }}>
-                {delayed && (
-                  <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '8px 14px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 16 }}>⚠️</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#854d0e' }}>Servicio con más de 10 min de retraso — Programado: {booking.scheduled_time}</span>
-                  </div>
-                )}
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(140px, 1fr))', gap: isMobile ? 10 : 16, alignItems: 'center' }}>
+              <div key={booking.id} style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', border: delayed ? '2px solid #fca5a5' : urgent ? '2px solid #fde68a' : '1.5px solid #e5e7eb', overflow: 'hidden' }}>
+                <div style={{ padding: isMobile ? '12px' : '14px 18px', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr auto auto', gap: isMobile ? 8 : 12, alignItems: 'start' }}>
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                      {urgent && !delayed && <span>⚠️</span>}
-                      <span style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', background: '#eff6ff', padding: '2px 8px', borderRadius: 20, letterSpacing: 0.5 }}>{booking.booking_ref}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', background: '#eff6ff', padding: '2px 8px', borderRadius: 20 }}>{booking.booking_ref}</span>
+                      {delayed && <span style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', background: '#fef2f2', padding: '2px 8px', borderRadius: 20 }}>⏰ Desfasado</span>}
+                      {urgent  && <span style={{ fontSize: 10, fontWeight: 700, color: '#92400e', background: '#fef9c3', padding: '2px 8px', borderRadius: 20 }}>🔔 Urgente</span>}
                     </div>
                     <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 15 }}>{booking.service_name}</div>
                     <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>{booking.customer?.full_name || '—'}</div>
@@ -838,9 +970,36 @@ const AdminViewA = ({
                     <button onClick={() => deleteBooking(booking.id)} style={{ padding: '10px 8px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fef2f2', color: '#991b1b', fontSize: 12, fontWeight: 600, cursor: 'pointer', minHeight: 40 }}>🗑 Eliminar</button>
                   </div>
                 </div>
+
+                {/* ── Botón toggle WhatsApp Log ── */}
+                <div style={{ borderTop: '1px solid #f3f4f6', padding: '8px 18px', display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => setExpandedWA(waOpen ? null : booking.id)}
+                    style={{ padding: '6px 12px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: waOpen ? '#dbeafe' : '#f9fafb', color: waOpen ? '#1e40af' : '#6b7280', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    📱 WhatsApp {waOpen ? '▲' : '▼'}
+                  </button>
+                </div>
+
+                {/* ── WhatsApp Log expandido ── */}
+                {waOpen && (
+                  <div style={{ padding: '0 18px 14px' }}>
+                    <BookingWALog bookingId={booking.id} isMobile={isMobile} />
+                  </div>
+                )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Paginación */}
+      {totalBookingPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 20 }}>
+          <button onClick={() => setBookingsPage(p => Math.max(1, p - 1))} disabled={bookingsPage === 1}
+            style={{ padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e5e7eb', background: bookingsPage === 1 ? '#f9fafb' : '#fff', color: bookingsPage === 1 ? '#9ca3af' : '#374151', fontSize: 13, fontWeight: 600, cursor: bookingsPage === 1 ? 'default' : 'pointer', minHeight: 40 }}>‹ Anterior</button>
+          <span style={{ fontSize: 13, color: '#6b7280', fontWeight: 600 }}>Página {bookingsPage} de {totalBookingPages}</span>
+          <button onClick={() => setBookingsPage(p => Math.min(totalBookingPages, p + 1))} disabled={bookingsPage === totalBookingPages}
+            style={{ padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e5e7eb', background: bookingsPage === totalBookingPages ? '#f9fafb' : '#fff', color: bookingsPage === totalBookingPages ? '#9ca3af' : '#374151', fontSize: 13, fontWeight: 600, cursor: bookingsPage === totalBookingPages ? 'default' : 'pointer', minHeight: 40 }}>Siguiente ›</button>
         </div>
       )}
 
@@ -889,7 +1048,7 @@ const AdminViewA = ({
               <div style={{ maxHeight: 280, overflowY: 'auto', display: 'grid', gap: 8 }}>
                 {operators.length === 0 && <p style={{ color: '#9ca3af', textAlign: 'center', padding: 16, fontSize: 14, fontStyle: 'italic' }}>No hay operadores disponibles.</p>}
                 {operators.filter(op => op && op.id).map(op => {
-                  const opStatus = getOperatorStatus(op.id, selectedBooking);
+                  const opStatus    = getOperatorStatus(op.id, selectedBooking);
                   const isAvailable = opStatus.label === 'Disponible';
                   return (
                     <button key={op.id} onClick={() => assignOperator(selectedBooking.id, op.id)} disabled={assigning === selectedBooking.id}
