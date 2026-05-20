@@ -5,7 +5,7 @@
 // - Eliminar operador: desactivar o eliminar permanentemente
 // - Sistema de rechazo por documentos específicos
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AlertTriangle, Star } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { sendWhatsApp } from './lib/whatsapp';
@@ -69,6 +69,150 @@ const getZoneMapUrl = (lat, lng, radius = 3000) => {
   const GOOGLE_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
   const zoom = radius > 5000 ? 11 : radius > 2000 ? 12 : 13;
   return `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${zoom}&size=400x200&maptype=roadmap&markers=color:blue%7C${lat},${lng}&key=${GOOGLE_KEY}`;
+};
+
+// ── Etiquetas legibles para eventos WA ─────────────────────────────────────
+const EVENT_LABELS = {
+  booking_created:          '📋 Reservación creada',
+  operator_assigned:        '👷 Operador asignado',
+  on_the_way:               '🚗 En camino',
+  llegando:                 '📍 Llegando',
+  arrived:                  '✅ Llegó',
+  washing:                  '🧽 Lavando',
+  done:                     '🏁 Servicio finalizado',
+  booking_cancelled:        '❌ Cancelación',
+  booking_searching:        '🔍 Buscando operador',
+  operator_service_request: '📨 Solicitud de servicio',
+  operator_request_taken:   '✋ Solicitud tomada',
+  operator_request_expired: '⏱ Solicitud expirada',
+  operator_docs_required:   '📋 Docs requeridos',
+  operator_approved:        '✅ Operador aprobado',
+  operator_rejected:        '🚫 Operador rechazado',
+  admin_assignment_needed:  '🚨 Asignación requerida',
+  free_message:             '✏️ Mensaje libre',
+};
+
+// ── Componente WhatsApp Log por operador ────────────────────────────────────
+const OperatorWALog = ({ operatorId }) => {
+  const { showToast } = useToast();
+  const [logs, setLogs]               = useState([]);
+  const [loading, setLoading]         = useState(false);
+  const [resending, setResending]     = useState(null);
+  const [freeMsg, setFreeMsg]         = useState('');
+  const [freePhone, setFreePhone]     = useState('');
+  const [sendingFree, setSendingFree] = useState(false);
+  const [showFree, setShowFree]       = useState(false);
+
+  const getToken = () => {
+    try { const s = localStorage.getItem('mazclean-auth'); if (s) { const p = JSON.parse(s); return p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY; } } catch {}
+    return SUPABASE_ANON_KEY;
+  };
+
+  const fetchLogs = useCallback(async () => {
+    if (!operatorId) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('whatsapp_log').select('*')
+        .eq('operator_id', operatorId)
+        .order('attempted_at', { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      setLogs(data || []);
+    } catch (err) { showToast('Error cargando logs WA: ' + err.message, 'error'); }
+    finally { setLoading(false); }
+  }, [operatorId]);
+
+  useEffect(() => { fetchLogs(); }, [fetchLogs]);
+
+  const resend = async (log) => {
+    setResending(log.id);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: log.event, phone: log.phone, booking: { ...log.booking_data, operator_id: operatorId } }),
+      });
+      const result = await res.json();
+      if (result?.results?.whatsapp?.ok) { showToast('✅ Mensaje reenviado', 'success'); fetchLogs(); }
+      else showToast('❌ Error: ' + (result?.results?.whatsapp?.error || 'desconocido'), 'error');
+    } catch (err) { showToast('Error: ' + err.message, 'error'); }
+    finally { setResending(null); }
+  };
+
+  const sendFreeMessage = async () => {
+    if (!freeMsg.trim() || !freePhone.trim()) { showToast('Escribe teléfono y mensaje', 'error'); return; }
+    setSendingFree(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'free_message', phone: freePhone, booking: { operator_id: operatorId, free_text: freeMsg } }),
+      });
+      const result = await res.json();
+      if (result?.results?.whatsapp?.ok || result?.results?.sms?.ok) {
+        showToast('✅ Enviado', 'success'); setFreeMsg(''); setShowFree(false); fetchLogs();
+      } else showToast('❌ Error: ' + (result?.error || 'desconocido'), 'error');
+    } catch (err) { showToast('Error: ' + err.message, 'error'); }
+    finally { setSendingFree(false); }
+  };
+
+  const statusIcon = (s) => s === 'sent' ? '✅' : s === 'retried' ? '🔄' : '❌';
+
+  return (
+    <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: 10, marginTop: 2 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#374151' }}>📱 Comunicaciones WhatsApp</div>
+        <div style={{ display: 'flex', gap: 5 }}>
+          <button onClick={() => setShowFree(p => !p)} style={{ padding: '3px 8px', borderRadius: 6, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>✏️ Libre</button>
+          <button onClick={fetchLogs} style={{ padding: '3px 8px', borderRadius: 6, border: '1.5px solid #e5e7eb', background: '#f9fafb', color: '#6b7280', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>↻</button>
+        </div>
+      </div>
+      {showFree && (
+        <div style={{ background: '#eff6ff', borderRadius: 8, padding: '10px', marginBottom: 8, border: '1.5px solid #bfdbfe' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#1e40af', marginBottom: 6 }}>✏️ Mensaje libre (SMS fallback si WA falla)</div>
+          <input type="text" placeholder="Teléfono (10 dígitos)" value={freePhone} onChange={e => setFreePhone(e.target.value)}
+            style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1.5px solid #bfdbfe', fontSize: 12, marginBottom: 6, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+          <textarea placeholder="Escribe tu mensaje..." value={freeMsg} onChange={e => setFreeMsg(e.target.value)} rows={2}
+            style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1.5px solid #bfdbfe', fontSize: 12, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+          <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
+            <button onClick={() => { setShowFree(false); setFreeMsg(''); setFreePhone(''); }}
+              style={{ flex: 1, padding: '6px', borderRadius: 6, border: '1.5px solid #e5e7eb', background: '#f9fafb', color: '#6b7280', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Cancelar</button>
+            <button onClick={sendFreeMessage} disabled={sendingFree}
+              style={{ flex: 2, padding: '6px', borderRadius: 6, border: 'none', background: sendingFree ? '#9ca3af' : '#3b82f6', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+              {sendingFree ? '⏳...' : '📤 Enviar'}
+            </button>
+          </div>
+        </div>
+      )}
+      {loading
+        ? <div style={{ textAlign: 'center', padding: '8px 0', color: '#9ca3af', fontSize: 11 }}>Cargando...</div>
+        : logs.length === 0
+          ? <div style={{ textAlign: 'center', padding: '8px 0', color: '#9ca3af', fontSize: 11 }}>Sin mensajes registrados</div>
+          : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {logs.map(log => (
+                <div key={log.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f9fafb', borderRadius: 6, padding: '6px 8px', border: `1px solid ${log.status === 'failed' ? '#fecaca' : '#e5e7eb'}` }}>
+                  <span style={{ fontSize: 12, flexShrink: 0 }}>{statusIcon(log.status)}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#1f2937', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{EVENT_LABELS[log.event] || log.event}</div>
+                    <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>
+                      {new Date(log.attempted_at).toLocaleString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      {log.status === 'retried' && <span style={{ color: '#f59e0b', marginLeft: 4 }}>· reintentado</span>}
+                    </div>
+                    {log.error && <div style={{ fontSize: 10, color: '#ef4444', marginTop: 1 }}>⚠️ {log.error}</div>}
+                  </div>
+                  <button onClick={() => resend(log)} disabled={resending === log.id}
+                    style={{ flexShrink: 0, padding: '3px 6px', borderRadius: 5, border: `1.5px solid ${log.status === 'failed' ? '#fecaca' : '#e5e7eb'}`, background: log.status === 'failed' ? '#fef2f2' : '#f3f4f6', color: log.status === 'failed' ? '#dc2626' : '#6b7280', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 24 }}>
+                    {resending === log.id ? '⏳' : '↩'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )
+      }
+    </div>
+  );
 };
 
 // ── Componente ZonaTab — extraído para evitar IIFE en JSX ───────────────────
@@ -197,6 +341,8 @@ const AdminViewB = ({
   const [commissionReport, setCommissionReport] = useState(null);
 
   const [kpisModal, setKpisModal]   = useState(false);
+  // WA Log expandido por operador
+  const [expandedWA, setExpandedWA] = useState(null);
   // Solicitudes de deposito bancario
   const [depositRequests, setDepositRequests]         = useState([]);
   const [loadingDeposits, setLoadingDeposits]         = useState(false);
@@ -1339,6 +1485,18 @@ const AdminViewB = ({
                         {op.assignment_mode === 'preferente' ? '⭐ Pref.' : '🤖 Auto'}
                       </button>
                     </div>
+
+                    {/* ── Botón toggle WhatsApp Log ── */}
+                    <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: 8 }}>
+                      <button
+                        onClick={() => setExpandedWA(expandedWA === op.id ? null : op.id)}
+                        style={{ width: '100%', padding: '6px 10px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: expandedWA === op.id ? '#dbeafe' : '#f9fafb', color: expandedWA === op.id ? '#1e40af' : '#6b7280', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                        📱 WhatsApp {expandedWA === op.id ? '▲' : '▼'}
+                      </button>
+                    </div>
+
+                    {/* ── WhatsApp Log expandido ── */}
+                    {expandedWA === op.id && <OperatorWALog operatorId={op.id} />}
                   </div>
                 );
               })}
