@@ -1,32 +1,20 @@
-// process-booking-request v5
-// Fix: sendWA usa SUPABASE_ANON_KEY en lugar de SUPABASE_SERVICE_KEY
-// para llamar a send-whatsapp (Verify JWT requiere token válido)
-//
-// Flujo:
-//   Ronda 1 (5 min) → Preferentes disponibles en zona
-//                   → Si no hay Preferentes: Autónomos (sigue siendo Ronda 1)
-//   Ronda 2 (5 min) → Todos (Preferentes + Autónomos), incluyendo quien no respondió ronda 1
-//   Ronda 3 (5 min) → Todos (segunda oportunidad)
-//                   → Si nadie acepta: notifica admin + cliente
-//
-// Filtros de candidatos:
-//   - work_days y work_start/work_end cubren el horario
-//   - Sin solapamiento de horario (+5 min margen)
-//   - Tiempo de traslado real via OpenRouteService (+5 min margen)
-//
-// El cron job process_expired_rounds() detecta request_expires_at < NOW()
-// y llama expire-booking-round para avanzar rondas automáticamente.
+// process-booking-request v6
+// Fix definitivo: ANON_KEY hardcodeada (es pública, igual que en el frontend)
+// SUPABASE_ANON_KEY deprecated en Supabase → usamos valor directo
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')             ?? ''
+const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')              ?? ''
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-const SUPABASE_ANON_KEY    = Deno.env.get('SUPABASE_ANON_KEY')         ?? ''
 const ORS_API_KEY          = Deno.env.get('ORS_API_KEY')               ?? ''
-const APP_URL              = 'https://mazclean.vercel.app'
-const RONDA_DURATION_MIN   = 5
-const TRAVEL_BUFFER_MIN    = 5
+
+// ANON KEY hardcodeada — es pública por diseño (igual que VITE_SUPABASE_ANON_KEY en frontend)
+const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzZG1rYndtdGhyamd2eXV2Y21tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTAwMTksImV4cCI6MjA4ODc2NjAxOX0.j3NP8hVvBt_KPN-nqVLpr_FvTUcIvGMwnYHieor5QCM'
+
+const APP_URL            = 'https://mazclean.vercel.app'
+const RONDA_DURATION_MIN = 5
+const TRAVEL_BUFFER_MIN  = 5
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -46,13 +34,8 @@ async function getTravelMinutes(
   try {
     const res = await fetch('https://api.openrouteservice.org/v2/directions/driving-car', {
       method: 'POST',
-      headers: {
-        'Authorization': ORS_API_KEY,
-        'Content-Type':  'application/json',
-      },
-      body: JSON.stringify({
-        coordinates: [[fromLng, fromLat], [toLng, toLat]],
-      }),
+      headers: { 'Authorization': ORS_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coordinates: [[fromLng, fromLat], [toLng, toLat]] }),
     })
     if (!res.ok) return null
     const data = await res.json()
@@ -76,14 +59,12 @@ async function filterByTravelTime(
   if (!toLat || !toLng) return candidates
 
   const bookingDate     = booking.scheduled_date
-  const bookingStartStr = booking.scheduled_time_from // "HH:MM:SS"
+  const bookingStartStr = booking.scheduled_time_from
   const [bh, bm]        = bookingStartStr.split(':').map(Number)
   const bookingStartMin = bh * 60 + bm
-
   const filtered: any[] = []
 
   for (const candidate of candidates) {
-    // Obtener último servicio del operador ese día para calcular origen
     const { data: lastBooking } = await supabase
       .from('bookings')
       .select('address_lat, address_lng, scheduled_time_to')
@@ -104,7 +85,6 @@ async function filterByTravelTime(
       const [h, m] = (lastBooking.scheduled_time_to as string).split(':').map(Number)
       availableAt  = h * 60 + m
     } else {
-      // Sin servicios ese día — sale desde base
       const { data: profile } = await supabase
         .from('profiles')
         .select('base_lat, base_lng')
@@ -116,7 +96,6 @@ async function filterByTravelTime(
     }
 
     if (!fromLat || !fromLng) {
-      // Sin coordenadas — no filtramos, incluimos
       filtered.push(candidate)
       continue
     }
@@ -124,13 +103,11 @@ async function filterByTravelTime(
     const travelMin = await getTravelMinutes(fromLat, fromLng, toLat, toLng)
 
     if (travelMin === null) {
-      // ORS no disponible — incluimos como fallback permisivo
       filtered.push(candidate)
       continue
     }
 
     const totalNeeded = availableAt + travelMin + TRAVEL_BUFFER_MIN
-
     if (totalNeeded <= bookingStartMin) {
       filtered.push({ ...candidate, travel_minutes: travelMin })
     } else {
@@ -142,15 +119,14 @@ async function filterByTravelTime(
 }
 
 // ── Enviar WhatsApp via send-whatsapp ─────────────────────────────────────────
-// IMPORTANTE: usa ANON_KEY — send-whatsapp tiene Verify JWT ON
-async function sendWA(event: string, phone: string, bookingData: any) {
+async function sendWA(event: string, phone: string, bookingData: any): Promise<boolean> {
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
       method:  'POST',
       headers: {
         'Content-Type':  'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'apikey':        SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${ANON_KEY}`,
+        'apikey':        ANON_KEY,
       },
       body: JSON.stringify({ event, phone, booking: bookingData }),
     })
@@ -161,9 +137,8 @@ async function sendWA(event: string, phone: string, bookingData: any) {
     }
     const result = await res.json()
     const ok = result?.results?.whatsapp?.ok || result?.results?.sms?.ok || false
-    if (!ok) {
-      console.error(`sendWA [${event}] falló:`, JSON.stringify(result))
-    }
+    if (!ok) console.error(`sendWA [${event}] falló:`, JSON.stringify(result))
+    else console.log(`sendWA [${event}] OK → ${phone}`)
     return ok
   } catch (e) {
     console.error(`Error enviando WA [${event}]:`, e)
@@ -177,8 +152,8 @@ async function callNextRound(bookingId: string, ronda: number) {
     method:  'POST',
     headers: {
       'Content-Type':  'application/json',
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      'apikey':        SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${ANON_KEY}`,
+      'apikey':        ANON_KEY,
     },
     body: JSON.stringify({ booking_id: bookingId, ronda }),
   })
@@ -215,7 +190,6 @@ serve(async (req) => {
       })
     }
 
-    // Si ya tiene operador asignado, no hacer nada
     if (booking.operator_id) {
       return new Response(JSON.stringify({ message: 'Booking ya asignado', booking_id }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -266,7 +240,6 @@ serve(async (req) => {
     }
 
     // ── 4. Obtener candidatos según ronda ─────────────────────────────────────
-    // Ronda 1: solo Preferentes | Ronda 2+: todos (Preferentes + Autónomos)
     let { data: candidates, error: candidatesError } = await supabase
       .rpc('get_available_operators', { p_booking_id: booking_id, p_ronda: ronda })
 
@@ -327,7 +300,6 @@ serve(async (req) => {
 
     if (insertError) {
       console.error('Error insertando booking_requests:', insertError)
-      // No falla — puede ser UNIQUE constraint si ya existe
     }
 
     // ── 10. Notificar operadores por WhatsApp ─────────────────────────────────
