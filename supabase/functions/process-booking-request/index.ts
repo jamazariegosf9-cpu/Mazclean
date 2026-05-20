@@ -1,18 +1,32 @@
-// process-booking-request v3
-// Motor principal del sistema de asignación automática por rondas.
+// process-booking-request v5
+// Fix: sendWA usa SUPABASE_ANON_KEY en lugar de SUPABASE_SERVICE_KEY
+// para llamar a send-whatsapp (Verify JWT requiere token válido)
+//
 // Flujo:
-//   Ronda 1 (5 min) → operadores admin_asignado en zona
-//   Ronda 2 (5 min) → operadores autonomo en zona
-//   Ronda 3 (5 min) → segunda oportunidad (mismos candidatos ronda 2)
-//   Ronda 4         → notifica cliente que seguimos buscando + alerta admin
+//   Ronda 1 (5 min) → Preferentes disponibles en zona
+//                   → Si no hay Preferentes: Autónomos (sigue siendo Ronda 1)
+//   Ronda 2 (5 min) → Todos (Preferentes + Autónomos), incluyendo quien no respondió ronda 1
+//   Ronda 3 (5 min) → Todos (segunda oportunidad)
+//                   → Si nadie acepta: notifica admin + cliente
+//
+// Filtros de candidatos:
+//   - work_days y work_start/work_end cubren el horario
+//   - Sin solapamiento de horario (+5 min margen)
+//   - Tiempo de traslado real via OpenRouteService (+5 min margen)
+//
+// El cron job process_expired_rounds() detecta request_expires_at < NOW()
+// y llama expire-booking-round para avanzar rondas automáticamente.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const SUPABASE_URL            = Deno.env.get('SUPABASE_URL') ?? ''
-const SUPABASE_SERVICE_KEY    = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-const APP_URL                 = 'https://mazclean.vercel.app'
-const RONDA_DURATION_MINUTES  = 5
+const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')             ?? ''
+const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+const SUPABASE_ANON_KEY    = Deno.env.get('SUPABASE_ANON_KEY')         ?? ''
+const ORS_API_KEY          = Deno.env.get('ORS_API_KEY')               ?? ''
+const APP_URL              = 'https://mazclean.vercel.app'
+const RONDA_DURATION_MIN   = 5
+const TRAVEL_BUFFER_MIN    = 5
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -23,71 +37,154 @@ function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 }
 
-async function sendWhatsApp(event: string, phone: string, bookingData: any) {
+// ── OpenRouteService: tiempo de traslado en minutos ───────────────────────────
+async function getTravelMinutes(
+  fromLat: number, fromLng: number,
+  toLat: number,   toLng: number
+): Promise<number | null> {
+  if (!ORS_API_KEY) return null
+  try {
+    const res = await fetch('https://api.openrouteservice.org/v2/directions/driving-car', {
+      method: 'POST',
+      headers: {
+        'Authorization': ORS_API_KEY,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({
+        coordinates: [[fromLng, fromLat], [toLng, toLat]],
+      }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    const seconds = data?.routes?.[0]?.summary?.duration
+    if (!seconds) return null
+    return Math.ceil(seconds / 60)
+  } catch (e) {
+    console.error('ORS error:', e)
+    return null
+  }
+}
+
+// ── Filtrar candidatos por tiempo de traslado real ────────────────────────────
+async function filterByTravelTime(
+  candidates: any[],
+  booking: any,
+  supabase: any
+): Promise<any[]> {
+  const toLat = booking.address_lat
+  const toLng = booking.address_lng
+  if (!toLat || !toLng) return candidates
+
+  const bookingDate     = booking.scheduled_date
+  const bookingStartStr = booking.scheduled_time_from // "HH:MM:SS"
+  const [bh, bm]        = bookingStartStr.split(':').map(Number)
+  const bookingStartMin = bh * 60 + bm
+
+  const filtered: any[] = []
+
+  for (const candidate of candidates) {
+    // Obtener último servicio del operador ese día para calcular origen
+    const { data: lastBooking } = await supabase
+      .from('bookings')
+      .select('address_lat, address_lng, scheduled_time_to')
+      .eq('operator_id', candidate.operator_id)
+      .eq('scheduled_date', bookingDate)
+      .not('status', 'in', '("cancelado","finalizado")')
+      .order('scheduled_time_to', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    let fromLat: number
+    let fromLng: number
+    let availableAt: number
+
+    if (lastBooking?.address_lat) {
+      fromLat     = lastBooking.address_lat
+      fromLng     = lastBooking.address_lng
+      const [h, m] = (lastBooking.scheduled_time_to as string).split(':').map(Number)
+      availableAt  = h * 60 + m
+    } else {
+      // Sin servicios ese día — sale desde base
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('base_lat, base_lng')
+        .eq('id', candidate.operator_id)
+        .single()
+      fromLat     = profile?.base_lat
+      fromLng     = profile?.base_lng
+      availableAt = 0
+    }
+
+    if (!fromLat || !fromLng) {
+      // Sin coordenadas — no filtramos, incluimos
+      filtered.push(candidate)
+      continue
+    }
+
+    const travelMin = await getTravelMinutes(fromLat, fromLng, toLat, toLng)
+
+    if (travelMin === null) {
+      // ORS no disponible — incluimos como fallback permisivo
+      filtered.push(candidate)
+      continue
+    }
+
+    const totalNeeded = availableAt + travelMin + TRAVEL_BUFFER_MIN
+
+    if (totalNeeded <= bookingStartMin) {
+      filtered.push({ ...candidate, travel_minutes: travelMin })
+    } else {
+      console.log(`Operador ${candidate.operator_id} filtrado por ORS: necesita ${totalNeeded} min pero servicio es a ${bookingStartMin} min`)
+    }
+  }
+
+  return filtered
+}
+
+// ── Enviar WhatsApp via send-whatsapp ─────────────────────────────────────────
+// IMPORTANTE: usa ANON_KEY — send-whatsapp tiene Verify JWT ON
+async function sendWA(event: string, phone: string, bookingData: any) {
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
       method:  'POST',
       headers: {
         'Content-Type':  'application/json',
-        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-        'apikey':        SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'apikey':        SUPABASE_ANON_KEY,
       },
       body: JSON.stringify({ event, phone, booking: bookingData }),
     })
-    return res.ok
+    if (!res.ok) {
+      const errBody = await res.text()
+      console.error(`sendWA [${event}] HTTP ${res.status}:`, errBody)
+      return false
+    }
+    const result = await res.json()
+    const ok = result?.results?.whatsapp?.ok || result?.results?.sms?.ok || false
+    if (!ok) {
+      console.error(`sendWA [${event}] falló:`, JSON.stringify(result))
+    }
+    return ok
   } catch (e) {
-    console.error(`Error enviando WhatsApp [${event}]:`, e)
+    console.error(`Error enviando WA [${event}]:`, e)
     return false
   }
 }
 
-async function sendWhatsAppToOperator(phone: string, booking: any, ronda: number) {
-  const timeFrom = booking.scheduled_time_from?.slice(0, 5) ?? ''
-  const timeTo   = booking.scheduled_time_to?.slice(0, 5) ?? ''
-  const message  = [
-    `🚗 Maz Clean — Nueva solicitud de servicio!`,
-    ``,
-    `Ref: ${booking.booking_ref ?? ''}`,
-    `Servicio: ${booking.service_name ?? ''}`,
-    `Fecha: ${booking.scheduled_date ?? ''}`,
-    `Horario solicitado: ${timeFrom} a ${timeTo} hrs`,
-    `Pago: $${booking.total_price ?? ''} MXN`,
-    ``,
-    `⏱ Tienes ${RONDA_DURATION_MINUTES} minutos para aceptar.`,
-    ``,
-    `Entra a la app para aceptar:`,
-    `${APP_URL}`,
-  ].join('\n')
-
-  return sendWhatsApp('operator_service_request', phone, { ...booking, custom_message: message })
+// ── Llamar a la siguiente ronda ───────────────────────────────────────────────
+async function callNextRound(bookingId: string, ronda: number) {
+  await fetch(`${SUPABASE_URL}/functions/v1/process-booking-request`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'apikey':        SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ booking_id: bookingId, ronda }),
+  })
 }
 
-async function scheduleNextRound(bookingId: string, ronda: number, delayMinutes: number) {
-  const delayMs = delayMinutes * 60 * 1000
-  const runAfterDelay = async () => {
-    await new Promise(resolve => setTimeout(resolve, delayMs))
-    try {
-      await fetch(`${SUPABASE_URL}/functions/v1/expire-booking-round`, {
-        method:  'POST',
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-          'apikey':        SUPABASE_SERVICE_KEY,
-        },
-        body: JSON.stringify({ booking_id: bookingId, ronda }),
-      })
-    } catch (e) {
-      console.error('Error llamando expire-booking-round:', e)
-    }
-  }
-  // @ts-ignore
-  if (typeof EdgeRuntime !== 'undefined') {
-    EdgeRuntime.waitUntil(runAfterDelay())
-  } else {
-    runAfterDelay()
-  }
-}
-
+// ── Handler principal ─────────────────────────────────────────────────────────
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -98,14 +195,14 @@ serve(async (req) => {
 
     if (!booking_id) {
       return new Response(JSON.stringify({ error: 'booking_id requerido' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
     const supabase  = getSupabase()
-    const expiresAt = new Date(Date.now() + RONDA_DURATION_MINUTES * 60 * 1000).toISOString()
+    const expiresAt = new Date(Date.now() + RONDA_DURATION_MIN * 60 * 1000).toISOString()
 
-    // ── 1. Obtener datos del booking ──────────────────────────────────────────
+    // ── 1. Obtener booking con datos del cliente ───────────────────────────────
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
       .select('*, client:client_id(phone, full_name)')
@@ -114,103 +211,108 @@ serve(async (req) => {
 
     if (bookingError || !booking) {
       return new Response(JSON.stringify({ error: 'Booking no encontrado' }), {
-        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
+    // Si ya tiene operador asignado, no hacer nada
     if (booking.operator_id) {
-      return new Response(JSON.stringify({ message: 'Booking ya tiene operador asignado', booking_id }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      return new Response(JSON.stringify({ message: 'Booking ya asignado', booking_id }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    const clientPhone = booking.client?.phone || booking.client_phone || null
+    const clientPhone = booking.client?.phone || null
 
-    // ── 2. Ronda 4 → 3 rondas fallaron ───────────────────────────────────────
-    if (ronda >= 4) {
+    const bookingPayload = {
+      booking_ref:         booking.booking_ref,
+      service_name:        booking.service_name,
+      scheduled_date:      booking.scheduled_date,
+      scheduled_time_from: booking.scheduled_time_from,
+      scheduled_time_to:   booking.scheduled_time_to,
+      total_price:         booking.total_price,
+      address_line:        booking.address_line,
+      booking_id:          booking.id,
+    }
+
+    // ── 2. Ronda 1: notificar booking_created al cliente ──────────────────────
+    if (ronda === 1 && clientPhone) {
+      await sendWA('booking_created', clientPhone, bookingPayload)
+    }
+
+    // ── 3. Rondas agotadas (> 3): notificar admin + cliente ───────────────────
+    if (ronda > 3) {
       await supabase
         .from('bookings')
-        .update({
-          current_ronda:      4,
-          request_expires_at: null,
-          status:             'pendiente',
-          updated_at:         new Date().toISOString(),
-        })
+        .update({ current_ronda: 3, request_expires_at: null, updated_at: new Date().toISOString() })
         .eq('id', booking_id)
 
-      const bookingData = {
-        booking_ref:         booking.booking_ref,
-        service_name:        booking.service_name,
-        scheduled_date:      booking.scheduled_date,
-        scheduled_time_from: booking.scheduled_time_from,
-        scheduled_time_to:   booking.scheduled_time_to,
-        address_line:        booking.address_line,
-        total_price:         booking.total_price,
-      }
-
-      // ── Notificar al CLIENTE que seguimos buscando ────────────────────────
       if (clientPhone) {
-        await sendWhatsApp('booking_searching', clientPhone, {
-          ...bookingData,
-          client_name: booking.client?.full_name || 'cliente',
-        })
-        console.log(`Cliente notificado (booking_searching): ${clientPhone}`)
+        await sendWA('booking_searching', clientPhone, bookingPayload)
       }
 
-      // ── Notificar a todos los admins ──────────────────────────────────────
       const { data: admins } = await supabase
-        .from('profiles')
-        .select('phone, full_name')
-        .eq('role', 'admin')
+        .from('profiles').select('phone').eq('role', 'admin')
 
       for (const admin of admins ?? []) {
         if (admin.phone) {
-          await sendWhatsApp('admin_assignment_needed', admin.phone, bookingData)
+          await sendWA('admin_assignment_needed', admin.phone, bookingPayload)
         }
       }
 
-      return new Response(JSON.stringify({ message: 'Ronda 4: cliente y admin notificados', booking_id }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      return new Response(JSON.stringify({ message: 'Rondas agotadas: admin y cliente notificados', booking_id }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    // ── 3. Obtener candidatos disponibles ─────────────────────────────────────
-    const { data: candidates, error: candidatesError } = await supabase
+    // ── 4. Obtener candidatos según ronda ─────────────────────────────────────
+    // Ronda 1: solo Preferentes | Ronda 2+: todos (Preferentes + Autónomos)
+    let { data: candidates, error: candidatesError } = await supabase
       .rpc('get_available_operators', { p_booking_id: booking_id, p_ronda: ronda })
 
     if (candidatesError) {
       console.error('Error obteniendo candidatos:', candidatesError)
       return new Response(JSON.stringify({ error: candidatesError.message }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    // ── 4. Sin candidatos → saltar a siguiente ronda ──────────────────────────
+    // ── 5. Ronda 1 sin Preferentes → fallback inmediato a Autónomos ──────────
+    if (ronda === 1 && (!candidates || candidates.length === 0)) {
+      console.log('Ronda 1: sin Preferentes disponibles, buscando Autónomos...')
+      const { data: autonomos } = await supabase
+        .rpc('get_available_operators', { p_booking_id: booking_id, p_ronda: 2 })
+      candidates = autonomos || []
+    }
+
+    // ── 6. Sin candidatos → avanzar a siguiente ronda ─────────────────────────
     if (!candidates || candidates.length === 0) {
       console.log(`Ronda ${ronda}: sin candidatos, avanzando a ronda ${ronda + 1}`)
-      const nextRonda = ronda + 1
-      await fetch(`${SUPABASE_URL}/functions/v1/process-booking-request`, {
-        method:  'POST',
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-          'apikey':        SUPABASE_SERVICE_KEY,
-        },
-        body: JSON.stringify({ booking_id, ronda: nextRonda }),
-      })
-      return new Response(JSON.stringify({ message: `Ronda ${ronda} sin candidatos, saltando a ronda ${nextRonda}`, booking_id }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      await callNextRound(booking_id, ronda + 1)
+      return new Response(JSON.stringify({ message: `Ronda ${ronda} sin candidatos`, booking_id }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    // ── 5. Actualizar booking ─────────────────────────────────────────────────
+    // ── 7. Filtrar candidatos por tiempo de traslado (OpenRouteService) ───────
+    const filteredCandidates = await filterByTravelTime(candidates, booking, supabase)
+
+    if (filteredCandidates.length === 0) {
+      console.log(`Ronda ${ronda}: todos filtrados por ORS, avanzando a ronda ${ronda + 1}`)
+      await callNextRound(booking_id, ronda + 1)
+      return new Response(JSON.stringify({ message: `Ronda ${ronda} sin candidatos tras filtro ORS`, booking_id }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ── 8. Actualizar booking con ronda actual y expiración ───────────────────
     await supabase
       .from('bookings')
       .update({ current_ronda: ronda, request_expires_at: expiresAt, updated_at: new Date().toISOString() })
       .eq('id', booking_id)
 
-    // ── 6. Crear booking_requests ─────────────────────────────────────────────
-    const requests = candidates.map((c: any) => ({
+    // ── 9. Crear booking_requests para cada candidato ─────────────────────────
+    const requests = filteredCandidates.map((c: any) => ({
       booking_id,
       operator_id: c.operator_id,
       ronda,
@@ -225,10 +327,11 @@ serve(async (req) => {
 
     if (insertError) {
       console.error('Error insertando booking_requests:', insertError)
+      // No falla — puede ser UNIQUE constraint si ya existe
     }
 
-    // ── 7. Notificar operadores ───────────────────────────────────────────────
-    const operatorIds = candidates.map((c: any) => c.operator_id)
+    // ── 10. Notificar operadores por WhatsApp ─────────────────────────────────
+    const operatorIds = filteredCandidates.map((c: any) => c.operator_id)
     const { data: operatorProfiles } = await supabase
       .from('profiles')
       .select('id, phone, full_name')
@@ -237,31 +340,31 @@ serve(async (req) => {
     let notifiedCount = 0
     for (const op of operatorProfiles ?? []) {
       if (op.phone) {
-        const sent = await sendWhatsAppToOperator(op.phone, booking, ronda)
+        const sent = await sendWA('operator_service_request', op.phone, {
+          ...bookingPayload,
+          operator_id: op.id,
+        })
         if (sent) notifiedCount++
       }
     }
 
-    console.log(`Ronda ${ronda}: ${candidates.length} candidatos, ${notifiedCount} notificados`)
-
-    // ── 8. Programar expiración ───────────────────────────────────────────────
-    await scheduleNextRound(booking_id, ronda, RONDA_DURATION_MINUTES)
+    console.log(`Ronda ${ronda}: ${filteredCandidates.length} candidatos, ${notifiedCount} notificados`)
 
     return new Response(JSON.stringify({
       success:          true,
       booking_id,
       ronda,
-      candidates_count: candidates.length,
+      candidates_count: filteredCandidates.length,
       notified_count:   notifiedCount,
       expires_at:       expiresAt,
     }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
 
   } catch (err) {
     console.error('Error en process-booking-request:', err)
     return new Response(JSON.stringify({ error: err.message }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 })
