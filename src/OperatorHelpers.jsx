@@ -135,7 +135,7 @@ async function uploadFile({ file, folder, userId, onProgress, onLog }) {
   return path
 }
 
-// ── Convierte cualquier estampa ISO/Supabase a milisegundos universales UTC absolutos ──
+// ── Convierte estampas de Supabase forzando interpretación UTC pura ──
 function getAbsoluteUTCMs(ts) {
   if (!ts) return Date.now();
   try {
@@ -151,7 +151,7 @@ function getAbsoluteUTCMs(ts) {
   }
 }
 
-// ── Hook de Cuenta Regresiva Sincronizado e Inmune a Desfases del Celular ──
+// ── Hook de Cuenta Regresiva Sincronizado e Inmune a Zonas Horarias ──
 function useCountdown(expiresAt, createdAt) {
   const [secondsLeft, setSecondsLeft] = useState(300);
   const timerRef = useRef(null);
@@ -159,51 +159,49 @@ function useCountdown(expiresAt, createdAt) {
   useEffect(() => {
     if (!expiresAt) return;
 
-    // 1. Obtener la estampa de expiración absoluta (del cliente/servidor)
     const tExpire = getAbsoluteUTCMs(expiresAt);
     const tCreate = createdAt ? getAbsoluteUTCMs(createdAt) : (tExpire - 300000);
-    
-    // Duración total original de la ronda (normalmente 300000ms = 5 minutos)
-    const totalRoundMs = tExpire - tCreate;
 
-    const calculateRealRemaining = () => {
-      // Hora actual del dispositivo
-      const nowLocal = new Date().getTime();
-      
-      // Calcular cuántos milisegundos le quedan teóricamente según el dispositivo
-      let msLeft = tExpire - nowLocal;
-      let remaining = Math.ceil(msLeft / 1000);
+    // Duración exacta asignada en el backend por el servidor (Ej: 300 segundos)
+    const totalRoundSeconds = Math.ceil((tExpire - tCreate) / 1000);
 
-      // DETECTOR DE DESFASE: Si el operador abre la app y el cálculo da un número loco
-      // (por ejemplo, mayor a los 5 minutos originales o negativo porque su reloj está atrasado),
-      // calculamos el tiempo restante estimado basándonos en la hora de creación.
-      if (remaining > (totalRoundMs / 1000) || remaining < -5) {
-        // Si el reloj del celular está mal, asumimos el peor escenario seguro:
-        // le damos el beneficio del tiempo restante promedio o lo que dicte la vigencia original.
-        const elapsedSinceCreation = nowLocal - tCreate;
-        remaining = Math.ceil((totalRoundMs - elapsedSinceCreation) / 1000);
+    const calculateRemaining = () => {
+      const nowAbsoluteMs = Date.now();
+
+      // Medimos el tiempo real transcurrido en segundos desde que se creó la orden
+      const secondsElapsed = Math.floor((nowAbsoluteMs - tCreate) / 1000);
+
+      // Tiempo restante = duración de la ronda menos lo que ya transcurrió
+      let remaining = totalRoundSeconds - secondsElapsed;
+
+      // NEUTRALIZADOR DEL DESFASE DE 60 MINUTOS:
+      // Si el huso horario local está alterado y nos da una hora fantasma extra,
+      // la podamos mediante módulo de hora (3600s) para recuperar la sincronía exacta.
+      if (remaining > totalRoundSeconds) {
+        remaining = remaining % 3600;
+        
+        if (remaining > totalRoundSeconds || remaining < 0) {
+          remaining = totalRoundSeconds;
+        }
       }
 
-      // Asegurar que si ya expiró del lado del cliente, muestre 0 inmediatamente
       return Math.max(0, remaining);
     };
 
-    // Establecer el tiempo real que le queda al momento de abrir la pantalla
-    const initialRemaining = calculateRealRemaining();
+    const initialRemaining = calculateRemaining();
     setSecondsLeft(initialRemaining);
-    
+
     let currentSeconds = initialRemaining;
 
-    // 2. Si ya no queda tiempo al abrir la app, marcar expirado de inmediato
     if (currentSeconds <= 0) {
       setSecondsLeft(0);
       return;
     }
 
-    // 3. Descontar segundo a segundo de forma lineal pura
+    // Intervalo lineal puro de descuento uno a uno sin dependencias de fechas
     timerRef.current = setInterval(() => {
       currentSeconds -= 1;
-      
+
       if (currentSeconds <= 0) {
         setSecondsLeft(0);
         clearInterval(timerRef.current);
