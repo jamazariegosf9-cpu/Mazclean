@@ -151,7 +151,7 @@ function getAbsoluteUTCMs(ts) {
   }
 }
 
-// ── Hook de Cuenta Regresiva Corregido de Forma Segura ──
+// ── Hook de Cuenta Regresiva 100% Lineal y Seguro contra Desfases del Dispositivo ──
 function useCountdown(expiresAt, createdAt) {
   const [secondsLeft, setSecondsLeft] = useState(300);
   
@@ -165,25 +165,23 @@ function useCountdown(expiresAt, createdAt) {
     const calculateRemaining = () => {
       const tExpire = getAbsoluteUTCMs(refs.current.expiresAt);
       
-      // Obtener el tiempo UTC absoluto actual sumando el offset local del dispositivo
+      // Obtener el timestamp UNIX absoluto real del dispositivo en milisegundos
       const nowLocal = new Date();
-      const currentAbsoluteUTCMs = nowLocal.getTime();
+      const currentAbsoluteMs = nowLocal.getTime();
 
-      // Cálculo lineal puro basado en marcas temporales UNIX universales
-      const msLeft = tExpire - currentAbsoluteUTCMs;
+      // Cálculo lineal puro basado en la línea temporal universal de UNIX
+      const msLeft = tExpire - currentAbsoluteMs;
       let remaining = Math.ceil(msLeft / 1000);
 
-      // Si por desfase extremo del reloj del celular da un valor ilógico superior a 7 minutos,
-      // calculamos la cuenta regresiva estimada basándonos en la duración estándar de 5 minutos desde la creación
+      // Si por un desfase severo del reloj del celular el número da descabellado (ej: mayor a 7 minutos o negativo absurdo)
       if (remaining > 420 || remaining < -10) {
         if (refs.current.createdAt) {
           const tCreate = getAbsoluteUTCMs(refs.current.createdAt);
-          const totalRoundDurationSecs = Math.max(0, Math.floor((tExpire - tCreate) / 1000));
-          // Si el totalRoundDurationSecs es absurdo o cero por falta de datos correctos, usamos 300 segundos (5 min) por defecto
-          const safeDuration = totalRoundDurationSecs > 0 && totalRoundDurationSecs <= 420 ? totalRoundDurationSecs : 300;
-          return safeDuration;
+          const totalDurationSecs = Math.max(0, Math.floor((tExpire - tCreate) / 1000));
+          // Si la duración calculada es correcta (cerca de 5 minutos), la usamos como fallback seguro, si no, por defecto 300s
+          return totalDurationSecs > 0 && totalDurationSecs <= 420 ? totalDurationSecs : 300;
         }
-        return 0; // Fallback de protección si ya expiró en el servidor
+        return 0; // Fallback extremo de protección si expiró en el servidor
       }
 
       return Math.max(0, remaining);
@@ -354,7 +352,7 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
         </div>
       )}
       {localErr && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#dc2626', fontSize: 13 }}>⚠️ {localErr}</div>}
-      <label style={{ display: 'flex', alignItems: 'center', justifyYontent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', minHeight: 50 }}>
+      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', minHeight: 50 }}>
         📸 {value ? 'Cambiar foto' : 'Tomar foto'}
         <input type="file" accept="image/*" capture={capture} style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }} />
       </label>
@@ -529,7 +527,7 @@ function FotoModal({ photoStep, photoPhase, photosData, photoBooking, isMobile, 
 }
 
 // ── InfografiaItem ──────────────────────────────────────────────────────────
-export function InfografiaItem({ mod, idx, total, setSelectedInfografia, setShowInfografias }) {
+function InfografiaItem({ mod, idx, total, setSelectedInfografia, setShowInfografias }) {
   const hasPrev = idx > 0
   const hasNext = idx < total - 1
   return (
@@ -548,9 +546,9 @@ export function InfografiaItem({ mod, idx, total, setSelectedInfografia, setShow
       </div>
       <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, flexShrink: 0 }}>
         <button onClick={() => setSelectedInfografia(i => i - 1)} disabled={!hasPrev}
-          style={{ flex: 1, padding: '12px', background: hasPrev ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${hasPrev ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, fontSize: 14, fontWeight: 700, color: hasPrev ? '#1e40af' : '#d1d5db', minHeight: 46 }}>← Anterior</button>
+          style={{ flex: 1, padding: '12px', background: hasPrev ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${hasPrev ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, fontSize: 14, fontWeight: 700, color: hasPrev ? '#1e40af' : '#d1d5db', cursor: hasPrev ? 'pointer' : 'not-allowed', minHeight: 46 }}>← Anterior</button>
         <button onClick={() => setSelectedInfografia(i => i + 1)} disabled={!hasNext}
-          style={{ flex: 1, padding: '12px', background: hasNext ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${hasNext ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, fontSize: 14, fontWeight: 700, color: hasNext ? '#1e40af' : '#d1d5db', minHeight: 46 }}>Siguiente →</button>
+          style={{ flex: 1, padding: '12px', background: hasNext ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${hasNext ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, fontSize: 14, fontWeight: 700, color: hasNext ? '#1e40af' : '#d1d5db', cursor: hasNext ? 'pointer' : 'not-allowed', minHeight: 46 }}>Siguiente →</button>
       </div>
     </>
   )
@@ -559,5 +557,5 @@ export function InfografiaItem({ mod, idx, total, setSelectedInfografia, setShow
 export {
   playNotificationSound, vibrateDevice, requestNotificationPermission, showSystemNotification,
   useIsMobile, compressImage, uploadFile, getAbsoluteUTCMs, useCountdown, RequestCard, PhotoUploadServicio,
-  ActivationScreen, LevelBadge, FotoModal
+  ActivationScreen, LevelBadge, FotoModal, InfografiaItem
 };
