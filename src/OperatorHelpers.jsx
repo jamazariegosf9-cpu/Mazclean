@@ -151,57 +151,49 @@ function getAbsoluteUTCMs(ts) {
   }
 }
 
-// ── Hook de Cuenta Regresiva 100% Lineal y Seguro contra Desfases del Dispositivo ──
+// ── Hook de Cuenta Regresiva 100% Inmune a la Hora del Dispositivo ──
 function useCountdown(expiresAt, createdAt) {
+  // Inicializamos con 300 segundos (5 min) por defecto por si las dudas
   const [secondsLeft, setSecondsLeft] = useState(300);
-  
-  const refs = useRef({ expiresAt, createdAt, timerId: null });
-  refs.current.expiresAt = expiresAt;
-  refs.current.createdAt = createdAt;
+  const timerRef = useRef(null);
 
   useEffect(() => {
     if (!expiresAt) return;
 
-    const calculateRemaining = () => {
-      const tExpire = getAbsoluteUTCMs(refs.current.expiresAt);
+    // 1. Calcular la duración total real y fija basada EXCLUSIVAMENTE en los datos de la reserva
+    const tExpire = getAbsoluteUTCMs(expiresAt);
+    const tCreate = createdAt ? getAbsoluteUTCMs(createdAt) : (tExpire - 300000); // Fallback a 5 min si no hay created_at
+    
+    // Obtenemos los segundos totales que debe durar la ronda
+    let totalSecondsDuration = Math.ceil((tExpire - tCreate) / 1000);
+    
+    // Si por alguna razón la base de datos da un número loco o negativo, lo forzamos a los 5 minutos reglamentarios (300s)
+    if (totalSecondsDuration <= 0 || totalSecondsDuration > 600) {
+      totalSecondsDuration = 300;
+    }
+
+    // Establecemos el estado inicial fijo
+    setSecondsLeft(totalSecondsDuration);
+    
+    // Guardamos el valor actual en una variable de control para el intervalo
+    let currentSeconds = totalSecondsDuration;
+
+    // 2. Descontar 1 segundo en cada ciclo sin volver a leer el reloj del celular
+    timerRef.current = setInterval(() => {
+      currentSeconds -= 1;
       
-      // Obtener el timestamp UNIX absoluto real del dispositivo en milisegundos
-      const nowLocal = new Date();
-      const currentAbsoluteMs = nowLocal.getTime();
-
-      // Cálculo lineal puro basado en la línea temporal universal de UNIX
-      const msLeft = tExpire - currentAbsoluteMs;
-      let remaining = Math.ceil(msLeft / 1000);
-
-      // Si por un desfase severo del reloj del celular el número da descabellado (ej: mayor a 7 minutos o negativo absurdo)
-      if (remaining > 420 || remaining < -10) {
-        if (refs.current.createdAt) {
-          const tCreate = getAbsoluteUTCMs(refs.current.createdAt);
-          const totalDurationSecs = Math.max(0, Math.floor((tExpire - tCreate) / 1000));
-          // Si la duración calculada es correcta (cerca de 5 minutos), la usamos como fallback seguro, si no, por defecto 300s
-          return totalDurationSecs > 0 && totalDurationSecs <= 420 ? totalDurationSecs : 300;
-        }
-        return 0; // Fallback extremo de protección si expiró en el servidor
-      }
-
-      return Math.max(0, remaining);
-    };
-
-    setSecondsLeft(calculateRemaining());
-
-    refs.current.timerId = setInterval(() => {
-      const currentRemaining = calculateRemaining();
-      setSecondsLeft(currentRemaining);
-      
-      if (currentRemaining <= 0) {
-        clearInterval(refs.current.timerId);
+      if (currentSeconds <= 0) {
+        setSecondsLeft(0);
+        clearInterval(timerRef.current);
+      } else {
+        setSecondsLeft(currentSeconds);
       }
     }, 1000);
 
     return () => {
-      if (refs.current.timerId) clearInterval(refs.current.timerId);
+      if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [expiresAt]);
+  }, [expiresAt, createdAt]);
 
   return secondsLeft;
 }
