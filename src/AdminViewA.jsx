@@ -651,8 +651,8 @@ const AdminViewA = ({
   return (
     <div style={{ marginTop: 16 }}>
 
-      {/* ── DASHBOARD OPERACIONAL ── */}
-      <div style={{ marginBottom: 20 }}>
+      {/* ── DASHBOARD OPERACIONAL — solo en tab General ── */}
+      {showDashboardOnly && <div style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#1f2937' }}>⚡ Panel Operacional</div>
           <button onClick={fetchDashboard} disabled={dashLoading}
@@ -835,7 +835,7 @@ const AdminViewA = ({
             </div>
           </>
         ) : null}
-      </div>
+      </div>}
 
       {/* ── Si solo mostramos el dashboard, no renderizar lista ── */}
       {!showDashboardOnly && <>
