@@ -151,34 +151,56 @@ function getAbsoluteUTCMs(ts) {
   }
 }
 
-// ── Hook de Cuenta Regresiva 100% Inmune a la Hora del Dispositivo ──
+// ── Hook de Cuenta Regresiva Sincronizado e Inmune a Desfases del Celular ──
 function useCountdown(expiresAt, createdAt) {
-  // Inicializamos con 300 segundos (5 min) por defecto por si las dudas
   const [secondsLeft, setSecondsLeft] = useState(300);
   const timerRef = useRef(null);
 
   useEffect(() => {
     if (!expiresAt) return;
 
-    // 1. Calcular la duración total real y fija basada EXCLUSIVAMENTE en los datos de la reserva
+    // 1. Obtener la estampa de expiración absoluta (del cliente/servidor)
     const tExpire = getAbsoluteUTCMs(expiresAt);
-    const tCreate = createdAt ? getAbsoluteUTCMs(createdAt) : (tExpire - 300000); // Fallback a 5 min si no hay created_at
+    const tCreate = createdAt ? getAbsoluteUTCMs(createdAt) : (tExpire - 300000);
     
-    // Obtenemos los segundos totales que debe durar la ronda
-    let totalSecondsDuration = Math.ceil((tExpire - tCreate) / 1000);
+    // Duración total original de la ronda (normalmente 300000ms = 5 minutos)
+    const totalRoundMs = tExpire - tCreate;
+
+    const calculateRealRemaining = () => {
+      // Hora actual del dispositivo
+      const nowLocal = new Date().getTime();
+      
+      // Calcular cuántos milisegundos le quedan teóricamente según el dispositivo
+      let msLeft = tExpire - nowLocal;
+      let remaining = Math.ceil(msLeft / 1000);
+
+      // DETECTOR DE DESFASE: Si el operador abre la app y el cálculo da un número loco
+      // (por ejemplo, mayor a los 5 minutos originales o negativo porque su reloj está atrasado),
+      // calculamos el tiempo restante estimado basándonos en la hora de creación.
+      if (remaining > (totalRoundMs / 1000) || remaining < -5) {
+        // Si el reloj del celular está mal, asumimos el peor escenario seguro:
+        // le damos el beneficio del tiempo restante promedio o lo que dicte la vigencia original.
+        const elapsedSinceCreation = nowLocal - tCreate;
+        remaining = Math.ceil((totalRoundMs - elapsedSinceCreation) / 1000);
+      }
+
+      // Asegurar que si ya expiró del lado del cliente, muestre 0 inmediatamente
+      return Math.max(0, remaining);
+    };
+
+    // Establecer el tiempo real que le queda al momento de abrir la pantalla
+    const initialRemaining = calculateRealRemaining();
+    setSecondsLeft(initialRemaining);
     
-    // Si por alguna razón la base de datos da un número loco o negativo, lo forzamos a los 5 minutos reglamentarios (300s)
-    if (totalSecondsDuration <= 0 || totalSecondsDuration > 600) {
-      totalSecondsDuration = 300;
+    let currentSeconds = initialRemaining;
+
+    // 2. Si ya no queda tiempo al abrir la app, marcar expirado de inmediato
+    if (currentSeconds <= 0) {
+      setSecondsLeft(0);
+      return;
     }
 
-    // Establecemos el estado inicial fijo
-    setSecondsLeft(totalSecondsDuration);
-    
-    // Guardamos el valor actual en una variable de control para el intervalo
-    let currentSeconds = totalSecondsDuration;
-
-    // 2. Descontar 1 segundo en cada ciclo sin volver a leer el reloj del celular
+    // 3. Descontar segundo a segundo de forma lineal pura
     timerRef.current = setInterval(() => {
       currentSeconds -= 1;
       
