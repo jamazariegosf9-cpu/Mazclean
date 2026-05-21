@@ -203,9 +203,17 @@ const OperatorView = () => {
       })
       .subscribe();
 
+    // Polling cada 15s como respaldo al Realtime
+    // Supabase Realtime no emite eventos para cambios hechos con service_role
+    // (expire-booking-round usa service_role al crear nuevas rondas)
+    const pollingInterval = setInterval(() => {
+      fetchBookingRequests();
+    }, 15000);
+
     return () => {
       supabase.removeChannel(bookingsChannel);
       supabase.removeChannel(requestsChannel);
+      clearInterval(pollingInterval);
     };
   }, [user]);
 
