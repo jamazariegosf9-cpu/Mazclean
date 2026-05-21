@@ -441,7 +441,10 @@ export default function BookingView({ onNavigate }) {
     // Fix: geocodificar cuando el cliente escribe manualmente y pierde el foco sin seleccionar del dropdown
     inputRef.current.addEventListener('blur', async () => {
       const val = inputRef.current?.value?.trim()
-      if (!val || addressDetailsRef.current) return // ya tiene dirección válida
+      if (!val) return
+      // Esperar 150ms para que place_changed (si se disparó) actualice addressDetailsRef
+      await new Promise(resolve => setTimeout(resolve, 150))
+      if (addressDetailsRef.current) return // ya tiene dirección válida desde place_changed
       try {
         const result = await new window.google.maps.Geocoder().geocode({
           address: val,
