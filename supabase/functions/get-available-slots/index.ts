@@ -1,3 +1,7 @@
+// get-available-slots v2
+// Fix: reservas 'pendiente' sin operador asignado NO bloquean slots de otros operadores
+// Solo bloquean reservas 'confirmado', 'en_camino', 'en_proceso' con operador asignado
+
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -57,14 +61,15 @@ serve(async (req) => {
       })
     }
 
-    // 3. Obtener reservaciones del día para todos los operadores
-    // Incluye 'pendiente' para bloquear slots aunque no haya operador asignado aún
-    const operatorIds = operators.map(o => o.id)
+    // 3. Obtener reservaciones CONFIRMADAS del día
+    // SOLO reservas con operador asignado y status activo bloquean slots
+    // Las reservas 'pendiente' sin operador NO bloquean — otros operadores pueden tomar ese horario
     const { data: bookings, error: bError } = await supabase
       .from('bookings')
-      .select('operator_id, scheduled_time, address_lat, address_lng, service_id, vehicle_type')
+      .select('operator_id, scheduled_time, address_lat, address_lng, service_id, vehicle_type, status')
       .eq('scheduled_date', fecha)
-      .in('status', ['pendiente', 'confirmado', 'en_camino', 'en_proceso'])
+      .in('status', ['confirmado', 'en_camino', 'en_proceso'])
+      .not('operator_id', 'is', null)
       .order('scheduled_time', { ascending: true })
     if (bError) throw bError
 
@@ -92,15 +97,12 @@ serve(async (req) => {
       }
     }
 
-    // 6. Calcular hora actual en CDMX
-    // México abolió el horario de verano en 2023 — siempre UTC-6
+    // 6. Calcular hora actual en CDMX — siempre UTC-6 (México abolió horario de verano 2023)
     const nowUTC = new Date()
     const nowCDMX = new Date(nowUTC.getTime() - 6 * 60 * 60 * 1000)
     const todayCDMX = nowCDMX.toISOString().split('T')[0]
     const isToday = fecha === todayCDMX
     const currentMinutesCDMX = nowCDMX.getUTCHours() * 60 + nowCDMX.getUTCMinutes()
-    // Para reservas del mismo día: 15 min de anticipación mínima
-    // Para reservas futuras: no aplica restricción de anticipación
     const MIN_ADVANCE_MINUTES = isToday ? 15 : 0
 
     // Día de la semana en español para filtrar operadores
@@ -125,7 +127,6 @@ serve(async (req) => {
     }, BUSINESS_END)
 
     // Generar slots dinámicamente según horario real de operadores
-    // Incluir el slot exacto de maxEnd (hora límite para recibir servicios)
     const allSlots: string[] = []
     for (let h = minStart; h <= maxEnd; h++) {
       allSlots.push(`${String(h).padStart(2,'0')}:00`)
@@ -138,44 +139,38 @@ serve(async (req) => {
       const slotMinutes = slotH * 60 + slotM
       const slotEndMinutes = slotMinutes + serviceDuration
 
-      // Fin de jornada — el operador recibe servicios HASTA maxEnd inclusive
       if (slotMinutes > maxEnd * 60) {
         return { time: slot, available: false, suggested: false, reason: 'Fuera de horario' }
       }
 
-      // Filtrar slots pasados si es hoy en CDMX
       if (isToday && slotMinutes < currentMinutesCDMX + MIN_ADVANCE_MINUTES) {
         return { time: slot, available: false, suggested: false, reason: 'Horario ya pasado' }
       }
 
       // Verificar cada operador que trabaja ese día
       for (const operator of operadoresDelDia) {
-        // Verificar que el slot está dentro del horario del operador
-        const opStart = operator.work_start ? parseInt(operator.work_start.split(':')[0]) * 60 + parseInt(operator.work_start.split(':')[1]) : BUSINESS_START * 60
-        const opEnd = operator.work_end ? parseInt(operator.work_end.split(':')[0]) * 60 + parseInt(operator.work_end.split(':')[1]) : BUSINESS_END * 60
+        const opStart = operator.work_start
+          ? parseInt(operator.work_start.split(':')[0]) * 60 + parseInt(operator.work_start.split(':')[1])
+          : BUSINESS_START * 60
+        const opEnd = operator.work_end
+          ? parseInt(operator.work_end.split(':')[0]) * 60 + parseInt(operator.work_end.split(':')[1])
+          : BUSINESS_END * 60
+
         // work_end = hora límite para RECIBIR servicios, no para terminarlos
         if (slotMinutes < opStart || slotMinutes >= opEnd) continue
-        // Reservaciones asignadas a este operador
+
+        // Solo reservas confirmadas con operador asignado bloquean este operador
         const opBookings = (bookings || [])
           .filter(b => b.operator_id === operator.id)
-          .sort((a, b) => a.scheduled_time.localeCompare(b.scheduled_time))
-
-        // Reservaciones pendientes sin operador asignado (bloquean a todos los operadores)
-        const pendingBookings = (bookings || [])
-          .filter(b => !b.operator_id)
-          .sort((a, b) => a.scheduled_time.localeCompare(b.scheduled_time))
-
-        // Combinar ambas listas para calcular ocupación real
-        const allOpBookings = [...opBookings, ...pendingBookings]
           .sort((a, b) => a.scheduled_time.localeCompare(b.scheduled_time))
 
         // Calcular ocupación del operador en este slot
         let operatorFree = true
         let prevEndLat = BASE_LAT
         let prevEndLng = BASE_LNG
-        let prevEndMinutes = BUSINESS_START * 60
+        let prevEndMinutes = opStart
 
-        for (const booking of allOpBookings) {
+        for (const booking of opBookings) {
           const [bH, bM] = booking.scheduled_time.split(':').map(Number)
           const bStart = bH * 60 + bM
           const bService = existingServicesMap[booking.service_id]
@@ -188,13 +183,12 @@ serve(async (req) => {
           const bDuration = bDurationMap[booking.vehicle_type] ?? 45
           const bEnd = bStart + bDuration
 
-          // Conflicto directo: el slot se superpone con esta reserva
           if (slotMinutes < bEnd && slotEndMinutes > bStart) {
             operatorFree = false
             break
           }
-          prevEndLat = booking.address_lat ?? BASE_LAT
-          prevEndLng = booking.address_lng ?? BASE_LNG
+          prevEndLat     = booking.address_lat ?? BASE_LAT
+          prevEndLng     = booking.address_lng ?? BASE_LNG
           prevEndMinutes = bEnd
         }
 
@@ -207,15 +201,12 @@ serve(async (req) => {
         if (slotMinutes < earliestAvailable) continue
 
         // Este operador PUEDE hacer este slot
-        // Es "sugerido" si el operador ya está cerca (viaje <= 15 min)
-        const isSuggested = travelTime <= 15
-
         return {
-          time:        slot,
-          available:   true,
-          suggested:   isSuggested,
-          operator_id: operator.id,
-          operator_name: operator.full_name,
+          time:           slot,
+          available:      true,
+          suggested:      travelTime <= 15,
+          operator_id:    operator.id,
+          operator_name:  operator.full_name,
           travel_minutes: travelTime,
         }
       }
