@@ -141,23 +141,38 @@ async function uploadFile({ file, folder, userId, onProgress, onLog }) {
 }
 
 // ── Parsear timestamp de Supabase correctamente en todos los browsers ──────────
-// Supabase devuelve '2026-05-21 17:40:02.343+00' con espacio en lugar de T
-// Algunos browsers no parsean correctamente → NaN. Normalizamos a ISO estándar.
+// Corrección: Validar formatos robustamente para evitar fechas inválidas y NaN:NaN
 function parseSupabaseTimestamp(ts) {
   if (!ts) return new Date(0);
-  return new Date(ts.toString().replace(' ', 'T').replace('+00', '+00:00'));
+  
+  // Si ya es un objeto Date válido, retornar directamente
+  if (ts instanceof Date && !isNaN(ts.getTime())) return ts;
+  
+  try {
+    const str = ts.toString().trim();
+    // Reemplazar espacios intermedios por T para cumplimiento ISO si no lo tiene
+    const isoStr = str.includes(' ') ? str.replace(' ', 'T').replace('+00', '+00:00') : str;
+    const parsedDate = new Date(isoStr);
+    
+    return isNaN(parsedDate.getTime()) ? new Date(0) : parsedDate;
+  } catch (e) {
+    console.error("Error parseando timestamp:", e);
+    return new Date(0);
+  }
 }
 
 // ── Countdown hook: devuelve segundos restantes hasta expires_at ──────────────
 function useCountdown(expiresAt) {
   const [seconds, setSeconds] = useState(() => {
     if (!expiresAt) return 0;
-    return Math.max(0, Math.floor((parseSupabaseTimestamp(expiresAt) - Date.now()) / 1000));
+    const target = parseSupabaseTimestamp(expiresAt).getTime();
+    return Math.max(0, Math.floor((target - Date.now()) / 1000));
   });
   useEffect(() => {
     if (!expiresAt) return;
     const tick = () => {
-      const remaining = Math.max(0, Math.floor((parseSupabaseTimestamp(expiresAt) - Date.now()) / 1000));
+      const target = parseSupabaseTimestamp(expiresAt).getTime();
+      const remaining = Math.max(0, Math.floor((target - Date.now()) / 1000));
       setSeconds(remaining);
     };
     tick();
