@@ -350,7 +350,7 @@ const AdminViewA = ({
       const today = new Date().toISOString().slice(0, 10)
 
       const [bkRes, opRes, zoneRes, depRes, incRes] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/bookings?select=id,status,scheduled_date,operator_id,booking_ref,service_name,total_price,client_id,scheduled_time_from`, { headers: h }),
+        fetch(`${SUPABASE_URL}/rest/v1/bookings?select=id,status,scheduled_date,operator_id,booking_ref,service_name,total_price,client_id,scheduled_time_from,created_at`, { headers: h }),
         fetch(`${SUPABASE_URL}/rest/v1/profiles?role=eq.operador&select=id,full_name,phone,operator_status,is_certified,membership_status,membership_end_at,operator_level,rating_avg`, { headers: h }),
         fetch(`${SUPABASE_URL}/rest/v1/operator_zone_requests?status=eq.pendiente&select=id,operator_id,new_address,new_radius,reason_type,created_at,operator:operator_id(full_name,phone)`, { headers: h }),
         fetch(`${SUPABASE_URL}/rest/v1/membership_requests?status=eq.pendiente&select=id,user_id,amount,created_at,referral_code,profile:user_id(full_name,phone)`, { headers: h }),
@@ -943,6 +943,7 @@ const AdminViewA = ({
                       {delayed && <span style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', background: '#fef2f2', padding: '2px 8px', borderRadius: 20 }}>⏰ Desfasado</span>}
                       {urgent  && <span style={{ fontSize: 10, fontWeight: 700, color: '#92400e', background: '#fef9c3', padding: '2px 8px', borderRadius: 20 }}>🔔 Urgente</span>}
                     </div>
+                    {booking.created_at && <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 4 }}>Reservado: {new Date(booking.created_at).toLocaleString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>}
                     <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 15 }}>{booking.service_name}</div>
                     <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>{booking.customer?.full_name || '—'}</div>
                     <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 1 }}>📞 {booking.customer?.phone || '—'}</div>
