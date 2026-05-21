@@ -154,10 +154,19 @@ function getAbsoluteUTCMs(ts) {
 // ── Hook de Cuenta Regresiva Sincronizado e Inmune a Zonas Horarias ──
 function useCountdown(expiresAt, createdAt) {
   const [secondsLeft, setSecondsLeft] = useState(300);
-  const timerRef = useRef(null);
+  const timerRef    = useRef(null);
+  // Guardar el expiresAt previo para no reiniciar si no cambió
+  const prevExpires = useRef(null);
 
   useEffect(() => {
     if (!expiresAt) return;
+
+    // Si el expiresAt no cambió, NO reiniciar el contador — solo dejar correr
+    if (prevExpires.current === expiresAt) return;
+    prevExpires.current = expiresAt;
+
+    // Limpiar intervalo previo si existía
+    if (timerRef.current) clearInterval(timerRef.current);
 
     const tExpire = getAbsoluteUTCMs(expiresAt);
     const tCreate = createdAt ? getAbsoluteUTCMs(createdAt) : (tExpire - 300000);
@@ -175,11 +184,8 @@ function useCountdown(expiresAt, createdAt) {
       let remaining = totalRoundSeconds - secondsElapsed;
 
       // NEUTRALIZADOR DEL DESFASE DE 60 MINUTOS:
-      // Si el huso horario local está alterado y nos da una hora fantasma extra,
-      // la podamos mediante módulo de hora (3600s) para recuperar la sincronía exacta.
       if (remaining > totalRoundSeconds) {
         remaining = remaining % 3600;
-        
         if (remaining > totalRoundSeconds || remaining < 0) {
           remaining = totalRoundSeconds;
         }
@@ -201,7 +207,6 @@ function useCountdown(expiresAt, createdAt) {
     // Intervalo lineal puro de descuento uno a uno sin dependencias de fechas
     timerRef.current = setInterval(() => {
       currentSeconds -= 1;
-
       if (currentSeconds <= 0) {
         setSecondsLeft(0);
         clearInterval(timerRef.current);
