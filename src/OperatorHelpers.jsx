@@ -140,10 +140,9 @@ function getAbsoluteUTCMs(ts) {
   if (!ts) return Date.now();
   try {
     let str = ts.toString().trim();
-    // Forzar formato estándar ISO para que el motor de JS no asuma hora local
     str = str.includes(' ') ? str.replace(' ', 'T') : str;
     if (!str.endsWith('Z') && !str.includes('+') && !str.includes('-')) {
-      str += 'Z'; // Tratar explícitamente como UTC puro
+      str += 'Z'; 
     }
     const d = new Date(str);
     return isNaN(d.getTime()) ? Date.now() : d.getTime();
@@ -152,11 +151,10 @@ function getAbsoluteUTCMs(ts) {
   }
 }
 
-// ── Hook de Cuenta Regresiva 100% Inmune a Zonas Horarias y Desfases Locales ──
+// ── Hook de Cuenta Regresiva Corregido de Forma Segura ──
 function useCountdown(expiresAt, createdAt) {
   const [secondsLeft, setSecondsLeft] = useState(300);
   
-  // Guardamos las referencias para evitar reinicios innecesarios del intervalo
   const refs = useRef({ expiresAt, createdAt, timerId: null });
   refs.current.expiresAt = expiresAt;
   refs.current.createdAt = createdAt;
@@ -165,45 +163,34 @@ function useCountdown(expiresAt, createdAt) {
     if (!expiresAt) return;
 
     const calculateRemaining = () => {
-      // 1. Obtener los milisegundos universales puros (sin importar la zona horaria del celular)
       const tExpire = getAbsoluteUTCMs(refs.current.expiresAt);
-      const tCreate = refs.current.createdAt ? getAbsoluteUTCMs(refs.current.createdAt) : tExpire - 300000;
-
-      // 2. Duración teórica de la ronda configurada en la BD (generalmente 300000ms = 5 minutos)
-      const totalDurationMs = tExpire - tCreate;
-      const totalDurationSecs = Math.max(0, Math.floor(totalDurationMs / 1000));
-
-      // 3. Calcular la hora UTC actual real basada en el desfase universal de Date()
+      
+      // Obtener el tiempo UTC absoluto actual sumando el offset local del dispositivo
       const nowLocal = new Date();
-      const nowUTCAsLocalMs = Date.UTC(
-        nowLocal.getUTCFullYear(),
-        nowLocal.getUTCMonth(),
-        nowLocal.getUTCDate(),
-        nowLocal.getUTCHours(),
-        nowLocal.getUTCMinutes(),
-        nowLocal.getUTCSeconds(),
-        nowLocal.getUTCMilliseconds()
-      );
+      const currentAbsoluteUTCMs = nowLocal.getTime();
 
-      // 4. Calcular el tiempo transcurrido exacto de forma lineal desde su creación
-      const msElapsedSinceCreation = nowUTCAsLocalMs - tCreate;
-      const secondsElapsed = Math.floor(msElapsedSinceCreation / 1000);
+      // Cálculo lineal puro basado en marcas temporales UNIX universales
+      const msLeft = tExpire - currentAbsoluteUTCMs;
+      let remaining = Math.ceil(msLeft / 1000);
 
-      // 5. El tiempo restante real es la duración total menos el tiempo transcurrido real
-      let remaining = totalDurationSecs - secondsElapsed;
-
-      // Blindaje de seguridad absoluto: si da un número descabellado (ej: más de 5 mins por desfases extremos)
-      if (remaining > totalDurationSecs || remaining < -10) {
-        return 0; // Se marca automáticamente como expirado para proteger el flujo del backend
+      // Si por desfase extremo del reloj del celular da un valor ilógico superior a 7 minutos,
+      // calculamos la cuenta regresiva estimada basándonos en la duración estándar de 5 minutos desde la creación
+      if (remaining > 420 || remaining < -10) {
+        if (refs.current.createdAt) {
+          const tCreate = getAbsoluteUTCMs(refs.current.createdAt);
+          const totalRoundDurationSecs = Math.max(0, Math.floor((tExpire - tCreate) / 1000));
+          // Si el totalRoundDurationSecs es absurdo o cero por falta de datos correctos, usamos 300 segundos (5 min) por defecto
+          const safeDuration = totalRoundDurationSecs > 0 && totalRoundDurationSecs <= 420 ? totalRoundDurationSecs : 300;
+          return safeDuration;
+        }
+        return 0; // Fallback de protección si ya expiró en el servidor
       }
 
       return Math.max(0, remaining);
     };
 
-    // Ajustamos de inmediato el primer renderizado
     setSecondsLeft(calculateRemaining());
 
-    // Disparar el segundero fluido
     refs.current.timerId = setInterval(() => {
       const currentRemaining = calculateRemaining();
       setSecondsLeft(currentRemaining);
@@ -367,7 +354,7 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
         </div>
       )}
       {localErr && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#dc2626', fontSize: 13 }}>⚠️ {localErr}</div>}
-      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', minHeight: 50 }}>
+      <label style={{ display: 'flex', alignItems: 'center', justifyYontent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', minHeight: 50 }}>
         📸 {value ? 'Cambiar foto' : 'Tomar foto'}
         <input type="file" accept="image/*" capture={capture} style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }} />
       </label>
@@ -542,7 +529,7 @@ function FotoModal({ photoStep, photoPhase, photosData, photoBooking, isMobile, 
 }
 
 // ── InfografiaItem ──────────────────────────────────────────────────────────
-function InfografiaItem({ mod, idx, total, setSelectedInfografia, setShowInfografias }) {
+export function InfografiaItem({ mod, idx, total, setSelectedInfografia, setShowInfografias }) {
   const hasPrev = idx > 0
   const hasNext = idx < total - 1
   return (
@@ -569,20 +556,8 @@ function InfografiaItem({ mod, idx, total, setSelectedInfografia, setShowInfogra
   )
 }
 
-// ── Exports ──────────────────────────────────────────────────────────────────
 export {
-  playNotificationSound,
-  vibrateDevice,
-  requestNotificationPermission,
-  showSystemNotification,
-  useIsMobile,
-  compressImage,
-  uploadFile,
-  useCountdown,
-  RequestCard,
-  PhotoUploadServicio,
-  ActivationScreen,
-  LevelBadge,
-  FotoModal,
-  InfografiaItem,
-}
+  playNotificationSound, vibrateDevice, requestNotificationPermission, showSystemNotification,
+  useIsMobile, compressImage, uploadFile, getAbsoluteUTCMs, useCountdown, RequestCard, PhotoUploadServicio,
+  ActivationScreen, LevelBadge, FotoModal
+};
