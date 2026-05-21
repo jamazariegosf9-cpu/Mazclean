@@ -135,7 +135,6 @@ async function uploadFile({ file, folder, userId, onProgress, onLog }) {
   return path
 }
 
-// ── Parsear timestamp de Supabase limpiando anomalías de formato ─────────────
 function parseSupabaseTimestamp(ts) {
   if (!ts) return new Date();
   if (ts instanceof Date && !isNaN(ts.getTime())) return ts;
@@ -149,49 +148,57 @@ function parseSupabaseTimestamp(ts) {
   }
 }
 
-// ── Hook de Cuenta Regresiva Relativa Fluida y Optimizada para Móviles ──────────
+// ── Hook de Cuenta Regresiva Reactivo Inmune a Desfases y Re-renders ──────────
 function useCountdown(expiresAt, createdAt) {
-  const [seconds, setSeconds] = useState(300);
+  const [secondsLeft, setSecondsLeft] = useState(300);
+  
+  // Guardamos las marcas de tiempo en refs para que el setInterval use valores fijos sin reiniciarse
+  const refs = useRef({ expiresAt, createdAt, timerId: null });
+  refs.current.expiresAt = expiresAt;
+  refs.current.createdAt = createdAt;
 
   useEffect(() => {
-    if (!expiresAt || !createdAt) return;
+    if (!expiresAt) return;
 
-    const tCreate = parseSupabaseTimestamp(createdAt).getTime();
-    const tExpire = parseSupabaseTimestamp(expiresAt).getTime();
-    
-    // Duración original calculada desde el servidor (por ejemplo, 300000ms para 5 min)
-    const totalDurationMs = tExpire - tCreate;
-    const totalDurationSeconds = Math.max(0, Math.floor(totalDurationMs / 1000));
-    
-    // Registramos exactamente el milisegundo local en el que el contador se renderizó
-    const localStartTime = Date.now();
+    const calculateSeconds = () => {
+      const nowLocal = Date.now();
+      const tExpire = parseSupabaseTimestamp(refs.current.expiresAt).getTime();
+      const tCreate = refs.current.createdAt ? parseSupabaseTimestamp(refs.current.createdAt).getTime() : nowLocal;
 
-    // Establecemos el valor inicial exacto de segundos restantes según la estampa del servidor
-    const timePassedSinceCreation = Date.now() - localStartTime;
-    const initialSecondsLeft = totalDurationSeconds - Math.floor(timePassedSinceCreation / 1000);
-    setSeconds(Math.max(0, initialSecondsLeft));
+      // Duración estricta de la ronda según base de datos (Ej: 300 segundos)
+      const maxDurationSecs = Math.max(0, Math.floor((tExpire - tCreate) / 1000));
+      
+      // Tiempo real restante en base al reloj del teléfono actual
+      let diffSecs = Math.floor((tExpire - nowLocal) / 1000);
 
-    const interval = setInterval(() => {
-      const currentLocalTime = Date.now();
-      const elapsedLocalMs = currentLocalTime - localStartTime;
+      // Si el reloj local está desfasado (da más del máximo o negativo), forzamos la corrección relativa
+      if (diffSecs > maxDurationSecs || diffSecs < -10) {
+        const elapsedSinceCreation = Math.floor((nowLocal - tCreate) / 1000);
+        diffSecs = maxDurationSecs - (elapsedSinceCreation > 0 ? elapsedSinceCreation : 0);
+      }
 
-      // Restamos el tiempo real transcurrido para calcular los segundos restantes actuales
-      const remainingSeconds = totalDurationSeconds - Math.floor(elapsedLocalMs / 1000);
+      return Math.max(0, diffSecs);
+    };
 
-      setSeconds((prev) => {
-        // Detener el cronómetro si llega a cero para ahorrar recursos del CPU móvil
-        if (remainingSeconds <= 0) {
-          clearInterval(interval);
-          return 0;
-        }
-        return remainingSeconds;
-      });
+    // Ajustar el estado inicial inmediatamente
+    setSecondsLeft(calculateSeconds());
+
+    // Crear el intervalo persistente de un segundo
+    refs.current.timerId = setInterval(() => {
+      const nextValue = calculateSeconds();
+      setSecondsLeft(nextValue);
+      
+      if (nextValue <= 0) {
+        clearInterval(refs.current.timerId);
+      }
     }, 1000);
 
-    return () => clearInterval(interval);
-  }, [expiresAt, createdAt]);
+    return () => {
+      if (refs.current.timerId) clearInterval(refs.current.timerId);
+    };
+  }, [expiresAt]); // Solo se recrea si cambia la ID o la expiración del viaje directamente
 
-  return seconds;
+  return secondsLeft;
 }
 
 // ── Card individual de solicitud con su propio countdown ──────────────────────
@@ -340,7 +347,7 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
         </div>
       )}
       {localErr && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#dc2626', fontSize: 13 }}>⚠️ {localErr}</div>}
-      <label style={{ display: 'flex', alignItems: 'center', justifyY: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: uploading ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', minHeight: 50 }}>
+      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: uploading ? '#fff' : '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', minHeight: 50 }}>
         📸 {value ? 'Cambiar foto' : 'Tomar foto'}
         <input type="file" accept="image/*" capture={capture} style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }} />
       </label>
