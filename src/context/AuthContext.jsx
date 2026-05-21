@@ -1,5 +1,5 @@
 // ============================================================
-// MAZ CLEAN -- AuthContext
+// MAZ CLEAN -- AuthContext [Blindado]
 // src/context/AuthContext.jsx
 // ============================================================
 import { createContext, useContext, useEffect, useState, useRef } from 'react'
@@ -39,14 +39,30 @@ export function AuthProvider({ children }) {
   const initDone         = useRef(false)
   const skipNextSignedIn = useRef(false)
 
-  const handleExpiredSession = async (reason = 'expirada') => {
-    console.warn('[AuthContext] Sesión', reason, '— cerrando...')
-    try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
+  // Centraliza la purga absoluta de datos locales ante sesiones muertas o corruptas
+  const purgeLocalSession = () => {
+    try { localStorage.removeItem('mazclean-auth') } catch {}
     setAuthState({ user: null, profile: null, loading: false })
-    setSessionExpired(true)
+  }
+
+  const handleExpiredSession = async (reason = 'expirada') => {
+    console.warn('[AuthContext] Sesión', reason, '— cerrando y purgando localmente...')
+    try { 
+      // Intentamos avisar localmente a Supabase, ignoramos cualquier 403/error de red
+      await supabase.auth.signOut({ scope: 'local' }) 
+    } catch (err) {
+      console.warn('[AuthContext] Fallo silencioso en signOut local de Supabase:', err.message)
+    } finally {
+      // Garantía absoluta de limpieza
+      purgeLocalSession()
+      setSessionExpired(true)
+    }
   }
 
   const loadProfile = async (user) => {
+    // Si no hay objeto usuario válido, abortamos de inmediato
+    if (!user?.id) return { user: null, profile: null }
+
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -55,8 +71,8 @@ export function AuthProvider({ children }) {
         .single()
 
       if (error) {
-        if (error.code === 'PGRST301' || error.message?.includes('JWT')) {
-          await handleExpiredSession('inválida (JWT)')
+        if (error.code === 'PGRST301' || error.status === 401 || error.message?.includes('JWT')) {
+          await handleExpiredSession('inválida (JWT / 401)')
           return { user: null, profile: null }
         }
         console.error('[AuthContext] Error cargando perfil:', error.message)
@@ -97,8 +113,6 @@ export function AuthProvider({ children }) {
         console.log('[AuthContext] Auth event:', event, '| session:', !!session)
 
         if (event === 'SIGNED_OUT') {
-          // En móvil, la cámara dispara SIGNED_OUT momentáneamente.
-          // Verificamos con localStorage SIN llamar getSession() para no romper el lock.
           await new Promise(resolve => setTimeout(resolve, 1000))
           const token = getTokenFromStorage()
           if (token) {
@@ -107,7 +121,7 @@ export function AuthProvider({ children }) {
           }
           initDone.current         = false
           skipNextSignedIn.current = false
-          setAuthState({ user: null, profile: null, loading: false })
+          purgeLocalSession()
           return
         }
 
@@ -168,7 +182,6 @@ export function AuthProvider({ children }) {
   }, [])
 
   // Watcher: verificar sesión cada 60 segundos
-  // Usa localStorage para no romper el lock durante uploads
   useEffect(() => {
     const interval = setInterval(async () => {
       if (!authState.user) return
@@ -176,14 +189,12 @@ export function AuthProvider({ children }) {
       try {
         const token = getTokenFromStorage()
         if (!token) {
-          // Esperar 3 segundos y reintentar antes de cerrar sesión
           await new Promise(resolve => setTimeout(resolve, 3000))
           if (!authState.user) return
           const tokenRetry = getTokenFromStorage()
           if (!tokenRetry) await handleExpiredSession('expirada (watcher periódico)')
           return
         }
-        // Verificar si el token existe pero ya expiró
         if (isTokenExpired()) {
           console.warn('[AuthContext] Token expirado detectado por watcher')
           await handleExpiredSession('expirada (token vencido en watcher)')
@@ -244,14 +255,24 @@ export function AuthProvider({ children }) {
   }
 
   const signOut = async () => {
-    // Limpiar sesión manualmente — supabase.auth.signOut puede fallar con noopLock
-    try { localStorage.removeItem('mazclean-auth') } catch {}
-    try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
+    console.log('[AuthContext] Ejecutando signOut controlado...')
     setSessionExpired(false)
-    setAuthState({ user: null, profile: null, loading: false })
+    try {
+      // Intentamos cerrar la sesión de forma limpia en el servidor
+      await supabase.auth.signOut({ scope: 'local' })
+    } catch (err) {
+      console.warn('[AuthContext] Error destruyendo sesión en backend:', err.message)
+    } finally {
+      // PASE LO QUE PASE, borramos el localStorage y limpiamos React para tumbar la UI
+      purgeLocalSession()
+      // Pequeño delay y redirección forzada para limpiar remanentes o loops de GPS en segundo plano
+      setTimeout(() => { window.location.href = '/' }, 100)
+    }
   }
 
   const updateProfile = async (updates) => {
+    if (!authState.user?.id) return { data: null, error: new Error('Sin usuario autenticado') }
+
     const { data, error } = await supabase
       .from('profiles')
       .update(updates)
@@ -259,7 +280,7 @@ export function AuthProvider({ children }) {
       .select()
       .single()
 
-    if (error?.code === 'PGRST301' || error?.message?.includes('JWT')) {
+    if (error?.code === 'PGRST301' || error?.status === 401 || error?.message?.includes('JWT')) {
       await handleExpiredSession('expirada (updateProfile)')
       return { data: null, error }
     }
@@ -282,9 +303,8 @@ export function AuthProvider({ children }) {
     setAuthState(prev => ({ ...prev, profile: result.profile }))
   }
 
-  // refreshProfileDirect: usa fetch directo para evitar lock en móvil
   const refreshProfileDirect = async () => {
-    if (!authState.user) return
+    if (!authState.user?.id) return
     try {
       const SUPABASE_URL     = import.meta.env.VITE_SUPABASE_URL
       const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -293,6 +313,12 @@ export function AuthProvider({ children }) {
         `${SUPABASE_URL}/rest/v1/profiles?id=eq.${authState.user.id}&select=*`,
         { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
       )
+      
+      if (res.status === 401) {
+        await handleExpiredSession('expirada (refreshProfileDirect 401)')
+        return
+      }
+
       if (res.ok) {
         const data = await res.json()
         if (data?.[0]) {

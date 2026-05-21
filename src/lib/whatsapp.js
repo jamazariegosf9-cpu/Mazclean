@@ -1,4 +1,4 @@
-// src/lib/whatsapp.js v3
+// src/lib/whatsapp.js v3.1 [Blindado]
 // Agrega: reintentos con backoff exponencial (3 intentos: 0s, 5s, 15s)
 // Si los 3 fallan → log en whatsapp_failures
 // updateOperatorLocation sin reintentos (se llama cada 30s de todas formas)
@@ -45,10 +45,6 @@ async function logFailure(event, phone, error, bookingId, operatorId) {
 
 /**
  * Envía un mensaje de WhatsApp con reintentos (backoff: 0s → 5s → 15s)
- * @param {string} event      - Tipo de evento
- * @param {string} phone      - Teléfono del destinatario (10 dígitos mexicanos)
- * @param {object} booking    - Datos de la reservación / contexto
- * @param {object} options    - { bookingId, operatorId } para log de fallos
  */
 export async function sendWhatsApp(event, phone, booking, options = {}) {
   if (!phone) {
@@ -104,6 +100,13 @@ export async function sendWhatsApp(event, phone, booking, options = {}) {
  * Sin reintentos — se llama cada 30s, un fallo aislado es irrelevante.
  */
 export async function updateOperatorLocation(bookingId, operatorId, lat, lng) {
+  // FILTRO EVASOR DE ERRORES 400 (Bad Request):
+  // Si las variables de sesión se destruyeron o son nulas/indefinidas por el cierre de sesión, 
+  // abortamos de forma limpia inmediatamente sin disparar el fetch erróneo.
+  if (!operatorId || operatorId === 'undefined' || operatorId === 'null') {
+    return { success: false, error: 'Omitiendo trackeo: No hay un operador activo logueado.' }
+  }
+
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/track-operator`, {
       method:  'POST',
@@ -112,7 +115,12 @@ export async function updateOperatorLocation(bookingId, operatorId, lat, lng) {
         'apikey':        SUPABASE_KEY,
         'Content-Type':  'application/json',
       },
-      body: JSON.stringify({ booking_id: bookingId, operator_id: operatorId, lat, lng }),
+      body: JSON.stringify({ 
+        booking_id: (bookingId && bookingId !== 'undefined' && bookingId !== 'null') ? bookingId : null, 
+        operator_id: operatorId, 
+        lat, 
+        lng 
+      }),
     })
 
     const data = await res.json()
