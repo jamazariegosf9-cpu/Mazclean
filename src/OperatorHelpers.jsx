@@ -141,10 +141,10 @@ async function uploadFile({ file, folder, userId, onProgress, onLog }) {
 }
 
 // ── Parsear timestamp de Supabase correctamente en todos los browsers ──────────
+// Supabase devuelve '2026-05-21 17:40:02.343+00' con espacio en lugar de T
+// Algunos browsers no parsean correctamente → NaN. Normalizamos a ISO estándar.
 function parseSupabaseTimestamp(ts) {
-  if (!ts) return null;
-  // Supabase devuelve '2026-05-21 17:40:02.343+00' — reemplazar espacio por T
-  // y '+00' por '+00:00' para garantizar parseo UTC correcto en todos los browsers
+  if (!ts) return new Date(0);
   return new Date(ts.toString().replace(' ', 'T').replace('+00', '+00:00'));
 }
 
