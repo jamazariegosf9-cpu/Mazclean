@@ -108,7 +108,7 @@ async function uploadFile({ file, folder, userId, onProgress, onLog }) {
   const isVideo = file.type.startsWith('video/')
   const isPdf   = file.type === 'application/pdf'
   const ext     = isVideo ? (file.name?.endsWith('.mov') ? 'mov' : 'mp4') : isPdf ? 'pdf' : 'jpg'
-  const path    = `${folder}/${userId}/${folder}_${Date.now()}.${ext}`
+  const path = `${folder}/${userId}/${folder}_${Date.now()}.${ext}`
 
   onLog?.(`📦 Enviando sin comprimir ${Math.round(file.size/1024)}KB`)
 
@@ -149,9 +149,8 @@ function parseSupabaseTimestamp(ts) {
   }
 }
 
-// ── Hook de Cuenta Regresiva Relativa Libre de Errores de Reloj Local ──────────
+// ── Hook de Cuenta Regresiva Relativa Fluida y Optimizada para Móviles ──────────
 function useCountdown(expiresAt, createdAt) {
-  // Inicializamos por defecto en 5 minutos (300 segundos) para evitar parpadeos en "Expirado"
   const [seconds, setSeconds] = useState(300);
 
   useEffect(() => {
@@ -160,26 +159,35 @@ function useCountdown(expiresAt, createdAt) {
     const tCreate = parseSupabaseTimestamp(createdAt).getTime();
     const tExpire = parseSupabaseTimestamp(expiresAt).getTime();
     
-    // Duración teórica establecida por el backend (Ej: 300,000 ms)
+    // Duración original calculada desde el servidor (por ejemplo, 300000ms para 5 min)
     const totalDurationMs = tExpire - tCreate;
+    const totalDurationSeconds = Math.max(0, Math.floor(totalDurationMs / 1000));
     
-    // Registramos exactamente el milisegundo local en el que este componente se montó
+    // Registramos exactamente el milisegundo local en el que el contador se renderizó
     const localStartTime = Date.now();
 
-    const tick = () => {
+    // Establecemos el valor inicial exacto de segundos restantes según la estampa del servidor
+    const timePassedSinceCreation = Date.now() - localStartTime;
+    const initialSecondsLeft = totalDurationSeconds - Math.floor(timePassedSinceCreation / 1000);
+    setSeconds(Math.max(0, initialSecondsLeft));
+
+    const interval = setInterval(() => {
       const currentLocalTime = Date.now();
-      // Cuánto tiempo real (en ms) ha transcurrido en la pantalla del operador
       const elapsedLocalMs = currentLocalTime - localStartTime;
 
-      // Calculamos el tiempo remanente basándonos puramente en la duración relativa
-      const remainingMs = totalDurationMs - elapsedLocalMs;
-      const remainingSeconds = Math.floor(remainingMs / 1000);
+      // Restamos el tiempo real transcurrido para calcular los segundos restantes actuales
+      const remainingSeconds = totalDurationSeconds - Math.floor(elapsedLocalMs / 1000);
 
-      setSeconds(Math.max(0, remainingSeconds));
-    };
+      setSeconds((prev) => {
+        // Detener el cronómetro si llega a cero para ahorrar recursos del CPU móvil
+        if (remainingSeconds <= 0) {
+          clearInterval(interval);
+          return 0;
+        }
+        return remainingSeconds;
+      });
+    }, 1000);
 
-    tick();
-    const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [expiresAt, createdAt]);
 
@@ -188,7 +196,6 @@ function useCountdown(expiresAt, createdAt) {
 
 // ── Card individual de solicitud con su propio countdown ──────────────────────
 function RequestCard({ request, onAccept, accepting, isMobile }) {
-  // Pasamos ambos campos del backend para realizar el cálculo relativo infalible
   const secondsLeft = useCountdown(request.expires_at, request.created_at);
   const minutes     = Math.floor(secondsLeft / 60);
   const secs        = secondsLeft % 60;
@@ -206,7 +213,7 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
       boxShadow: isUrgent ? '0 0 0 2px #ef4444, 0 4px 24px rgba(239,68,68,0.15)' : '0 4px 24px rgba(0,0,0,0.08)',
       padding: isMobile ? 16 : '18px 20px',
       opacity: isExpired ? 0.5 : 1,
-      transition: 'box-shadow 0.3s',
+      transition: 'box-shadow 0.3s, opacity 0.3s',
     }}>
 
       {/* Header: ref + countdown */}
@@ -333,7 +340,7 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
         </div>
       )}
       {localErr && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#dc2626', fontSize: 13 }}>⚠️ {localErr}</div>}
-      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: uploading ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', minHeight: 50 }}>
+      <label style={{ display: 'flex', alignItems: 'center', justifyY: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: uploading ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', minHeight: 50 }}>
         📸 {value ? 'Cambiar foto' : 'Tomar foto'}
         <input type="file" accept="image/*" capture={capture} style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }} />
       </label>
