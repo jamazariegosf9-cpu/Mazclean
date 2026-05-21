@@ -140,16 +140,24 @@ async function uploadFile({ file, folder, userId, onProgress, onLog }) {
   return path
 }
 
+// ── Parsear timestamp de Supabase correctamente en todos los browsers ──────────
+function parseSupabaseTimestamp(ts) {
+  if (!ts) return null;
+  // Supabase devuelve '2026-05-21 17:40:02.343+00' — reemplazar espacio por T
+  // y '+00' por '+00:00' para garantizar parseo UTC correcto en todos los browsers
+  return new Date(ts.toString().replace(' ', 'T').replace('+00', '+00:00'));
+}
+
 // ── Countdown hook: devuelve segundos restantes hasta expires_at ──────────────
 function useCountdown(expiresAt) {
   const [seconds, setSeconds] = useState(() => {
     if (!expiresAt) return 0;
-    return Math.max(0, Math.floor((new Date(expiresAt) - Date.now()) / 1000));
+    return Math.max(0, Math.floor((parseSupabaseTimestamp(expiresAt) - Date.now()) / 1000));
   });
   useEffect(() => {
     if (!expiresAt) return;
     const tick = () => {
-      const remaining = Math.max(0, Math.floor((new Date(expiresAt) - Date.now()) / 1000));
+      const remaining = Math.max(0, Math.floor((parseSupabaseTimestamp(expiresAt) - Date.now()) / 1000));
       setSeconds(remaining);
     };
     tick();
