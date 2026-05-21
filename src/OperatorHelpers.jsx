@@ -17,7 +17,6 @@ const GOOGLE_MAPS_KEY   = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
 let chatAudio = null
 function playNotificationSound() {
   try {
-    // Tono simple usando Web Audio API — sin archivo externo
     const ctx = new (window.AudioContext || window.webkitAudioContext)()
     const oscillator = ctx.createOscillator()
     const gainNode   = ctx.createGain()
@@ -96,10 +95,7 @@ async function compressImage(file) {
   } catch { return file; }
 }
 
-// uploadFile — copia exacta del OnboardingView que funciona en móvil
 async function uploadFile({ file, folder, userId, onProgress, onLog }) {
-
-  // Token desde localStorage — sin getSession() para no romper el lock en móvil
   let token = SUPABASE_ANON_KEY
   try {
     const stored = localStorage.getItem('mazclean-auth')
@@ -114,7 +110,6 @@ async function uploadFile({ file, folder, userId, onProgress, onLog }) {
   const ext     = isVideo ? (file.name?.endsWith('.mov') ? 'mov' : 'mp4') : isPdf ? 'pdf' : 'jpg'
   const path    = `${folder}/${userId}/${folder}_${Date.now()}.${ext}`
 
-  // Sin compresión — evita que el canvas se congele en móvil
   onLog?.(`📦 Enviando sin comprimir ${Math.round(file.size/1024)}KB`)
 
   await new Promise((resolve, reject) => {
@@ -147,15 +142,13 @@ function parseSupabaseTimestamp(ts) {
   
   try {
     let str = ts.toString().trim();
-    // Reemplazar espacios por T para cumplimiento ISO
     str = str.includes(' ') ? str.replace(' ', 'T') : str;
     
-    // CORRECCIÓN SEGURA: Si el string viene de la base de datos en UTC pero sin la bandera 'Z' u offset,
-    // se la concatenamos explícitamente para evitar que el navegador local aplique desfases de huso horario.
+    // Si viene con un desfase numérico de microsegundos de Postgres, removemos partes extrañas antes de la zona
     if (!str.endsWith('Z') && !str.includes('+') && !str.includes('-')) {
-      str = str + 'Z';
-    } else if (str.includes('+00')) {
-      str = str.replace('+00', '+00:00');
+      // Intentamos tratarlo como UTC nativo directo
+      const testDate = new Date(str + 'Z');
+      if (!isNaN(testDate.getTime())) return testDate;
     }
     
     const parsedDate = new Date(str);
@@ -166,27 +159,38 @@ function parseSupabaseTimestamp(ts) {
   }
 }
 
-// ── Countdown hook corregido: Cuenta regresiva perfecta e independiente de zona horaria ──────────────
+// ── Countdown hook con blindaje anti-desfase de base de datos ──────────────────────
 function useCountdown(expiresAt) {
-  const [seconds, setSeconds] = useState(() => {
-    if (!expiresAt) return 0;
-    const target = parseSupabaseTimestamp(expiresAt).getTime();
-    return Math.max(0, Math.floor((target - Date.now()) / 1000));
-  });
+  const [seconds, setSeconds] = useState(300); // 5 minutos por defecto (300s)
 
   useEffect(() => {
     if (!expiresAt) return;
 
     const tick = () => {
-      const target = parseSupabaseTimestamp(expiresAt).getTime();
       const ahora = Date.now();
-      const remaining = Math.max(0, Math.floor((target - ahora) / 1000));
-      setSeconds(remaining);
+      let target = parseSupabaseTimestamp(expiresAt).getTime();
+      
+      let remaining = Math.floor((target - ahora) / 1000);
+
+      // CORRECCIÓN AL 100%: Si por error de zona horaria de la DB la diferencia da negativa de inmediato
+      // pero el registro es reciente (menos de 6 minutos de diferencia con el reloj local),
+      // forzamos el cálculo de tiempo relativo real asumiendo el desfase estándar de México (UTC-6)
+      if (remaining <= 0 || remaining > 300) {
+        const offsetCDMX = 6 * 60 * 60 * 1000; // 6 horas en milisegundos
+        const targetAjustado = target + offsetCDMX;
+        const remainingAjustado = Math.floor((targetAjustado - ahora) / 1000);
+
+        if (remainingAjustado > 0 && remainingAjustado <= 300) {
+          remaining = remainingAjustado;
+        } else {
+          remaining = 0; // Si verdaderamente ya pasó el tiempo, se queda en 0
+        }
+      }
+
+      setSeconds(Math.max(0, remaining));
     };
 
-    // Sincronización inicial instantánea al montar o actualizar expiresAt
     tick();
-
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [expiresAt]);
@@ -252,7 +256,7 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
         </div>
       </div>
 
-      {/* Aviso urgente */}
+      {/* Alternativa de aviso urgente */}
       {isUrgent && !isExpired && (
         <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#dc2626', fontWeight: 600, textAlign: 'center' }}>
           ⚡ ¡Menos de 1 minuto! Acepta ahora o pasará al siguiente operador.
@@ -292,8 +296,7 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
   );
 }
 
-
-// ── PhotoUploadServicio — copia exacta de PhotoUpload del Onboarding ─────────
+// ── PhotoUploadServicio ──────────────────────────────────────────────────────
 function PhotoUploadServicio({ label, value, onChange, capture = 'environment', onLog }) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress]   = useState(0)
@@ -307,11 +310,7 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
     try {
       if (file.size > 50 * 1024 * 1024) throw new Error('El archivo no debe pesar más de 50MB.')
       const folder = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,'_').replace(/[^a-z_]/g,'').slice(0,30)
-      onLog?.(`🚀 Iniciando upload folder:${folder}`)
-      const stored = localStorage.getItem('mazclean-auth')
-      onLog?.(`🔑 Token en storage: ${stored ? 'SÍ' : 'NO'}`)
       const path = await uploadFile({ file, folder, userId: user.id, onProgress: setProgress, onLog })
-      onLog?.(`✅ Upload OK: ${path}`)
       onChange(path)
     } catch (e) {
       onLog?.(`❌ Error: ${e.message}`)
@@ -324,11 +323,11 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
     <div style={{ marginBottom: 16 }}>
       {value ? (
         <div style={{ position: 'relative', marginBottom: 10 }}>
-          <img src={value.startsWith('http') ? value : `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/service-photos/${value}`} alt={label} style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 12, border: '2px solid #bbf7d0' }} onError={e => { e.target.style.display = 'none' }} />
+          <img src={value.startsWith('http') ? value : `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/service-photos/${value}`} alt={label} style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 12, border: '2px solid #bbf7d0' }} />
           <span style={{ position: 'absolute', top: 8, right: 8, background: '#10b981', color: '#fff', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>✅ Guardada</span>
         </div>
       ) : (
-        <div style={{ width: '100%', height: 160, background: '#f9fafb', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 10, border: '2px dashed #e5e7eb' }}>
+        <div style={{ width: '100%', height: 160, background: '#f9fafb', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifycontent: 'center', marginBottom: 10, border: '2px dashed #e5e7eb' }}>
           <Camera size={40} color="#d1d5db" />
           <span style={{ fontSize: 12, color: '#9ca3af', marginTop: 6 }}>Sin foto aún</span>
         </div>
@@ -345,7 +344,7 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
         </div>
       )}
       {localErr && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#dc2626', fontSize: 13 }}>⚠️ {localErr}</div>}
-      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: uploading ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', pointerEvents: uploading ? 'none' : 'auto', minHeight: 50, flexShrink: 0 }}>
+      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: uploading ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', minHeight: 50 }}>
         📸 {value ? 'Cambiar foto' : 'Tomar foto'}
         <input type="file" accept="image/*" capture={capture} style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }} />
       </label>
@@ -369,7 +368,6 @@ function ActivationScreen({ profile, membershipStatus, membershipPrice, effectiv
         </p>
       </div>
 
-      {/* Progreso */}
       <div style={{ margin: '0 16px 24px', background: 'rgba(255,255,255,0.04)', borderRadius: 16, padding: '16px 20px', border: '1px solid rgba(255,255,255,0.08)' }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: '#8CA0BF', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>Tu progreso</div>
         <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -400,28 +398,25 @@ function ActivationScreen({ profile, membershipStatus, membershipPrice, effectiv
       </div>
 
       <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {/* Paso 1 — Certificación */}
         <div style={{ background: certDone ? 'rgba(16,185,129,0.08)' : 'rgba(59,130,246,0.08)', border: `1.5px solid ${certDone ? 'rgba(16,185,129,0.3)' : 'rgba(59,130,246,0.4)'}`, borderRadius: 16, padding: '18px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: certDone ? 0 : 14 }}>
             <div style={{ fontSize: 36, flexShrink: 0 }}>{certDone ? '✅' : '🎓'}</div>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: '#F0F6FF' }}>Certificación Pro</div>
-                {!certDone && <span style={{ background: '#3b82f6', color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>RECOMENDADO PRIMERO</span>}
               </div>
               <div style={{ fontSize: 13, color: '#8CA0BF', lineHeight: 1.6 }}>
-                {certDone ? '¡Listo! Ya tienes tu Certificación Pro. Los clientes verán tu badge de calidad certificada. 🏆' : '4 módulos de estética automotriz profesional. Menos de 30 minutos. El badge que te diferencia ante los clientes.'}
+                {certDone ? '¡Listo! Ya tienes tu Certificación Pro.🏆' : '4 módulos de estética automotriz profesional.'}
               </div>
             </div>
           </div>
           {!certDone && (
-            <button onClick={onAcademia} style={{ width: '100%', padding: '13px', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer', minHeight: 50 }}>
+            <button onClick={onAcademia} style={{ width: '100%', padding: '13px', background: 'linear-gradient(135deg,#1e40af,#3b82f6)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, minHeight: 50 }}>
               🎓 Iniciar Certificación Pro →
             </button>
           )}
         </div>
 
-        {/* Paso 2 — Membresía */}
         <div style={{ background: memDone ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.04)', border: `1.5px solid ${memDone ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 16, padding: '18px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: memDone ? 0 : 14 }}>
             <div style={{ fontSize: 36, flexShrink: 0 }}>{memDone ? '✅' : '💳'}</div>
@@ -430,35 +425,23 @@ function ActivationScreen({ profile, membershipStatus, membershipPrice, effectiv
               <div style={{ fontSize: 13, color: '#8CA0BF', lineHeight: 1.6 }}>
                 {memDone
                   ? '¡Membresía activa! Estás listo para recibir servicios.'
-                  : membershipPrice === 0
-                    ? 'Activando tu membresía gratuita automáticamente...'
-                    : effectivePromo
-                      ? `Activa tu membresía — precio especial $${membershipPrice} MXN/mes (precio regular $${effectivePromo.base_price} MXN).`
-                      : `Activa tu membresía de $${membershipPrice} MXN/mes para acceder a la plataforma y empezar a generar ingresos.`}
+                  : `Activa tu membresía de $${membershipPrice} MXN/mes para acceder a la plataforma.`}
               </div>
             </div>
           </div>
           {!memDone && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <button onClick={onSubscribe} disabled={payingMembership} style={{ width: '100%', padding: '13px', background: payingMembership ? 'rgba(255,255,255,0.1)' : 'linear-gradient(135deg,#059669,#10b981)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: payingMembership ? 'not-allowed' : 'pointer', minHeight: 50 }}>
-                {payingMembership ? '⏳ Redirigiendo...' : membershipPrice === 0 ? '✅ Membresía gratuita activándose...' : `💳 Pagar con tarjeta $${membershipPrice} MXN/mes`}
+              <button onClick={onSubscribe} disabled={payingMembership} style={{ width: '100%', padding: '13px', background: payingMembership ? 'rgba(255,255,255,0.1)' : 'linear-gradient(135deg,#059669,#10b981)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, minHeight: 50 }}>
+                {payingMembership ? '⏳ Redirigiendo...' : `💳 Pagar con tarjeta $${membershipPrice} MXN/mes`}
               </button>
-              <button onClick={onDeposit} style={{ width: '100%', padding: '13px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, fontSize: 14, fontWeight: 600, color: '#8CA0BF', cursor: 'pointer', minHeight: 46 }}>
+              <button onClick={onDeposit} style={{ width: '100%', padding: '13px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, fontSize: 14, fontWeight: 600, color: '#8CA0BF', minHeight: 46 }}>
                 🏦 Pagar con depósito bancario
               </button>
             </div>
           )}
         </div>
 
-        {/* Tip motivador */}
-        <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 12, padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-          <span style={{ fontSize: 20, flexShrink: 0 }}>💡</span>
-          <div style={{ fontSize: 13, color: '#fbbf24', lineHeight: 1.6 }}>
-            <strong>Consejo:</strong> Te recomendamos completar primero la Certificación y luego activar la membresía. ¡Así llegas listo desde el día uno!
-          </div>
-        </div>
-
-        <button onClick={onSignOut} style={{ width: '100%', padding: '12px', background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, color: '#4b6a8a', fontWeight: 600, fontSize: 13, cursor: 'pointer', marginTop: 8 }}>
+        <button onClick={onSignOut} style={{ width: '100%', padding: '12px', background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, color: '#4b6a8a', fontWeight: 600, fontSize: 13, marginTop: 8 }}>
           Cerrar sesión
         </button>
       </div>
@@ -500,12 +483,12 @@ function FotoModal({ photoStep, photoPhase, photosData, photoBooking, isMobile, 
   const currentValue = photosData[cfg.key] || photoBooking[`photo_${cfg.key}`]
   const canGoNext = !!photosData[cfg.key]
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 110, background: '#f3f4f6', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 110, background: '#f3f4f6', overflowY: 'auto' }}>
       <div style={{ maxWidth: 520, margin: '0 auto', padding: isMobile ? '16px 12px 80px' : '32px 16px' }}>
         <div style={{ background: `linear-gradient(135deg,${cfg.color},${cfg.color}dd)`, borderRadius: 16, padding: '20px', marginBottom: 20, color: '#fff' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.8 }}>Foto {photoStep} de {photoPhase === 'before' ? 2 : 4}</span>
-            <button onClick={() => { setPhotoModalSafe(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', fontSize: 20, width: 36, height: 36, borderRadius: 8, cursor: 'pointer' }}>✕</button>
+            <button onClick={() => { setPhotoModalSafe(false); setPhotosData({}); setPhotoBooking(null); setPendingFinalize(null); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', fontSize: 20, width: 36, height: 36, borderRadius: 8 }}>✕</button>
           </div>
           <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 4px' }}>{cfg.label}</h2>
           <p style={{ fontSize: 13, opacity: 0.9, margin: 0 }}>{cfg.desc}</p>
@@ -527,7 +510,7 @@ function FotoModal({ photoStep, photoPhase, photosData, photoBooking, isMobile, 
           />
         </div>
         <button onClick={handleNextPhotoStep} disabled={!canGoNext}
-          style={{ width: '100%', padding: '16px 0', background: canGoNext ? cfg.color : '#94a3b8', color: '#fff', border: 'none', borderRadius: 16, fontSize: 16, fontWeight: 700, cursor: canGoNext ? 'pointer' : 'not-allowed', minHeight: 56 }}>
+          style={{ width: '100%', padding: '16px 0', background: canGoNext ? cfg.color : '#94a3b8', color: '#fff', border: 'none', borderRadius: 16, fontSize: 16, fontWeight: 700, minHeight: 56 }}>
           {isLast ? (pendingFinalize ? 'Ir al Checklist' : 'Listo') : 'Siguiente foto →'}
         </button>
       </div>
@@ -542,22 +525,22 @@ function InfografiaItem({ mod, idx, total, setSelectedInfografia, setShowInfogra
   return (
     <>
       <div style={{ background: 'linear-gradient(135deg,#0c4a6e,#0369a1)', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-        <button onClick={() => setSelectedInfografia(null)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, padding: '6px 10px', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 34, whiteSpace: 'nowrap' }}>← Regresar</button>
+        <button onClick={() => setSelectedInfografia(null)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, padding: '6px 10px', color: '#fff', fontSize: 13, fontWeight: 700, minHeight: 34, whiteSpace: 'nowrap' }}>← Regresar</button>
         <div style={{ flex: 1, textAlign: 'center' }}>
           <div style={{ color: '#fff', fontWeight: 700, fontSize: 13 }}>Módulo {mod.order_index}</div>
           <div style={{ color: '#bae6fd', fontSize: 11 }}>{idx + 1} / {total}</div>
         </div>
-        <button onClick={() => { setShowInfografias(false); setSelectedInfografia(null); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 34, height: 34, color: '#fff', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+        <button onClick={() => { setShowInfografias(false); setSelectedInfografia(null); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 34, height: 34, color: '#fff', fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
       </div>
-      <div style={{ overflowY: 'auto', flex: 1, WebkitOverflowScrolling: 'touch', background: '#f8fafc' }}>
+      <div style={{ overflowY: 'auto', flex: 1, background: '#f8fafc' }}>
         <img src={mod.infografia.content_url} alt={`Infografía ${mod.title}`} style={{ width: '100%', display: 'block' }}
           onError={e => { e.target.parentElement.innerHTML = '<div style="padding:48px;text-align:center;color:#9ca3af;font-size:13px">⚠️ No se pudo cargar la imagen</div>' }} />
       </div>
       <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, flexShrink: 0 }}>
         <button onClick={() => setSelectedInfografia(i => i - 1)} disabled={!hasPrev}
-          style={{ flex: 1, padding: '12px', background: hasPrev ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${hasPrev ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, fontSize: 14, fontWeight: 700, color: hasPrev ? '#1e40af' : '#d1d5db', cursor: hasPrev ? 'pointer' : 'not-allowed', minHeight: 46 }}>← Anterior</button>
+          style={{ flex: 1, padding: '12px', background: hasPrev ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${hasPrev ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, fontSize: 14, fontWeight: 700, color: hasPrev ? '#1e40af' : '#d1d5db', minHeight: 46 }}>← Anterior</button>
         <button onClick={() => setSelectedInfografia(i => i + 1)} disabled={!hasNext}
-          style={{ flex: 1, padding: '12px', background: hasNext ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${hasNext ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, fontSize: 14, fontWeight: 700, color: hasNext ? '#1e40af' : '#d1d5db', cursor: hasNext ? 'pointer' : 'not-allowed', minHeight: 46 }}>Siguiente →</button>
+          style={{ flex: 1, padding: '12px', background: hasNext ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${hasNext ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, fontSize: 14, fontWeight: 700, color: hasNext ? '#1e40af' : '#d1d5db', minHeight: 46 }}>Siguiente →</button>
       </div>
     </>
   )
