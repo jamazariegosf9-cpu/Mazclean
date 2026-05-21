@@ -135,24 +135,28 @@ async function uploadFile({ file, folder, userId, onProgress, onLog }) {
   return path
 }
 
-function parseSupabaseTimestamp(ts) {
-  if (!ts) return new Date();
-  if (ts instanceof Date && !isNaN(ts.getTime())) return ts;
+// ── Convierte cualquier estampa ISO/Supabase a milisegundos universales UTC absolutos ──
+function getAbsoluteUTCMs(ts) {
+  if (!ts) return Date.now();
   try {
     let str = ts.toString().trim();
+    // Forzar formato estándar ISO para que el motor de JS no asuma hora local
     str = str.includes(' ') ? str.replace(' ', 'T') : str;
-    const parsedDate = new Date(str);
-    return isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+    if (!str.endsWith('Z') && !str.includes('+') && !str.includes('-')) {
+      str += 'Z'; // Tratar explícitamente como UTC puro
+    }
+    const d = new Date(str);
+    return isNaN(d.getTime()) ? Date.now() : d.getTime();
   } catch (e) {
-    return new Date();
+    return Date.now();
   }
 }
 
-// ── Hook de Cuenta Regresiva Reactivo Inmune a Desfases y Re-renders ──────────
+// ── Hook de Cuenta Regresiva 100% Inmune a Zonas Horarias y Desfases Locales ──
 function useCountdown(expiresAt, createdAt) {
   const [secondsLeft, setSecondsLeft] = useState(300);
   
-  // Guardamos las marcas de tiempo en refs para que el setInterval use valores fijos sin reiniciarse
+  // Guardamos las referencias para evitar reinicios innecesarios del intervalo
   const refs = useRef({ expiresAt, createdAt, timerId: null });
   refs.current.expiresAt = expiresAt;
   refs.current.createdAt = createdAt;
@@ -160,35 +164,51 @@ function useCountdown(expiresAt, createdAt) {
   useEffect(() => {
     if (!expiresAt) return;
 
-    const calculateSeconds = () => {
-      const nowLocal = Date.now();
-      const tExpire = parseSupabaseTimestamp(refs.current.expiresAt).getTime();
-      const tCreate = refs.current.createdAt ? parseSupabaseTimestamp(refs.current.createdAt).getTime() : nowLocal;
+    const calculateRemaining = () => {
+      // 1. Obtener los milisegundos universales puros (sin importar la zona horaria del celular)
+      const tExpire = getAbsoluteUTCMs(refs.current.expiresAt);
+      const tCreate = refs.current.createdAt ? getAbsoluteUTCMs(refs.current.createdAt) : tExpire - 300000;
 
-      // Duración estricta de la ronda según base de datos (Ej: 300 segundos)
-      const maxDurationSecs = Math.max(0, Math.floor((tExpire - tCreate) / 1000));
-      
-      // Tiempo real restante en base al reloj del teléfono actual
-      let diffSecs = Math.floor((tExpire - nowLocal) / 1000);
+      // 2. Duración teórica de la ronda configurada en la BD (generalmente 300000ms = 5 minutos)
+      const totalDurationMs = tExpire - tCreate;
+      const totalDurationSecs = Math.max(0, Math.floor(totalDurationMs / 1000));
 
-      // Si el reloj local está desfasado (da más del máximo o negativo), forzamos la corrección relativa
-      if (diffSecs > maxDurationSecs || diffSecs < -10) {
-        const elapsedSinceCreation = Math.floor((nowLocal - tCreate) / 1000);
-        diffSecs = maxDurationSecs - (elapsedSinceCreation > 0 ? elapsedSinceCreation : 0);
+      // 3. Calcular la hora UTC actual real basada en el desfase universal de Date()
+      const nowLocal = new Date();
+      const nowUTCAsLocalMs = Date.UTC(
+        nowLocal.getUTCFullYear(),
+        nowLocal.getUTCMonth(),
+        nowLocal.getUTCDate(),
+        nowLocal.getUTCHours(),
+        nowLocal.getUTCMinutes(),
+        nowLocal.getUTCSeconds(),
+        nowLocal.getUTCMilliseconds()
+      );
+
+      // 4. Calcular el tiempo transcurrido exacto de forma lineal desde su creación
+      const msElapsedSinceCreation = nowUTCAsLocalMs - tCreate;
+      const secondsElapsed = Math.floor(msElapsedSinceCreation / 1000);
+
+      // 5. El tiempo restante real es la duración total menos el tiempo transcurrido real
+      let remaining = totalDurationSecs - secondsElapsed;
+
+      // Blindaje de seguridad absoluto: si da un número descabellado (ej: más de 5 mins por desfases extremos)
+      if (remaining > totalDurationSecs || remaining < -10) {
+        return 0; // Se marca automáticamente como expirado para proteger el flujo del backend
       }
 
-      return Math.max(0, diffSecs);
+      return Math.max(0, remaining);
     };
 
-    // Ajustar el estado inicial inmediatamente
-    setSecondsLeft(calculateSeconds());
+    // Ajustamos de inmediato el primer renderizado
+    setSecondsLeft(calculateRemaining());
 
-    // Crear el intervalo persistente de un segundo
+    // Disparar el segundero fluido
     refs.current.timerId = setInterval(() => {
-      const nextValue = calculateSeconds();
-      setSecondsLeft(nextValue);
+      const currentRemaining = calculateRemaining();
+      setSecondsLeft(currentRemaining);
       
-      if (nextValue <= 0) {
+      if (currentRemaining <= 0) {
         clearInterval(refs.current.timerId);
       }
     }, 1000);
@@ -196,7 +216,7 @@ function useCountdown(expiresAt, createdAt) {
     return () => {
       if (refs.current.timerId) clearInterval(refs.current.timerId);
     };
-  }, [expiresAt]); // Solo se recrea si cambia la ID o la expiración del viaje directamente
+  }, [expiresAt]);
 
   return secondsLeft;
 }
@@ -347,7 +367,7 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
         </div>
       )}
       {localErr && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 10, color: '#dc2626', fontSize: 13 }}>⚠️ {localErr}</div>}
-      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: uploading ? '#fff' : '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', minHeight: 50 }}>
+      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: uploading ? '#f3f4f6' : '#6366f1', color: '#fff', fontSize: 14, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', minHeight: 50 }}>
         📸 {value ? 'Cambiar foto' : 'Tomar foto'}
         <input type="file" accept="image/*" capture={capture} style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }} />
       </label>
@@ -424,7 +444,7 @@ function ActivationScreen({ profile, membershipStatus, membershipPrice, effectiv
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: memDone ? 0 : 14 }}>
             <div style={{ fontSize: 36, flexShrink: 0 }}>{memDone ? '✅' : '💳'}</div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: '#F0F6FF', marginBottom: 4 }}>Membresía Mensual</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: '#F0F6FF', marginBottom: 4 }}>Membresía Monthly</div>
               <div style={{ fontSize: 13, color: '#8CA0BF', lineHeight: 1.6 }}>
                 {memDone
                   ? '¡Membresía activa! Estás listo para recibir servicios.'
