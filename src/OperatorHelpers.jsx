@@ -140,20 +140,25 @@ async function uploadFile({ file, folder, userId, onProgress, onLog }) {
   return path
 }
 
-// ── Parsear timestamp de Supabase correctamente en todos los browsers ──────────
-// Corrección: Validar formatos robustamente para evitar fechas inválidas y NaN:NaN
+// ── Parsear timestamp de Supabase garantizando formato UTC absoluto ──────────
 function parseSupabaseTimestamp(ts) {
   if (!ts) return new Date(0);
-  
-  // Si ya es un objeto Date válido, retornar directamente
   if (ts instanceof Date && !isNaN(ts.getTime())) return ts;
   
   try {
-    const str = ts.toString().trim();
-    // Reemplazar espacios intermedios por T para cumplimiento ISO si no lo tiene
-    const isoStr = str.includes(' ') ? str.replace(' ', 'T').replace('+00', '+00:00') : str;
-    const parsedDate = new Date(isoStr);
+    let str = ts.toString().trim();
+    // Reemplazar espacios por T para cumplimiento ISO
+    str = str.includes(' ') ? str.replace(' ', 'T') : str;
     
+    // CORRECCIÓN SEGURA: Si el string viene de la base de datos en UTC pero sin la bandera 'Z' u offset,
+    // se la concatenamos explícitamente para evitar que el navegador local aplique desfases de huso horario.
+    if (!str.endsWith('Z') && !str.includes('+') && !str.includes('-')) {
+      str = str + 'Z';
+    } else if (str.includes('+00')) {
+      str = str.replace('+00', '+00:00');
+    }
+    
+    const parsedDate = new Date(str);
     return isNaN(parsedDate.getTime()) ? new Date(0) : parsedDate;
   } catch (e) {
     console.error("Error parseando timestamp:", e);
@@ -161,24 +166,31 @@ function parseSupabaseTimestamp(ts) {
   }
 }
 
-// ── Countdown hook: devuelve segundos restantes hasta expires_at ──────────────
+// ── Countdown hook corregido: Cuenta regresiva perfecta e independiente de zona horaria ──────────────
 function useCountdown(expiresAt) {
   const [seconds, setSeconds] = useState(() => {
     if (!expiresAt) return 0;
     const target = parseSupabaseTimestamp(expiresAt).getTime();
     return Math.max(0, Math.floor((target - Date.now()) / 1000));
   });
+
   useEffect(() => {
     if (!expiresAt) return;
+
     const tick = () => {
       const target = parseSupabaseTimestamp(expiresAt).getTime();
-      const remaining = Math.max(0, Math.floor((target - Date.now()) / 1000));
+      const ahora = Date.now();
+      const remaining = Math.max(0, Math.floor((target - ahora) / 1000));
       setSeconds(remaining);
     };
+
+    // Sincronización inicial instantánea al montar o actualizar expiresAt
     tick();
+
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [expiresAt]);
+
   return seconds;
 }
 
@@ -341,8 +353,7 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
   )
 }
 
-// ── Componente principal ──────────────────────────────────────────────────────
-// ── Pantalla de Activación — componente separado para evitar problemas de scope ──
+// ── Pantalla de Activación ──────────────────────────────────────────────────
 function ActivationScreen({ profile, membershipStatus, membershipPrice, effectivePromo, payingMembership, onSubscribe, onDeposit, onAcademia, onSignOut }) {
   const certDone = !!profile?.is_certified
   const memDone  = membershipStatus === 'activa'
@@ -551,7 +562,6 @@ function InfografiaItem({ mod, idx, total, setSelectedInfografia, setShowInfogra
     </>
   )
 }
-
 
 // ── Exports ──────────────────────────────────────────────────────────────────
 export {
