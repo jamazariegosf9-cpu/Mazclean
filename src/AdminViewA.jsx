@@ -234,6 +234,7 @@ const AdminViewA = ({
   bookings, setBookings, operators, loading, isMobile,
   unattendedBookings, setUnattendedBookings,
   fetchData, fetchUnattendedBookings,
+  showDashboardOnly = false,
 }) => {
   const { showToast } = useToast();
   // ── Panel de emergencia ───────────────────────────────────────────────────
@@ -836,6 +837,9 @@ const AdminViewA = ({
         ) : null}
       </div>
 
+      {/* ── Si solo mostramos el dashboard, no renderizar lista ── */}
+      {!showDashboardOnly && <>
+
       {/* ── SEPARADOR ── */}
       <div style={{ height: 1, background: '#e5e7eb', marginBottom: 16 }} />
 
@@ -1163,6 +1167,9 @@ const AdminViewA = ({
           </div>
         </div>
       )}
+
+      {/* Cierre del bloque showDashboardOnly */}
+      </>}
     </div>
   );
 };

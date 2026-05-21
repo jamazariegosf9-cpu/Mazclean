@@ -390,7 +390,7 @@ const MembresiaConfig = ({ isMobile }) => {
 
 const AdminViewC = () => {
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab]   = useState('bookings');
+  const [activeTab, setActiveTab]   = useState('general');
   const [bookings, setBookings]     = useState([]);
   const [operators, setOperators]   = useState([]);
   const [incidents, setIncidents]   = useState([]);
@@ -833,6 +833,7 @@ const AdminViewC = () => {
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 4, marginTop: 20, background: '#e5e7eb', padding: 4, borderRadius: 12, overflowX: 'auto', scrollbarWidth: 'none' }}>
           {[
+            { id: 'general',    label: '⚡ General' },
             { id: 'bookings',  label: `📋 Reservaciones${unattendedBookings.length > 0 ? ` 🚨${unattendedBookings.length}` : ''}` },
             { id: 'operators', label: `👷 Operadores${incidents.length > 0 || pendingOperators.length > 0 ? ` ⚠️${incidents.length + pendingOperators.length}` : ''}` },
             { id: 'catalog',   label: '🛎 Catálogo' },
@@ -848,6 +849,17 @@ const AdminViewC = () => {
         </div>
 
         {/* Tab: Reservaciones */}
+        {activeTab === 'general' && (
+          <AdminViewA
+            {...sharedProps}
+            unattendedBookings={unattendedBookings}
+            setUnattendedBookings={setUnattendedBookings}
+            fetchData={fetchData}
+            fetchUnattendedBookings={fetchUnattendedBookings}
+            showDashboardOnly={true}
+          />
+        )}
+
         {activeTab === 'bookings' && (
           <AdminViewA
             {...sharedProps}
@@ -855,6 +867,7 @@ const AdminViewC = () => {
             setUnattendedBookings={setUnattendedBookings}
             fetchData={fetchData}
             fetchUnattendedBookings={fetchUnattendedBookings}
+            showDashboardOnly={false}
           />
         )}
 
