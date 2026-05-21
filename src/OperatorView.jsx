@@ -14,6 +14,7 @@ import {
   FotoModal, InfografiaItem,
   playNotificationSound, vibrateDevice,
   requestNotificationPermission, showSystemNotification,
+  getAbsoluteUTCMs,
 } from './OperatorHelpers';
 import OperatorAccount from './OperatorAccount';
 
@@ -1204,7 +1205,7 @@ const OperatorView = () => {
   const pendingServices   = bookings.filter(b => b.status === 'confirmado');
   const activeServices    = bookings.filter(b => ['en_camino', 'en_proceso'].includes(b.status));
   const completedServices = bookings.filter(b => b.status === 'finalizado');
-  const pendingRequests   = requests.filter(r => r.status === 'pendiente' && new Date(r.expires_at) > new Date());
+  const pendingRequests   = requests.filter(r => r.status === 'pendiente' && getAbsoluteUTCMs(r.expires_at) > Date.now());
 
   const currentList = activeTab === 'pendientes'  ? pendingServices
                     : activeTab === 'activos'     ? activeServices
