@@ -826,9 +826,6 @@ const AdminViewC = () => {
       <div style={{ background: 'linear-gradient(135deg,#1e40af,#3b82f6)', padding: isMobile ? '20px 16px' : '28px 24px 24px', textAlign: 'center' }}>
         <h1 style={{ color: '#fff', fontSize: isMobile ? 18 : 22, fontWeight: 700, margin: '0 0 4px' }}>🛠 Dashboard de Administración</h1>
         <p style={{ color: '#bfdbfe', fontSize: 13, margin: 0 }}>Gestión integral de MazClean</p>
-        <button onClick={() => { fetchData(); fetchUnattendedBookings(); }} style={{ marginTop: 16, background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 8, padding: '10px 20px', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44 }}>
-          ↻ Actualizar
-        </button>
       </div>
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: isMobile ? '0 12px' : '0 16px', overflowX: 'hidden', boxSizing: 'border-box' }}>
