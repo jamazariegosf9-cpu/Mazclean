@@ -135,75 +135,64 @@ async function uploadFile({ file, folder, userId, onProgress, onLog }) {
   return path
 }
 
-// ── Parsear timestamp de Supabase garantizando formato UTC absoluto ──────────
+// ── Parsear timestamp de Supabase limpiando anomalías de formato ─────────────
 function parseSupabaseTimestamp(ts) {
-  if (!ts) return new Date(0);
+  if (!ts) return new Date();
   if (ts instanceof Date && !isNaN(ts.getTime())) return ts;
-  
   try {
     let str = ts.toString().trim();
     str = str.includes(' ') ? str.replace(' ', 'T') : str;
-    
-    // Si viene con un desfase numérico de microsegundos de Postgres, removemos partes extrañas antes de la zona
-    if (!str.endsWith('Z') && !str.includes('+') && !str.includes('-')) {
-      // Intentamos tratarlo como UTC nativo directo
-      const testDate = new Date(str + 'Z');
-      if (!isNaN(testDate.getTime())) return testDate;
-    }
-    
     const parsedDate = new Date(str);
-    return isNaN(parsedDate.getTime()) ? new Date(0) : parsedDate;
+    return isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
   } catch (e) {
-    console.error("Error parseando timestamp:", e);
-    return new Date(0);
+    return new Date();
   }
 }
 
-// ── Countdown hook con blindaje anti-desfase de base de datos ──────────────────────
-function useCountdown(expiresAt) {
-  const [seconds, setSeconds] = useState(300); // 5 minutos por defecto (300s)
+// ── Hook de Cuenta Regresiva Relativa Libre de Errores de Reloj Local ──────────
+function useCountdown(expiresAt, createdAt) {
+  // Inicializamos por defecto en 5 minutos (300 segundos) para evitar parpadeos en "Expirado"
+  const [seconds, setSeconds] = useState(300);
 
   useEffect(() => {
-    if (!expiresAt) return;
+    if (!expiresAt || !createdAt) return;
+
+    const tCreate = parseSupabaseTimestamp(createdAt).getTime();
+    const tExpire = parseSupabaseTimestamp(expiresAt).getTime();
+    
+    // Duración teórica establecida por el backend (Ej: 300,000 ms)
+    const totalDurationMs = tExpire - tCreate;
+    
+    // Registramos exactamente el milisegundo local en el que este componente se montó
+    const localStartTime = Date.now();
 
     const tick = () => {
-      const ahora = Date.now();
-      let target = parseSupabaseTimestamp(expiresAt).getTime();
-      
-      let remaining = Math.floor((target - ahora) / 1000);
+      const currentLocalTime = Date.now();
+      // Cuánto tiempo real (en ms) ha transcurrido en la pantalla del operador
+      const elapsedLocalMs = currentLocalTime - localStartTime;
 
-      // CORRECCIÓN AL 100%: Si por error de zona horaria de la DB la diferencia da negativa de inmediato
-      // pero el registro es reciente (menos de 6 minutos de diferencia con el reloj local),
-      // forzamos el cálculo de tiempo relativo real asumiendo el desfase estándar de México (UTC-6)
-      if (remaining <= 0 || remaining > 300) {
-        const offsetCDMX = 6 * 60 * 60 * 1000; // 6 horas en milisegundos
-        const targetAjustado = target + offsetCDMX;
-        const remainingAjustado = Math.floor((targetAjustado - ahora) / 1000);
+      // Calculamos el tiempo remanente basándonos puramente en la duración relativa
+      const remainingMs = totalDurationMs - elapsedLocalMs;
+      const remainingSeconds = Math.floor(remainingMs / 1000);
 
-        if (remainingAjustado > 0 && remainingAjustado <= 300) {
-          remaining = remainingAjustado;
-        } else {
-          remaining = 0; // Si verdaderamente ya pasó el tiempo, se queda en 0
-        }
-      }
-
-      setSeconds(Math.max(0, remaining));
+      setSeconds(Math.max(0, remainingSeconds));
     };
 
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [expiresAt]);
+  }, [expiresAt, createdAt]);
 
   return seconds;
 }
 
 // ── Card individual de solicitud con su propio countdown ──────────────────────
 function RequestCard({ request, onAccept, accepting, isMobile }) {
-  const secondsLeft = useCountdown(request.expires_at);
+  // Pasamos ambos campos del backend para realizar el cálculo relativo infalible
+  const secondsLeft = useCountdown(request.expires_at, request.created_at);
   const minutes     = Math.floor(secondsLeft / 60);
   const secs        = secondsLeft % 60;
-  const isUrgent    = secondsLeft <= 60;
+  const isUrgent    = secondsLeft <= 60 && secondsLeft > 0;
   const isExpired   = secondsLeft === 0;
   const b           = request.booking;
 
@@ -256,7 +245,7 @@ function RequestCard({ request, onAccept, accepting, isMobile }) {
         </div>
       </div>
 
-      {/* Alternativa de aviso urgente */}
+      {/* Alerta de último minuto */}
       {isUrgent && !isExpired && (
         <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#dc2626', fontWeight: 600, textAlign: 'center' }}>
           ⚡ ¡Menos de 1 minuto! Acepta ahora o pasará al siguiente operador.
@@ -327,7 +316,7 @@ function PhotoUploadServicio({ label, value, onChange, capture = 'environment', 
           <span style={{ position: 'absolute', top: 8, right: 8, background: '#10b981', color: '#fff', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>✅ Guardada</span>
         </div>
       ) : (
-        <div style={{ width: '100%', height: 160, background: '#f9fafb', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifycontent: 'center', marginBottom: 10, border: '2px dashed #e5e7eb' }}>
+        <div style={{ width: '100%', height: 160, background: '#f9fafb', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 10, border: '2px dashed #e5e7eb' }}>
           <Camera size={40} color="#d1d5db" />
           <span style={{ fontSize: 12, color: '#9ca3af', marginTop: 6 }}>Sin foto aún</span>
         </div>
