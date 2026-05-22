@@ -395,7 +395,10 @@ const OperatorView = () => {
         const stored = localStorage.getItem('mazclean-auth');
         if (stored) { const parsed = JSON.parse(stored); token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY; }
       } catch {}
-      const amount = membershipConfig?.operator_price || 200;
+      // Usar precio efectivo con promo si existe, igual que Stripe
+      const basePrice  = parseFloat(membershipConfig?.operator_price || 200)
+      const promoPrice = effectivePromo?.effective_price ? parseFloat(effectivePromo.effective_price) : null
+      const amount     = promoPrice !== null ? Math.min(promoPrice, basePrice) : basePrice;
       const res = await fetch(`${SUPABASE_URL}/rest/v1/membership_requests`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
@@ -501,10 +504,13 @@ const OperatorView = () => {
       const totalIncome = bookings.reduce((acc, b) => acc + parseFloat(b.total_price || 0), 0)
       const commission  = Math.round(totalIncome * pct / 100)
 
-      // 6. Membresía con descuento por nivel
-      const discMap = { operador: 0, pro: 0.10, proplus: 0.20, elite: 0.35 }
+      // 6. Membresía con descuento por nivel o promo activa (lo que sea menor)
+      const discMap    = { operador: 0, pro: 0.10, proplus: 0.20, elite: 0.35 }
       const basePrice  = parseFloat(cfg.operator_price) || 200
-      const membership = Math.round(basePrice * (1 - (discMap[level] || 0)))
+      const levelPrice = Math.round(basePrice * (1 - (discMap[level] || 0)))
+      // Si hay promo activa, usar su precio efectivo (puede ser mejor que el descuento por nivel)
+      const promoPrice = effectivePromo?.effective_price ? parseFloat(effectivePromo.effective_price) : null
+      const membership = promoPrice !== null ? Math.round(Math.min(promoPrice, levelPrice)) : levelPrice
       const totalDue   = commission + membership
 
       // 7. Tabla de niveles con %s configurados
