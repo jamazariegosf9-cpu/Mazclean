@@ -173,7 +173,16 @@ export default function OperatorAccount({
               {/* Fila membresía */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderBottom: '0.5px solid #f3f4f6' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#6b7280' }}>Membresía mensual</div>
+                  <div style={{ fontSize: 13, color: '#6b7280' }}>
+                    {(() => {
+                      const days = membershipConfig?.operator_duration_days || 30
+                      if (days <= 7)  return 'Membresía semanal'
+                      if (days <= 14) return 'Membresía quincenal'
+                      if (days <= 31) return 'Membresía mensual'
+                      if (days <= 92) return 'Membresía trimestral'
+                      return `Membresía ${days} días`
+                    })()}
+                  </div>
                   {commissionData.level !== 'operador' && (
                     <div style={{ fontSize: 11, color: '#059669', marginTop: 1 }}>
                       {commissionData.level === 'pro' ? '10' : commissionData.level === 'proplus' ? '20' : '35'}% de descuento por tu nivel
