@@ -143,8 +143,7 @@ const OperatorView = () => {
     fetchOperatorBookings();
     fetchBookingRequests();
     fetchMembershipConfig();
-    fetchEffectivePromo();
-    fetchCommissionData();
+    fetchEffectivePromo(); // llama fetchCommissionData internamente con promo correcta
     fetchRatingData();
     fetchBillingHistory();
     fetchUnreadCounts();
@@ -454,9 +453,11 @@ const OperatorView = () => {
     finally { setLoadingInfografias(false) }
   }
 
-  const fetchCommissionData = async () => {
+  const fetchCommissionData = async (promoOverride = null) => {
     if (!user?.id) return
     setLoadingCommission(true)
+    // promoOverride permite pasar la promo directamente cuando effectivePromo aún no está en state
+    const activePromo = promoOverride !== undefined ? promoOverride : effectivePromo
     try {
       let token = SUPABASE_ANON_KEY
       try {
@@ -509,7 +510,7 @@ const OperatorView = () => {
       const basePrice  = parseFloat(cfg.operator_price) || 200
       const levelPrice = Math.round(basePrice * (1 - (discMap[level] || 0)))
       // Si hay promo activa, usar su precio efectivo (puede ser mejor que el descuento por nivel)
-      const promoPrice = effectivePromo?.effective_price ? parseFloat(effectivePromo.effective_price) : null
+      const promoPrice = activePromo?.effective_price ? parseFloat(activePromo.effective_price) : null
       const membership = promoPrice !== null ? Math.round(Math.min(promoPrice, levelPrice)) : levelPrice
       const totalDue   = commission + membership
 
@@ -595,7 +596,10 @@ const OperatorView = () => {
         p_user_id: user.id,
         p_user_type: 'operador',
       });
-      if (!error && data?.[0]) setEffectivePromo(data[0]);
+      const promo = (!error && data?.[0]) ? data[0] : null;
+      if (promo) setEffectivePromo(promo);
+      // Pasar la promo directamente para evitar race condition con el state
+      await fetchCommissionData(promo);
     } catch (err) { console.error('fetchEffectivePromo:', err); }
   };
 
