@@ -103,6 +103,7 @@ export default function BookingView({ onNavigate }) {
   const [loadingServices, setLoadingServices] = useState(true)
   const [success, setSuccess] = useState(false)
   const [error, setError]     = useState('')
+  const [scheduledDispatch, setScheduledDispatch] = useState(null)
   const [mapsLoaded, setMapsLoaded] = useState(false)
   // Direcciones recientes del cliente
   const [recentAddresses, setRecentAddresses] = useState([])
@@ -614,18 +615,57 @@ export default function BookingView({ onNavigate }) {
       // Guardar dirección en historial del cliente
       if (addressDetails) await saveRecentAddress(addressDetails)
 
-      try {
-        await fetch(`${SUPABASE_URL}/functions/v1/process-booking-request`, {
-          method:  'POST',
-          headers: {
-            'Content-Type':  'application/json',
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-            'apikey':        SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({ booking_id: newBooking.id, ronda: 1 }),
-        })
-      } catch (e) {
-        console.warn('Error lanzando proceso de asignación:', e.message)
+      // ── Lógica de disparo inmediato vs diferido ──────────────────────────
+      // Rango inmediato: 05:45:00 — 21:00:59 hora LOCAL del dispositivo
+      // Fuera de rango: guardar reserva y disparar MAX(05:45, scheduled_time - 60min)
+      const now        = new Date()
+      const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60
+
+      // 05:45:00 = 345 min | 21:00:59 = 1260.98 min
+      const isInmediato = nowMinutes >= 345 && nowMinutes < 1261
+
+      if (isInmediato) {
+        // Disparo inmediato
+        try {
+          await fetch(`${SUPABASE_URL}/functions/v1/process-booking-request`, {
+            method:  'POST',
+            headers: {
+              'Content-Type':  'application/json',
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              'apikey':        SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({ booking_id: newBooking.id, ronda: 1 }),
+          })
+        } catch (e) {
+          console.warn('Error lanzando proceso de asignación:', e.message)
+        }
+      } else {
+        // Disparo diferido — calcular hora de disparo: MAX(05:45, scheduled_time - 60min)
+        const [svcH, svcM] = timeFrom.split(':').map(Number)
+        const svcMinutes   = svcH * 60 + svcM
+        const dispatchMin  = Math.max(345, svcMinutes - 60) // 345 = 05:45
+        const dispatchH    = Math.floor(dispatchMin / 60)
+        const dispatchM    = dispatchMin % 60
+        const dispatchStr  = `${String(dispatchH).padStart(2,'0')}:${String(dispatchM).padStart(2,'0')}`
+
+        // Guardar hora de disparo en el booking para que el cron la detecte
+        try {
+          await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${newBooking.id}`, {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'apikey': supabaseKey,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=minimal',
+            },
+            body: JSON.stringify({ dispatch_at: dispatchStr }),
+          })
+        } catch (e) {
+          console.warn('Error guardando dispatch_at:', e.message)
+        }
+
+        // Mostrar hora de disparo al cliente en el mensaje de éxito
+        setScheduledDispatch(dispatchStr)
       }
 
       setLoading(false)
@@ -695,8 +735,16 @@ export default function BookingView({ onNavigate }) {
             <p style={{ fontSize: 14, color: '#166534', margin: 0 }}>🕐 Horario solicitado: <strong>{timeFrom} — {timeTo} hrs</strong></p>
           </div>
           <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 8px' }}>📍 {addressDetails?.formatted}</p>
-          <p style={{ fontSize: 14, color: '#9ca3af', margin: '0 0 24px', lineHeight: 1.6 }}>Estamos buscando el mejor operador para ti. Te notificaremos cuando sea asignado.</p>
-          <button onClick={() => { resetForm(); if (onNavigate) onNavigate('home') }} style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 16, fontWeight: 600, width: '100%', minHeight: 48 }}>Volver al inicio</button>
+          {scheduledDispatch ? (
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 16px', margin: '0 0 16px' }}>
+              <p style={{ fontSize: 14, color: '#92400e', margin: 0, lineHeight: 1.6 }}>
+                ⏰ Tu reservación será asignada a un operador a partir de las <strong>{scheduledDispatch} hrs</strong>. Te notificaremos por WhatsApp cuando sea confirmada.
+              </p>
+            </div>
+          ) : (
+            <p style={{ fontSize: 14, color: '#9ca3af', margin: '0 0 24px', lineHeight: 1.6 }}>Estamos buscando el mejor operador para ti. Te notificaremos cuando sea asignado.</p>
+          )}
+          <button onClick={() => { resetForm(); if (onNavigate) onNavigate('home') }} style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 16, fontWeight: 600, width: '100%', minHeight: 48, marginTop: scheduledDispatch ? 8 : 0 }}>Volver al inicio</button>
         </div>
       </div>
     )
