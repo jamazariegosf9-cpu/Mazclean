@@ -3,6 +3,7 @@
 // JS puro — sin TypeScript annotations
 
 import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from './lib/supabase';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -59,9 +60,20 @@ function useConversations(token) {
 
   useEffect(() => {
     fetchConversations();
-    // Polling cada 15s para reflejar nuevos mensajes sin refrescar manualmente
-    const interval = setInterval(fetchConversations, 15000);
-    return () => clearInterval(interval);
+
+    // Realtime — actualización instantánea cuando llega mensaje nuevo
+    const channel = supabase
+      .channel('messages-inbox')
+      .on('postgres_changes', {
+        event:  '*',
+        schema: 'public',
+        table:  'messages',
+      }, () => {
+        fetchConversations();
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
   }, [token]);
 
   return { conversations, loading, refetch: fetchConversations };
@@ -133,9 +145,21 @@ function ConversationThread({ conv, token, onBack, onRefetch, isMobile }) {
 
   useEffect(() => {
     fetchMessages();
-    // Polling cada 15s para recibir nuevos mensajes en tiempo real
-    const interval = setInterval(fetchMessages, 15000);
-    return () => clearInterval(interval);
+
+    // Realtime — actualización instantánea de mensajes en el hilo abierto
+    const channel = supabase
+      .channel(`messages-thread-${conv.conversation_id}`)
+      .on('postgres_changes', {
+        event:  'INSERT',
+        schema: 'public',
+        table:  'messages',
+        filter: `conversation_id=eq.${conv.conversation_id}`,
+      }, () => {
+        fetchMessages();
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
   }, [conv.conversation_id]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
