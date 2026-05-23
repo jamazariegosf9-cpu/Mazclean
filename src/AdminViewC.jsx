@@ -10,6 +10,7 @@ import { supabase } from './lib/supabase';
 import AdminAcademia from './AdminAcademia';
 import { sendWhatsApp } from './lib/whatsapp';
 import AdminViewA from './AdminViewA';
+import MessagingInbox from './MessagingInbox';
 import AdminViewB from './AdminViewB';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
@@ -391,6 +392,7 @@ const MembresiaConfig = ({ isMobile }) => {
 const AdminViewC = () => {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab]   = useState('general');
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const [bookings, setBookings]     = useState([]);
   const [operators, setOperators]   = useState([]);
   const [incidents, setIncidents]   = useState([]);
@@ -418,6 +420,7 @@ const AdminViewC = () => {
   useEffect(() => {
     fetchData();
     fetchUnattendedBookings();
+    fetchUnreadMessages();
     const channel = supabase
       .channel('admin-updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
@@ -510,6 +513,27 @@ const AdminViewC = () => {
       );
       setUnattendedBookings(res.ok ? await res.json() : []);
     } catch (err) { console.error('fetchUnattendedBookings:', err); }
+  };
+
+  const fetchUnreadMessages = async () => {
+    try {
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY;
+        }
+      } catch {}
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/messages?direction=eq.inbound&read_at=is.null&select=id`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setUnreadMessages(Array.isArray(data) ? data.length : 0);
+      }
+    } catch (err) { console.error('fetchUnreadMessages:', err); }
   };
 
   // ── Catálogo ──────────────────────────────────────────────────────────────
@@ -836,6 +860,7 @@ const AdminViewC = () => {
             { id: 'general',    label: '⚡ General' },
             { id: 'bookings',  label: `📋 Reservaciones${unattendedBookings.length > 0 ? ` 🚨${unattendedBookings.length}` : ''}` },
             { id: 'operators', label: `👷 Operadores${incidents.length > 0 || pendingOperators.length > 0 ? ` ⚠️${incidents.length + pendingOperators.length}` : ''}` },
+            { id: 'mensajes',  label: `💬 Mensajes${unreadMessages > 0 ? ` 🔴${unreadMessages}` : ''}` },
             { id: 'catalog',   label: '🛎 Catálogo' },
             { id: 'membresias', label: '💳 Membresías' },
             { id: 'academia', label: '🎓 Academia' },
@@ -881,6 +906,25 @@ const AdminViewC = () => {
             setPendingOperators={setPendingOperators}
             fetchData={fetchData}
           />
+        )}
+
+        {/* Tab: Mensajes */}
+        {activeTab === 'mensajes' && (
+          <div style={{ marginTop: 16 }}>
+            <MessagingInbox
+              token={(() => {
+                try {
+                  const stored = localStorage.getItem('mazclean-auth');
+                  if (stored) {
+                    const p = JSON.parse(stored);
+                    return p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY;
+                  }
+                } catch {}
+                return SUPABASE_ANON_KEY;
+              })()}
+              isMobile={isMobile}
+            />
+          </div>
         )}
 
         {/* Tab: Catálogo */}
