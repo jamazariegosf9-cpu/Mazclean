@@ -57,7 +57,12 @@ function useConversations(token) {
     }
   };
 
-  useEffect(() => { fetchConversations(); }, [token]);
+  useEffect(() => {
+    fetchConversations();
+    // Polling cada 15s para reflejar nuevos mensajes sin refrescar manualmente
+    const interval = setInterval(fetchConversations, 15000);
+    return () => clearInterval(interval);
+  }, [token]);
 
   return { conversations, loading, refetch: fetchConversations };
 }
@@ -126,7 +131,12 @@ function ConversationThread({ conv, token, onBack, onRefetch, isMobile }) {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchMessages(); }, [conv.conversation_id]);
+  useEffect(() => {
+    fetchMessages();
+    // Polling cada 15s para recibir nuevos mensajes en tiempo real
+    const interval = setInterval(fetchMessages, 15000);
+    return () => clearInterval(interval);
+  }, [conv.conversation_id]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   const sendReply = async () => {
