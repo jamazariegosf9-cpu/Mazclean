@@ -1522,7 +1522,7 @@ const OperatorView = () => {
                 <button onClick={() => {
                   setMembershipPanelOpen(p => !p)
                   if (!showMembershipHistory) fetchMembershipHistory()
-                }} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer', minHeight: 30,
+                }} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', minHeight: 30,
                   background: effectiveProfile.membership_status === 'activa'
                     ? 'rgba(16,185,129,0.25)' : 'rgba(245,158,11,0.25)',
                   border: effectiveProfile.membership_status === 'activa'

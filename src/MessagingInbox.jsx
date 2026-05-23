@@ -1,10 +1,10 @@
-// MessagingInbox.jsx v1.0
+// MessagingInbox.jsx v1.1
 // Bandeja de mensajes WhatsApp entrantes para el Admin
-// Muestra conversaciones agrupadas por número, permite responder
+// JS puro — sin TypeScript annotations
 
 import React, { useState, useEffect, useRef } from 'react';
 
-const SUPABASE_URL     = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // ── Hook para cargar conversaciones ──────────────────────────────────────────
@@ -14,7 +14,6 @@ function useConversations(token) {
 
   const fetchConversations = async () => {
     try {
-      // Agrupar mensajes por conversation_id con el último mensaje y conteo de no leídos
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/messages?select=conversation_id,from_phone,sender_role,user_id,content,direction,read_at,created_at&order=created_at.desc`,
         { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
@@ -23,7 +22,7 @@ function useConversations(token) {
       if (!Array.isArray(data)) { setLoading(false); return; }
 
       // Agrupar por conversation_id
-      const grouped: Record<string, any> = {};
+      const grouped = {};
       for (const msg of data) {
         if (!msg.conversation_id) continue;
         if (!grouped[msg.conversation_id]) {
@@ -35,17 +34,19 @@ function useConversations(token) {
             last_message:    msg.content,
             last_at:         msg.created_at,
             unread:          0,
-            messages:        [],
           };
         }
-        grouped[msg.conversation_id].messages.push(msg);
         if (msg.direction === 'inbound' && !msg.read_at) {
           grouped[msg.conversation_id].unread++;
         }
+        // Actualizar último mensaje si es más reciente
+        if (new Date(msg.created_at) > new Date(grouped[msg.conversation_id].last_at)) {
+          grouped[msg.conversation_id].last_message = msg.content;
+          grouped[msg.conversation_id].last_at      = msg.created_at;
+        }
       }
 
-      // Ordenar por último mensaje
-      const sorted = Object.values(grouped).sort((a: any, b: any) =>
+      const sorted = Object.values(grouped).sort((a, b) =>
         new Date(b.last_at).getTime() - new Date(a.last_at).getTime()
       );
       setConversations(sorted);
@@ -62,10 +63,11 @@ function useConversations(token) {
 }
 
 // ── Formato de hora ───────────────────────────────────────────────────────────
-function formatTime(iso: string) {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+function formatTime(iso) {
+  const d       = new Date(iso);
+  const now     = new Date();
+  const diffMs  = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
   if (diffDays === 0) return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
   if (diffDays === 1) return 'Ayer';
   if (diffDays < 7)  return d.toLocaleDateString('es-MX', { weekday: 'short' });
@@ -73,12 +75,12 @@ function formatTime(iso: string) {
 }
 
 // ── Badge de rol ──────────────────────────────────────────────────────────────
-function RoleBadge({ role }: { role: string }) {
-  const map: Record<string, { label: string; color: string; bg: string }> = {
-    cliente:      { label: 'Cliente',   color: '#1d4ed8', bg: '#eff6ff' },
-    operador:     { label: 'Operador',  color: '#065f46', bg: '#ecfdf5' },
-    admin:        { label: 'Admin',     color: '#92400e', bg: '#fffbeb' },
-    desconocido:  { label: 'Nuevo',     color: '#7c3aed', bg: '#f5f3ff' },
+function RoleBadge({ role }) {
+  const map = {
+    cliente:     { label: 'Cliente',  color: '#1d4ed8', bg: '#eff6ff' },
+    operador:    { label: 'Operador', color: '#065f46', bg: '#ecfdf5' },
+    admin:       { label: 'Admin',    color: '#92400e', bg: '#fffbeb' },
+    desconocido: { label: 'Nuevo',    color: '#7c3aed', bg: '#f5f3ff' },
   };
   const s = map[role] || map.desconocido;
   return (
@@ -89,12 +91,12 @@ function RoleBadge({ role }: { role: string }) {
 }
 
 // ── Vista de conversación ─────────────────────────────────────────────────────
-function ConversationThread({ conv, token, onBack, onRefetch, isMobile }: any) {
-  const [messages, setMessages]   = useState<any[]>([]);
-  const [reply, setReply]         = useState('');
-  const [sending, setSending]     = useState(false);
-  const [loading, setLoading]     = useState(true);
-  const bottomRef                 = useRef<HTMLDivElement>(null);
+function ConversationThread({ conv, token, onBack, onRefetch, isMobile }) {
+  const [messages, setMessages] = useState([]);
+  const [reply, setReply]       = useState('');
+  const [sending, setSending]   = useState(false);
+  const [loading, setLoading]   = useState(true);
+  const bottomRef               = useRef(null);
 
   const fetchMessages = async () => {
     try {
@@ -109,7 +111,7 @@ function ConversationThread({ conv, token, onBack, onRefetch, isMobile }: any) {
       await fetch(
         `${SUPABASE_URL}/rest/v1/messages?conversation_id=eq.${encodeURIComponent(conv.conversation_id)}&direction=eq.inbound&read_at=is.null`,
         {
-          method: 'PATCH',
+          method:  'PATCH',
           headers: {
             'Authorization': `Bearer ${token}`,
             'apikey':        SUPABASE_ANON_KEY,
@@ -131,7 +133,6 @@ function ConversationThread({ conv, token, onBack, onRefetch, isMobile }: any) {
     if (!reply.trim() || sending) return;
     setSending(true);
     try {
-      // Llamar a send-whatsapp directamente
       await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
         method:  'POST',
         headers: {
@@ -146,7 +147,6 @@ function ConversationThread({ conv, token, onBack, onRefetch, isMobile }: any) {
         }),
       });
 
-      // Guardar en messages como outbound
       await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
         method:  'POST',
         headers: {
@@ -157,7 +157,7 @@ function ConversationThread({ conv, token, onBack, onRefetch, isMobile }: any) {
         },
         body: JSON.stringify({
           conversation_id: conv.conversation_id,
-          from_phone:      conv.to_phone || 'mazclean',
+          from_phone:      'mazclean',
           to_phone:        conv.from_phone,
           direction:       'outbound',
           channel:         'whatsapp',
@@ -194,14 +194,14 @@ function ConversationThread({ conv, token, onBack, onRefetch, isMobile }: any) {
         ) : messages.map(msg => (
           <div key={msg.id} style={{ display: 'flex', justifyContent: msg.direction === 'outbound' ? 'flex-end' : 'flex-start' }}>
             <div style={{
-              maxWidth: '75%',
-              background: msg.direction === 'outbound' ? '#3b82f6' : '#fff',
-              color:      msg.direction === 'outbound' ? '#fff' : '#111827',
+              maxWidth:     '75%',
+              background:   msg.direction === 'outbound' ? '#3b82f6' : '#fff',
+              color:        msg.direction === 'outbound' ? '#fff' : '#111827',
               borderRadius: msg.direction === 'outbound' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-              padding: '8px 12px',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-              fontSize: 13,
-              lineHeight: 1.5,
+              padding:      '8px 12px',
+              boxShadow:    '0 1px 3px rgba(0,0,0,0.08)',
+              fontSize:     13,
+              lineHeight:   1.5,
             }}>
               <div>{msg.content}</div>
               <div style={{ fontSize: 10, opacity: 0.6, marginTop: 4, textAlign: 'right' }}>{formatTime(msg.created_at)}</div>
@@ -225,10 +225,11 @@ function ConversationThread({ conv, token, onBack, onRefetch, isMobile }: any) {
           onClick={sendReply}
           disabled={!reply.trim() || sending}
           style={{
-            background: reply.trim() && !sending ? '#3b82f6' : '#e5e7eb',
-            color:      reply.trim() && !sending ? '#fff' : '#9ca3af',
-            border:     'none', borderRadius: 10, padding: '0 16px', cursor: reply.trim() && !sending ? 'pointer' : 'default',
-            fontSize: 13, fontWeight: 600, minWidth: 72,
+            background: (reply.trim() && !sending) ? '#3b82f6' : '#e5e7eb',
+            color:      (reply.trim() && !sending) ? '#fff'    : '#9ca3af',
+            border:     'none', borderRadius: 10, padding: '0 16px',
+            cursor:     (reply.trim() && !sending) ? 'pointer' : 'default',
+            fontSize:   13, fontWeight: 600, minWidth: 72,
           }}
         >
           {sending ? '⏳' : '📤 Enviar'}
@@ -239,9 +240,9 @@ function ConversationThread({ conv, token, onBack, onRefetch, isMobile }: any) {
 }
 
 // ── Componente principal: MessagingInbox ──────────────────────────────────────
-export default function MessagingInbox({ token, isMobile }: { token: string; isMobile: boolean }) {
+export default function MessagingInbox({ token, isMobile }) {
   const { conversations, loading, refetch } = useConversations(token);
-  const [selected, setSelected]             = useState<any>(null);
+  const [selected, setSelected]             = useState(null);
 
   if (loading) {
     return <div style={{ textAlign: 'center', padding: 40, color: '#9ca3af' }}>Cargando conversaciones...</div>;
@@ -271,7 +272,7 @@ export default function MessagingInbox({ token, isMobile }: { token: string; isM
     );
   }
 
-  const totalUnread = conversations.reduce((s: number, c: any) => s + c.unread, 0);
+  const totalUnread = conversations.reduce((s, c) => s + c.unread, 0);
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -292,21 +293,20 @@ export default function MessagingInbox({ token, isMobile }: { token: string; isM
 
       {/* Lista de conversaciones */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {conversations.map((conv: any) => (
+        {conversations.map(conv => (
           <div
             key={conv.conversation_id}
             onClick={() => setSelected(conv)}
             style={{
-              background:    '#fff',
-              borderRadius:  12,
-              padding:       '12px 16px',
-              cursor:        'pointer',
-              border:        conv.unread > 0 ? '1.5px solid #bfdbfe' : '1.5px solid #f3f4f6',
-              boxShadow:     '0 1px 4px rgba(0,0,0,0.06)',
-              display:       'flex',
-              alignItems:    'center',
-              gap:           12,
-              transition:    'box-shadow 0.15s',
+              background:  '#fff',
+              borderRadius: 12,
+              padding:      '12px 16px',
+              cursor:       'pointer',
+              border:       conv.unread > 0 ? '1.5px solid #bfdbfe' : '1.5px solid #f3f4f6',
+              boxShadow:    '0 1px 4px rgba(0,0,0,0.06)',
+              display:      'flex',
+              alignItems:   'center',
+              gap:          12,
             }}
           >
             {/* Avatar */}
