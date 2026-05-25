@@ -855,25 +855,64 @@ const AdminViewC = () => {
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: isMobile ? '0 12px' : '0 16px', overflowX: 'hidden', boxSizing: 'border-box' }}>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 4, marginTop: 20, background: '#e5e7eb', padding: 4, borderRadius: 12, overflowX: 'auto', scrollbarWidth: 'none' }}>
-          {[
-            { id: 'general',    label: '⚡ General' },
-            { id: 'bookings',  label: `📋 Reservaciones${unattendedBookings.length > 0 ? ` 🚨${unattendedBookings.length}` : ''}` },
-            { id: 'operators', label: `👷 Operadores${incidents.length > 0 || pendingOperators.length > 0 ? ` ⚠️${incidents.length + pendingOperators.length}` : ''}` },
-            { id: 'mensajes',  label: `💬 Mensajes${unreadMessages > 0 ? ` 🔴${unreadMessages}` : ''}` },
-            { id: 'catalog',   label: '🛎 Catálogo' },
-            { id: 'membresias', label: '💳 Membresías' },
-            { id: 'academia', label: '🎓 Academia' },
-            { id: 'promociones', label: `🏷️ Promociones${promotions.filter(p => p.is_active && new Date(p.valid_until) > new Date()).length > 0 ? ` (${promotions.filter(p => p.is_active && new Date(p.valid_until) > new Date()).length})` : ''}` },
-            { id: 'pagos', label: '🏦 Pagos' },
-          ].map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              style={{ padding: isMobile ? '8px 12px' : '8px 20px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: isMobile ? 12 : 14, fontWeight: 600, whiteSpace: 'nowrap', background: activeTab === tab.id ? '#fff' : 'transparent', color: activeTab === tab.id ? '#1e40af' : '#6b7280', boxShadow: activeTab === tab.id ? '0 2px 8px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.2s', minHeight: 44 }}>
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {/* Tabs — Desktop: fila completa | Móvil: menú hamburguesa */}
+        {(() => {
+          const allTabs = [
+            { id: 'general',     label: '⚡ General',       icon: '⚡' },
+            { id: 'bookings',    label: `📋 Reservaciones${unattendedBookings.length > 0 ? ` 🚨${unattendedBookings.length}` : ''}`, icon: '📋' },
+            { id: 'operators',   label: `👷 Operadores${incidents.length > 0 || pendingOperators.length > 0 ? ` ⚠️${incidents.length + pendingOperators.length}` : ''}`, icon: '👷' },
+            { id: 'mensajes',    label: `💬 Mensajes${unreadMessages > 0 ? ` 🔴${unreadMessages}` : ''}`, icon: '💬' },
+            { id: 'catalog',     label: '🛎 Catálogo',      icon: '🛎' },
+            { id: 'membresias',  label: '💳 Membresías',    icon: '💳' },
+            { id: 'academia',    label: '🎓 Academia',      icon: '🎓' },
+            { id: 'promociones', label: `🏷️ Promociones${promotions.filter(p => p.is_active && new Date(p.valid_until) > new Date()).length > 0 ? ` (${promotions.filter(p => p.is_active && new Date(p.valid_until) > new Date()).length})` : ''}`, icon: '🏷️' },
+            { id: 'pagos',       label: '🏦 Pagos',         icon: '🏦' },
+          ]
+          const activeTabLabel = allTabs.find(t => t.id === activeTab)?.label || 'Menú'
+          if (!isMobile) {
+            // ── DESKTOP: tabs horizontales completos ──────────────────────────
+            return (
+              <div style={{ display: 'flex', gap: 4, marginTop: 20, background: '#e5e7eb', padding: 4, borderRadius: 12, flexWrap: 'wrap' }}>
+                {allTabs.map(tab => (
+                  <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                    style={{ padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', background: activeTab === tab.id ? '#fff' : 'transparent', color: activeTab === tab.id ? '#1e40af' : '#6b7280', boxShadow: activeTab === tab.id ? '0 2px 8px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.2s', minHeight: 40 }}>
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            )
+          }
+          // ── MÓVIL: menú hamburguesa ───────────────────────────────────────
+          return (
+            <div style={{ position: 'relative', marginTop: 16 }}>
+              {/* Botón hamburguesa — muestra tab activo */}
+              <button
+                onClick={() => {
+                  const el = document.getElementById('admin-tab-menu')
+                  if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none'
+                }}
+                style={{ width: '100%', padding: '12px 16px', background: '#1e40af', border: 'none', borderRadius: 12, color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 48 }}>
+                <span>{activeTabLabel}</span>
+                <span style={{ fontSize: 18 }}>☰</span>
+              </button>
+              {/* Menú desplegable */}
+              <div id="admin-tab-menu" style={{ display: 'none', position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200, background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', border: '1px solid #e5e7eb', marginTop: 4, flexDirection: 'column', overflow: 'hidden' }}>
+                {allTabs.map(tab => (
+                  <button key={tab.id}
+                    onClick={() => {
+                      setActiveTab(tab.id)
+                      const el = document.getElementById('admin-tab-menu')
+                      if (el) el.style.display = 'none'
+                    }}
+                    style={{ padding: '14px 18px', border: 'none', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', fontSize: 14, fontWeight: activeTab === tab.id ? 700 : 500, background: activeTab === tab.id ? '#eff6ff' : '#fff', color: activeTab === tab.id ? '#1e40af' : '#374151', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10, minHeight: 48 }}>
+                      {tab.label}
+                      {activeTab === tab.id && <span style={{ marginLeft: 'auto', color: '#3b82f6', fontSize: 16 }}>✓</span>}
+                    </button>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Tab: Reservaciones */}
         {activeTab === 'general' && (
