@@ -11,6 +11,7 @@ import AdminAcademia from './AdminAcademia';
 import { sendWhatsApp } from './lib/whatsapp';
 import AdminViewA from './AdminViewA';
 import MessagingInbox from './MessagingInbox';
+import AdminPayments from './AdminPayments';
 import AdminViewB from './AdminViewB';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
@@ -865,6 +866,7 @@ const AdminViewC = () => {
             { id: 'membresias', label: '💳 Membresías' },
             { id: 'academia', label: '🎓 Academia' },
             { id: 'promociones', label: `🏷️ Promociones${promotions.filter(p => p.is_active && new Date(p.valid_until) > new Date()).length > 0 ? ` (${promotions.filter(p => p.is_active && new Date(p.valid_until) > new Date()).length})` : ''}` },
+            { id: 'pagos', label: '🏦 Pagos' },
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               style={{ padding: isMobile ? '8px 12px' : '8px 20px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: isMobile ? 12 : 14, fontWeight: 600, whiteSpace: 'nowrap', background: activeTab === tab.id ? '#fff' : 'transparent', color: activeTab === tab.id ? '#1e40af' : '#6b7280', boxShadow: activeTab === tab.id ? '0 2px 8px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.2s', minHeight: 44 }}>
@@ -996,6 +998,12 @@ const AdminViewC = () => {
         )}
 
         {/* Tab: Promociones */}
+        {activeTab === 'pagos' && (
+          <div style={{ marginTop: 16 }}>
+            <AdminPayments isMobile={isMobile} />
+          </div>
+        )}
+
         {activeTab === 'promociones' && (
           <div style={{ marginTop: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
