@@ -1576,13 +1576,22 @@ const OperatorView = () => {
                         </button>
                       </>
                     )}
-                    {/* Renovar anticipado */}
-                    {effectiveProfile.membership_status === 'activa' && effectiveProfile.membership_end_at &&
-                      Math.ceil((new Date(effectiveProfile.membership_end_at) - new Date()) / 86400000) <= 15 && (
+                    {/* Renovar anticipado — siempre visible con ambas opciones de pago */}
+                    {effectiveProfile.membership_status === 'activa' && effectiveProfile.membership_end_at && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                          🔄 Renovar anticipado · {Math.ceil((new Date(effectiveProfile.membership_end_at) - new Date()) / 86400000)}d restantes
+                        </div>
+                        {payError && <div style={{ fontSize: 10, color: '#fca5a5' }}>⚠️ {payError}</div>}
                         <button onClick={handleSubscribeOperator} disabled={payingMembership}
-                          style={{ padding: '8px 14px', background: 'rgba(251,191,36,0.2)', border: '1px solid rgba(251,191,36,0.4)', borderRadius: 10, color: '#fde68a', fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 38 }}>
-                          {payingMembership ? '⏳...' : `🔄 Renovar anticipado (${Math.ceil((new Date(effectiveProfile.membership_end_at) - new Date()) / 86400000)}d restantes)`}
+                          style={{ padding: '8px 14px', background: 'rgba(251,191,36,0.2)', border: '1px solid rgba(251,191,36,0.4)', borderRadius: 10, color: '#fde68a', fontSize: 12, fontWeight: 700, cursor: payingMembership ? 'not-allowed' : 'pointer', minHeight: 38 }}>
+                          {payingMembership ? '⏳ Redirigiendo...' : `💳 Renovar con tarjeta $${effectiveMembershipPrice} MXN`}
                         </button>
+                        <button onClick={() => { setDepositModal(true); setDepositSuccess(false); setDepositError('') }}
+                          style={{ padding: '8px 14px', background: 'rgba(16,185,129,0.15)', border: '1.5px solid rgba(16,185,129,0.4)', borderRadius: 10, color: '#6ee7b7', fontSize: 12, fontWeight: 700, cursor: 'pointer', minHeight: 38 }}>
+                          🏦 Renovar con depósito/transferencia
+                        </button>
+                      </div>
                     )}
                     {/* Cancelar */}
                     {effectiveProfile.membership_status === 'activa' && (
@@ -2293,7 +2302,7 @@ const OperatorView = () => {
             <div style={{ background: 'linear-gradient(135deg,#059669,#10b981)', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <div style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>🏦 Pago por depósito bancario</div>
-                <div style={{ color: '#d1fae5', fontSize: 12, marginTop: 2 }}>Membresía Operador — ${membershipConfig?.operator_price || 200} MXN</div>
+                <div style={{ color: '#d1fae5', fontSize: 12, marginTop: 2 }}>Membresía Operador — ${effectiveMembershipPrice} MXN / 7 días</div>
               </div>
               <button onClick={() => setDepositModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, width: 32, height: 32, color: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
@@ -2308,7 +2317,7 @@ const OperatorView = () => {
                         ['Titular', 'Juan Alberto Mazariegos Fernandez'],
                         ['Cuenta', '261 197 8748'],
                         ['CLABE', '012 180 02611978748 1'],
-                        ['Monto', `$${membershipConfig?.operator_price || 200} MXN`],
+                        ['Monto', `$${effectiveMembershipPrice} MXN`],
                       ].map(([label, value]) => (
                         <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
                           <span style={{ color: '#6b7280', fontWeight: 500 }}>{label}</span>

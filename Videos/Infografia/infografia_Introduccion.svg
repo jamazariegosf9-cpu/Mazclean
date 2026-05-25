@@ -1,0 +1,183 @@
+<svg width="100%" viewBox="0 0 690 1100" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>Introducción — Bienvenido a MAZ CLEAN</title>
+<desc>Infografía Introducción Certificación MAZ CLEAN</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<!-- Header bg -->
+<rect x="0" y="0" width="690" height="108" fill="#1e3a8a"/>
+<rect x="0" y="88" width="690" height="20" fill="#1e40af"/>
+<!-- Logo -->
+<rect x="40" y="18" width="44" height="44" rx="10" fill="#06b6d4"/>
+<path d="M62 28 C62 28 55 36 55 40 C55 44.4 58.1 48 62 48 C65.9 48 69 44.4 69 40 C69 36 62 28 62 28Z" fill="#fff"/>
+<text x="94" y="48" fill="#fff" font-size="17" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Maz Clean</text>
+<text x="40" y="72" fill="#93c5fd" font-size="11" font-weight="500" letter-spacing="1.5" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">CERTIFICACIÓN</text>
+<!-- Título -->
+<text x="340" y="58" text-anchor="middle" fill="#fff" font-size="19" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Introducción · Tu Panel de Operador</text>
+<text x="340" y="80" text-anchor="middle" fill="#bfdbfe" font-size="12" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Tu centro de comando explicado</text>
+<!-- Ícono módulo -->
+<rect x="618" y="14" width="44" height="44" rx="22" fill="#1d4ed8"/>
+<text x="640" y="44" text-anchor="middle" font-size="22" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">🚗</text>
+
+<!-- ── SECCIÓN 1: Modelo de negocio ── -->
+<rect x="40" y="120" width="600" height="30" rx="6" fill="#1e3a8a"/>
+<text x="56" y="140" fill="#fff" font-size="13" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Parte 1 · Qué es MAZ CLEAN y qué significa ser socio</text>
+<rect x="40" y="158" width="600" height="72" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="0.5"/>
+<text x="62" y="182" font-size="16" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">🤝</text>
+<text x="88" y="181" fill="#1e3a8a" font-size="13" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Eres socio independiente — no empleado</text>
+<text x="88" y="198" fill="#475569" font-size="12" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Tú decides tus días, horarios y zona de cobertura</text>
+<text x="62" y="220" font-size="16" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">💰</text>
+<text x="88" y="219" fill="#1e3a8a" font-size="13" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">El cliente te paga directo a ti al terminar el servicio</text>
+<text x="88" y="236" fill="#475569" font-size="12" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">MAZ CLEAN cobra comisión solo al renovar tu membresía mensual</text>
+
+<!-- ── SECCIÓN 2: Sistema de Rondas ── -->
+<rect x="40" y="246" width="600" height="30" rx="6" fill="#0369a1"/>
+<text x="56" y="266" fill="#fff" font-size="13" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Parte 2 · Cómo te llegan los servicios — Sistema de Rondas</text>
+
+<!-- Ronda 1 Elite -->
+<rect x="40" y="284" width="186" height="100" rx="8" fill="#fffbeb" stroke="#fde68a" stroke-width="0.5"/>
+<text x="133" y="310" text-anchor="middle" font-size="22" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">⭐</text>
+<text x="133" y="332" text-anchor="middle" fill="#92400e" font-size="13" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Ronda 1</text>
+<text x="133" y="350" text-anchor="middle" fill="#92400e" font-size="11" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Solo Elite</text>
+<text x="133" y="366" text-anchor="middle" fill="#78350f" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Ventaja exclusiva</text>
+<text x="133" y="378" text-anchor="middle" fill="#78350f" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">antes que todos · 5 min</text>
+
+<!-- Ronda 2 -->
+<rect x="247" y="284" width="186" height="100" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="0.5"/>
+<text x="340" y="310" text-anchor="middle" font-size="22" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">👥</text>
+<text x="340" y="332" text-anchor="middle" fill="#1e40af" font-size="13" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Ronda 2</text>
+<text x="340" y="350" text-anchor="middle" fill="#1e40af" font-size="11" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Todos los operadores</text>
+<text x="340" y="366" text-anchor="middle" fill="#1e3a8a" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Se abre a todos los</text>
+<text x="340" y="378" text-anchor="middle" fill="#1e3a8a" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">activos en la zona · 5 min</text>
+
+<!-- Ronda 3 -->
+<rect x="454" y="284" width="186" height="100" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.5"/>
+<text x="547" y="310" text-anchor="middle" font-size="22" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">👥</text>
+<text x="547" y="332" text-anchor="middle" fill="#475569" font-size="13" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Ronda 3</text>
+<text x="547" y="350" text-anchor="middle" fill="#475569" font-size="11" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Todos los operadores</text>
+<text x="547" y="366" text-anchor="middle" fill="#64748b" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Si nadie acepta, admin</text>
+<text x="547" y="378" text-anchor="middle" fill="#64748b" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">asigna manualmente</text>
+
+<!-- Mensaje clave rondas -->
+<rect x="40" y="394" width="600" height="38" rx="8" fill="#1e3a8a"/>
+<text x="340" y="418" text-anchor="middle" fill="#fbbf24" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">La calidad de tu trabajo = acceso a la Ronda 1 = más servicios = más ingresos</text>
+
+<!-- ── SECCIÓN 3: Las 6 Pestañas ── -->
+<rect x="40" y="446" width="600" height="30" rx="6" fill="#065f46"/>
+<text x="56" y="466" fill="#fff" font-size="13" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Parte 3 · Las 6 pestañas de tu panel de operador</text>
+
+<!-- Tab 1 Solicitudes -->
+<rect x="40" y="484" width="188" height="80" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="0.5"/>
+<text x="56" y="508" font-size="18" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">🔔</text>
+<text x="82" y="507" fill="#065f46" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Solicitudes</text>
+<text x="56" y="524" fill="#334155" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Servicios disponibles en</text>
+<text x="56" y="537" fill="#334155" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">tu zona y horario</text>
+<text x="56" y="552" fill="#6b7280" font-size="10" font-style="italic" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">5 min para aceptar</text>
+
+<!-- Tab 2 Pendientes -->
+<rect x="246" y="484" width="188" height="80" rx="8" fill="#f0f9ff" stroke="#bae6fd" stroke-width="0.5"/>
+<text x="262" y="508" font-size="18" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">📋</text>
+<text x="288" y="507" fill="#0c4a6e" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Pendientes</text>
+<text x="262" y="524" fill="#334155" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Servicios aceptados</text>
+<text x="262" y="537" fill="#334155" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">antes de iniciar viaje</text>
+<text x="262" y="552" fill="#6b7280" font-size="10" font-style="italic" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Chat + ubicación en vivo</text>
+
+<!-- Tab 3 Activos -->
+<rect x="452" y="484" width="188" height="80" rx="8" fill="#fff7ed" stroke="#fed7aa" stroke-width="0.5"/>
+<text x="468" y="508" font-size="18" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">⚡</text>
+<text x="494" y="507" fill="#9a3412" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Activos</text>
+<text x="468" y="524" fill="#334155" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Servicio en curso</text>
+<text x="468" y="537" fill="#334155" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Fotos antes y después</text>
+<text x="468" y="552" fill="#6b7280" font-size="10" font-style="italic" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Tu protección ante reclamos</text>
+
+<!-- Tab 4 Historial -->
+<rect x="40" y="574" width="188" height="80" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.5"/>
+<text x="56" y="598" font-size="18" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">📖</text>
+<text x="82" y="597" fill="#374151" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Historial</text>
+<text x="56" y="614" fill="#334155" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Servicios completados</text>
+<text x="56" y="627" fill="#334155" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">y calificaciones recibidas</text>
+<text x="56" y="642" fill="#6b7280" font-size="10" font-style="italic" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Analiza tu desempeño</text>
+
+<!-- Tab 5 Mi Cuenta -->
+<rect x="246" y="574" width="188" height="80" rx="8" fill="#fffbeb" stroke="#fde68a" stroke-width="0.5"/>
+<text x="262" y="598" font-size="18" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">💰</text>
+<text x="288" y="597" fill="#92400e" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Mi Cuenta</text>
+<text x="262" y="614" fill="#334155" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Ingresos · comisión</text>
+<text x="262" y="627" fill="#334155" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">y costo de renovación</text>
+<text x="262" y="642" fill="#6b7280" font-size="10" font-style="italic" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Por ciclo de membresía</text>
+
+<!-- Tab 6 Mi Configuración -->
+<rect x="452" y="574" width="188" height="80" rx="8" fill="#faf5ff" stroke="#e9d5ff" stroke-width="0.5"/>
+<text x="468" y="598" font-size="18" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">⚙️</text>
+<text x="494" y="597" fill="#6b21a8" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Mi Configuración</text>
+<text x="468" y="614" fill="#334155" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Excepciones · Horario</text>
+<text x="468" y="627" fill="#334155" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">y Mi Zona (solicitudes)</text>
+<text x="468" y="642" fill="#6b7280" font-size="10" font-style="italic" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Requiere autorización MAZ CLEAN</text>
+
+<!-- ── SECCIÓN 4: Niveles ── -->
+<rect x="40" y="670" width="600" height="30" rx="6" fill="#1e3a8a"/>
+<text x="56" y="690" fill="#fff" font-size="13" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Parte 4 · Sistema de niveles — más calificación, menos comisión</text>
+
+<!-- Nivel Operador -->
+<rect x="40" y="708" width="138" height="112" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.5"/>
+<text x="109" y="732" text-anchor="middle" font-size="18" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">⚪</text>
+<text x="109" y="752" text-anchor="middle" fill="#374151" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Operador</text>
+<text x="109" y="766" text-anchor="middle" fill="#6b7280" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">0.0 — 3.9 ★</text>
+<rect x="52" y="774" width="114" height="22" rx="5" fill="#f1f5f9"/>
+<text x="109" y="789" text-anchor="middle" fill="#374151" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">5% comisión</text>
+<rect x="52" y="800" width="114" height="14" rx="4" fill="#f1f5f9"/>
+<text x="109" y="811" text-anchor="middle" fill="#9ca3af" font-size="9" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">0% desc. membresía</text>
+
+<!-- Nivel Pro -->
+<rect x="188" y="708" width="138" height="112" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="0.5"/>
+<text x="257" y="732" text-anchor="middle" font-size="18" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">🔵</text>
+<text x="257" y="752" text-anchor="middle" fill="#1e40af" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Pro</text>
+<text x="257" y="766" text-anchor="middle" fill="#3b82f6" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">4.0 — 4.4 ★</text>
+<rect x="200" y="774" width="114" height="22" rx="5" fill="#dbeafe"/>
+<text x="257" y="789" text-anchor="middle" fill="#1e40af" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">4% comisión</text>
+<rect x="200" y="800" width="114" height="14" rx="4" fill="#dbeafe"/>
+<text x="257" y="811" text-anchor="middle" fill="#1e40af" font-size="9" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">10% desc. membresía</text>
+
+<!-- Nivel Pro+ -->
+<rect x="336" y="708" width="138" height="112" rx="8" fill="#faf5ff" stroke="#e9d5ff" stroke-width="0.5"/>
+<text x="405" y="732" text-anchor="middle" font-size="18" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">🟣</text>
+<text x="405" y="752" text-anchor="middle" fill="#7e22ce" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Pro+</text>
+<text x="405" y="766" text-anchor="middle" fill="#a855f7" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">4.5 — 4.7 ★</text>
+<rect x="348" y="774" width="114" height="22" rx="5" fill="#f3e8ff"/>
+<text x="405" y="789" text-anchor="middle" fill="#7e22ce" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">3% comisión</text>
+<rect x="348" y="800" width="114" height="14" rx="4" fill="#f3e8ff"/>
+<text x="405" y="811" text-anchor="middle" fill="#7e22ce" font-size="9" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">20% desc. membresía</text>
+
+<!-- Nivel Elite -->
+<rect x="484" y="708" width="156" height="112" rx="8" fill="#fffbeb" stroke="#fde68a" stroke-width="1"/>
+<text x="562" y="732" text-anchor="middle" font-size="18" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">⭐</text>
+<text x="562" y="752" text-anchor="middle" fill="#92400e" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Elite</text>
+<text x="562" y="766" text-anchor="middle" fill="#d97706" font-size="10" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">4.8 — 5.0 ★</text>
+<rect x="496" y="774" width="132" height="22" rx="5" fill="#fef3c7"/>
+<text x="562" y="789" text-anchor="middle" fill="#92400e" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">2% comisión</text>
+<rect x="496" y="800" width="132" height="14" rx="4" fill="#fef3c7"/>
+<text x="562" y="811" text-anchor="middle" fill="#92400e" font-size="9" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">35% desc. · 🏆 Ronda 1 exclusiva</text>
+
+<!-- ── SECCIÓN 5: Primeros pasos ── -->
+<rect x="40" y="836" width="600" height="30" rx="6" fill="#0369a1"/>
+<text x="56" y="856" fill="#fff" font-size="13" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Parte 5 · Tus primeros pasos antes de recibir servicios</text>
+
+<rect x="40" y="874" width="600" height="72" rx="8" fill="#f0f9ff" stroke="#bae6fd" stroke-width="0.5"/>
+<text x="62" y="899" font-size="14" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">🗺️</text>
+<text x="84" y="898" fill="#0c4a6e" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">1. Configura tu zona en Mi Configuración → Mi Zona</text>
+<text x="62" y="918" font-size="14" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">🕐</text>
+<text x="84" y="917" fill="#0c4a6e" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">2. Activa tu horario en Mi Configuración → Horario</text>
+<text x="62" y="937" font-size="14" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">📲</text>
+<text x="84" y="936" fill="#0c4a6e" font-size="12" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">3. Mantén WhatsApp activo — las notificaciones llegan por ahí</text>
+
+<!-- Frase cierre -->
+<rect x="40" y="958" width="600" height="70" rx="10" fill="#1e3a8a"/>
+<text x="340" y="988" text-anchor="middle" fill="#fbbf24" font-size="14" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Recuerda, Pro</text>
+<text x="340" y="1012" text-anchor="middle" fill="#e0f2fe" font-size="13" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">«Un acabado espejo es tu mejor publicidad y la llave a las 5 estrellas.»</text>
+
+<!-- Footer -->
+<rect x="0" y="1060" width="690" height="30" fill="#1e3a8a"/>
+<rect x="40" y="1068" width="16" height="16" rx="4" fill="#06b6d4"/>
+<path d="M48 1071 C48 1071 45 1075 45 1077 C45 1079 46.3 1081 48 1081 C49.7 1081 51 1079 51 1077 C51 1075 48 1071 48 1071Z" fill="#fff"/>
+<text x="62" y="1081" fill="#93c5fd" font-size="11" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">Maz Clean · Certificación · Introducción</text>
+
+</svg>
