@@ -12,6 +12,7 @@ import { sendWhatsApp } from './lib/whatsapp';
 import AdminViewA from './AdminViewA';
 import MessagingInbox from './MessagingInbox';
 import AdminPayments from './AdminPayments';
+import AdminLeads from './AdminLeads';
 import AdminViewB from './AdminViewB';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
@@ -867,6 +868,7 @@ const AdminViewC = () => {
             { id: 'academia',    label: '🎓 Academia',      icon: '🎓' },
             { id: 'promociones', label: `🏷️ Promociones${promotions.filter(p => p.is_active && new Date(p.valid_until) > new Date()).length > 0 ? ` (${promotions.filter(p => p.is_active && new Date(p.valid_until) > new Date()).length})` : ''}`, icon: '🏷️' },
             { id: 'pagos',       label: '🏦 Pagos',         icon: '🏦' },
+            { id: 'prospectos',   label: '🎯 Prospectos',    icon: '🎯' },
           ]
           const activeTabLabel = allTabs.find(t => t.id === activeTab)?.label || 'Menú'
           if (!isMobile) {
@@ -1037,6 +1039,12 @@ const AdminViewC = () => {
         )}
 
         {/* Tab: Promociones */}
+        {activeTab === 'prospectos' && (
+          <div style={{ marginTop: 16 }}>
+            <AdminLeads isMobile={isMobile} />
+          </div>
+        )}
+
         {activeTab === 'pagos' && (
           <div style={{ marginTop: 16 }}>
             <AdminPayments isMobile={isMobile} />
