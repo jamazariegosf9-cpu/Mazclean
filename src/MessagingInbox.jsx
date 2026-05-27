@@ -23,22 +23,29 @@ function useConversations(token) {
       if (!Array.isArray(data)) { setLoading(false); return; }
 
       // Agrupar por conversation_id
+      // IMPORTANTE: el conversation_id ES el teléfono del usuario
+      // Siempre usar datos del mensaje inbound para identificar al contacto
       const grouped = {};
       for (const msg of data) {
         if (!msg.conversation_id) continue;
         if (!grouped[msg.conversation_id]) {
           grouped[msg.conversation_id] = {
             conversation_id: msg.conversation_id,
-            from_phone:      msg.from_phone,
-            sender_role:     msg.sender_role,
-            user_id:         msg.user_id,
+            from_phone:      msg.conversation_id,
+            sender_role:     msg.direction === 'inbound' ? msg.sender_role : 'desconocido',
+            user_id:         msg.direction === 'inbound' ? msg.user_id : null,
             last_message:    msg.content,
             last_at:         msg.created_at,
             unread:          0,
           };
         }
-        if (msg.direction === 'inbound' && !msg.read_at) {
-          grouped[msg.conversation_id].unread++;
+        // Si encontramos un mensaje inbound, actualizar role y user_id del contacto real
+        if (msg.direction === 'inbound') {
+          grouped[msg.conversation_id].sender_role = msg.sender_role;
+          grouped[msg.conversation_id].user_id     = msg.user_id;
+          if (!msg.read_at) {
+            grouped[msg.conversation_id].unread++;
+          }
         }
         // Actualizar último mensaje si es más reciente
         if (new Date(msg.created_at) > new Date(grouped[msg.conversation_id].last_at)) {
