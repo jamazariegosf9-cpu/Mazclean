@@ -1,4 +1,4 @@
-// MessagingInbox.jsx v1.1
+// MessagingInbox.jsx v1.2
 // Bandeja de mensajes WhatsApp entrantes para el Admin
 // JS puro — sin TypeScript annotations
 
@@ -16,7 +16,7 @@ function useConversations(token) {
   const fetchConversations = async () => {
     try {
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/messages?select=conversation_id,from_phone,sender_role,user_id,content,direction,read_at,created_at&order=created_at.desc`,
+        `${SUPABASE_URL}/rest/v1/messages?select=conversation_id,from_phone,sender_role,user_id,content,direction,read_at,created_at,is_escalation&order=created_at.desc`,
         { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
       );
       const data = await res.json();
@@ -37,6 +37,8 @@ function useConversations(token) {
             last_message:    msg.content,
             last_at:         msg.created_at,
             unread:          0,
+            escalated:       false,
+            admin_replied:   false,
           };
         }
         // Si encontramos un mensaje inbound, actualizar role y user_id del contacto real
@@ -46,6 +48,14 @@ function useConversations(token) {
           if (!msg.read_at) {
             grouped[msg.conversation_id].unread++;
           }
+        }
+        // Detectar si hubo escalación del bot
+        if (msg.is_escalation) {
+          grouped[msg.conversation_id].escalated = true;
+        }
+        // Detectar si el Admin ya respondió manualmente
+        if (msg.direction === 'outbound' && msg.sender_role === 'admin' && msg.from_phone === 'mazclean') {
+          grouped[msg.conversation_id].admin_replied = true;
         }
         // Actualizar último mensaje si es más reciente
         if (new Date(msg.created_at) > new Date(grouped[msg.conversation_id].last_at)) {
@@ -253,10 +263,18 @@ function ConversationThread({ conv, token, onBack, onRefetch, isMobile }) {
         ) : messages.length === 0 ? (
           <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Sin mensajes</div>
         ) : messages.map(msg => (
-          <div key={msg.id} style={{ display: 'flex', justifyContent: msg.direction === 'outbound' ? 'flex-end' : 'flex-start' }}>
+          <div key={msg.id} style={{ display: 'flex', justifyContent: msg.direction === 'outbound' ? 'flex-end' : 'flex-start', flexDirection: 'column', alignItems: msg.direction === 'outbound' ? 'flex-end' : 'flex-start' }}>
+            {/* Etiqueta Bot vs Admin */}
+            {msg.direction === 'outbound' && (
+              <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 2, paddingRight: 4 }}>
+                {msg.from_phone === 'mazclean' ? '👤 Asesor' : '🤖 Max (bot)'}
+              </div>
+            )}
             <div style={{
               maxWidth:     '75%',
-              background:   msg.direction === 'outbound' ? '#3b82f6' : '#fff',
+              background:   msg.direction === 'outbound'
+                ? (msg.from_phone === 'mazclean' ? '#059669' : '#3b82f6')
+                : '#fff',
               color:        msg.direction === 'outbound' ? '#fff' : '#111827',
               borderRadius: msg.direction === 'outbound' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
               padding:      '8px 12px',
@@ -307,6 +325,7 @@ function ConversationThread({ conv, token, onBack, onRefetch, isMobile }) {
 export default function MessagingInbox({ token, isMobile }) {
   const { conversations, loading, refetch } = useConversations(token);
   const [selected, setSelected]             = useState(null);
+  const [filter, setFilter]                 = useState('all'); // 'all' | 'escalated' | 'unread'
 
   if (loading) {
     return <div style={{ textAlign: 'center', padding: 40, color: '#9ca3af' }}>Cargando conversaciones...</div>;
@@ -336,7 +355,14 @@ export default function MessagingInbox({ token, isMobile }) {
     );
   }
 
-  const totalUnread = conversations.reduce((s, c) => s + c.unread, 0);
+  const totalUnread   = conversations.reduce((s, c) => s + c.unread, 0);
+  const totalEscalated = conversations.filter(c => c.escalated && !c.admin_replied).length;
+
+  const filtered = conversations.filter(c => {
+    if (filter === 'escalated') return c.escalated && !c.admin_replied;
+    if (filter === 'unread')    return c.unread > 0;
+    return true;
+  });
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -355,9 +381,31 @@ export default function MessagingInbox({ token, isMobile }) {
         </button>
       </div>
 
+      {/* Filtros */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        {[
+          { id: 'all',       label: `Todos (${conversations.length})`,              color: '#6b7280', activeBg: '#f3f4f6' },
+          { id: 'escalated', label: `🚨 Requieren asesor (${totalEscalated})`,      color: '#dc2626', activeBg: '#fef2f2' },
+          { id: 'unread',    label: `🔵 Sin leer (${totalUnread})`,                 color: '#1d4ed8', activeBg: '#eff6ff' },
+        ].map(f => (
+          <button key={f.id} onClick={() => setFilter(f.id)}
+            style={{
+              padding: '6px 12px', borderRadius: 99, border: 'none', cursor: 'pointer',
+              fontSize: 12, fontWeight: 700,
+              background: filter === f.id ? f.activeBg : '#f9fafb',
+              color:      filter === f.id ? f.color    : '#9ca3af',
+              boxShadow:  filter === f.id ? `0 0 0 1.5px ${f.color}` : 'none',
+            }}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       {/* Lista de conversaciones */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {conversations.map(conv => (
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 0', color: '#9ca3af', fontSize: 13 }}>No hay conversaciones en este filtro</div>
+        ) : filtered.map(conv => (
           <div
             key={conv.conversation_id}
             onClick={() => setSelected(conv)}
@@ -396,12 +444,19 @@ export default function MessagingInbox({ token, isMobile }) {
               </div>
             </div>
 
-            {/* Badge no leídos */}
-            {conv.unread > 0 && (
-              <div style={{ background: '#3b82f6', color: '#fff', borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                {conv.unread}
-              </div>
-            )}
+            {/* Badges */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end', flexShrink: 0 }}>
+              {conv.escalated && !conv.admin_replied && (
+                <div style={{ background: '#dc2626', color: '#fff', borderRadius: 20, padding: '2px 8px', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                  🚨 Asesor
+                </div>
+              )}
+              {conv.unread > 0 && (
+                <div style={{ background: '#3b82f6', color: '#fff', borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
+                  {conv.unread}
+                </div>
+              )}
+            </div>
           </div>
         ))}
       </div>
