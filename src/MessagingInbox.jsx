@@ -212,10 +212,30 @@ function ConversationThread({ conv, token, onBack, onRefetch, isMobile }) {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#fff', borderRadius: '12px 12px 0 0', borderBottom: '1px solid #e5e7eb' }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#6b7280', padding: 0 }}>←</button>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>{conv.from_phone}</div>
-          <RoleBadge role={conv.sender_role} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+            <RoleBadge role={conv.sender_role} />
+            {/* Botón copiar teléfono */}
+            <button
+              onClick={() => { navigator.clipboard?.writeText(conv.from_phone); }}
+              title="Copiar teléfono"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#9ca3af', padding: '0 2px' }}>
+              📋
+            </button>
+          </div>
         </div>
+        {/* Botón WhatsApp directo */}
+        <button
+          onClick={() => {
+            const digits = conv.from_phone.replace(/\D/g, '')
+            const wa = digits.startsWith('52') ? digits : '52' + digits.slice(-10)
+            window.open(`https://wa.me/${wa}`, '_blank')
+          }}
+          title="Abrir en WhatsApp"
+          style={{ background: '#25d366', border: 'none', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontSize: 13, color: '#fff', fontWeight: 700, flexShrink: 0 }}>
+          💬 WA
+        </button>
         <button onClick={fetchMessages} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#6b7280' }}>↻</button>
       </div>
 
@@ -238,7 +258,10 @@ function ConversationThread({ conv, token, onBack, onRefetch, isMobile }) {
               lineHeight:   1.5,
             }}>
               <div>{msg.content}</div>
-              <div style={{ fontSize: 10, opacity: 0.6, marginTop: 4, textAlign: 'right' }}>{formatTime(msg.created_at)}</div>
+              <div style={{ fontSize: 10, opacity: 0.6, marginTop: 4, textAlign: 'right', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}>
+                {formatTime(msg.created_at)}
+                {msg.direction === 'outbound' && <span title='Enviado'>✓✓</span>}
+              </div>
             </div>
           </div>
         ))}
