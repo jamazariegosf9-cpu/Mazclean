@@ -98,10 +98,12 @@ function useConversations(token) {
 
 // ── Formato de hora ───────────────────────────────────────────────────────────
 function formatTime(iso) {
-  const d       = new Date(iso);
-  const now     = new Date();
-  const diffMs  = now.getTime() - d.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const d   = new Date(iso);
+  const now = new Date();
+  // Comparar fechas de calendario para que mensajes de hoy siempre muestren hora
+  const dDate   = new Date(d.getFullYear(),   d.getMonth(),   d.getDate());
+  const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round((nowDate - dDate) / (1000 * 60 * 60 * 24));
   if (diffDays === 0) return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
   if (diffDays === 1) return 'Ayer';
   if (diffDays < 7)  return d.toLocaleDateString('es-MX', { weekday: 'short' });
