@@ -113,10 +113,10 @@ function formatTime(iso) {
 // ── Badge de rol ──────────────────────────────────────────────────────────────
 function RoleBadge({ role }) {
   const map = {
-    cliente:     { label: 'Cliente',  color: '#1d4ed8', bg: '#eff6ff' },
-    operador:    { label: 'Operador', color: '#065f46', bg: '#ecfdf5' },
-    admin:       { label: 'Admin',    color: '#92400e', bg: '#fffbeb' },
-    desconocido: { label: 'Nuevo',    color: '#7c3aed', bg: '#f5f3ff' },
+    cliente:     { label: 'Cliente',   color: '#1d4ed8', bg: '#eff6ff' },
+    operador:    { label: 'Operador',  color: '#065f46', bg: '#ecfdf5' },
+    admin:       { label: 'Admin',     color: '#92400e', bg: '#fffbeb' },
+    desconocido: { label: 'Prospecto', color: '#7c3aed', bg: '#f5f3ff' },
   };
   const s = map[role] || map.desconocido;
   return (
