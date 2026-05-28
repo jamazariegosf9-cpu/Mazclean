@@ -182,7 +182,7 @@ export default function AdminAcademia({ isMobile }) {
     const url = infografiaUrls[moduleId] !== undefined
       ? infografiaUrls[moduleId]
       : (lessons.find(l => l.module_id === moduleId && l.content_type === 'infografia')?.content_url || '')
-    if (!url.trim()) { setInfografiaError(moduleId); return }
+    if (!url.trim() || !url.trim().startsWith('http')) { setInfografiaError(moduleId); return }
     setSavingInfografia(moduleId); setInfografiaError(null); setInfografiaSuccess(null)
     try {
       const existingLesson = lessons.find(l => l.module_id === moduleId && l.content_type === 'infografia')
@@ -211,6 +211,8 @@ export default function AdminAcademia({ isMobile }) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
       }
       setInfografiaSuccess(moduleId)
+      // Forzar actualización del preview limpiando el estado local para que tome el valor de DB
+      setInfografiaUrls(prev => { const n = {...prev}; delete n[moduleId]; return n })
       await fetchAll()
       setTimeout(() => setInfografiaSuccess(null), 3000)
     } catch (err) { setInfografiaError(moduleId); console.error(err) }
@@ -527,7 +529,7 @@ export default function AdminAcademia({ isMobile }) {
                 <div style={{ padding: '16px' }}>
                   {currentUrl && (
                     <div style={{ marginBottom: 12, borderRadius: 10, overflow: 'hidden', border: '1px solid #e5e7eb', background: '#f8fafc', maxHeight: 180, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <img src={currentUrl} alt={`Infografía M${mi+1}`}
+                      <img src={`${currentUrl}?t=${Date.now()}`} alt={`Infografía M${mi+1}`}
                         style={{ maxWidth: '100%', maxHeight: 180, objectFit: 'contain', display: 'block' }}
                         onError={e => { e.target.style.display='none' }} />
                     </div>
@@ -549,7 +551,7 @@ export default function AdminAcademia({ isMobile }) {
                     </button>
                   </div>
                   {isError && (
-                    <div style={{ marginTop: 6, fontSize: 12, color: '#dc2626' }}>⚠️ La URL es requerida y debe ser válida.</div>
+                    <div style={{ marginTop: 6, fontSize: 12, color: '#dc2626' }}>⚠️ La URL es requerida y debe comenzar con https://. Verifica la URL de Supabase Storage.</div>
                   )}
                 </div>
               </div>
