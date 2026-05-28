@@ -128,13 +128,66 @@ export default function OperatorAccount({
   savingZone, zoneSuccess, zoneError,
   submitZoneRequest, geocodeZoneAddress,
   profile, isMobile,
+  // Video prueba de vida (post-aprobación)
+  onUploadLifeVideo, lifeVideoUploading, lifeVideoProgress, lifeVideoError,
   // Billing
   billingHistory, loadingBilling, fetchBillingHistory,
 }) {
   return (
     <>
+      <style>{`@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }`}</style>
         {activeTab === 'micuenta' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+        {/* ── BANNER PRUEBA DE VIDA — visible solo si falta el video ── */}
+        {profile?.operator_status === 'aprobado' && !profile?.proof_of_life_video_url && (
+          <div style={{ background: 'linear-gradient(135deg,#fffbeb,#fef3c7)', border: '2px solid #f59e0b', borderRadius: 16, padding: '16px 18px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{ fontSize: 32, flexShrink: 0 }}>🎥</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#92400e', marginBottom: 4 }}>
+                  Verificación de identidad pendiente
+                </div>
+                <div style={{ fontSize: 13, color: '#78350f', lineHeight: 1.6, marginBottom: 12 }}>
+                  Para completar tu perfil necesitas subir un <strong>video de prueba de vida</strong> (30-60 segundos). Nuestro equipo lo revisará y te notificará por WhatsApp. Puedes seguir recibiendo servicios mientras tanto.
+                </div>
+                <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', marginBottom: 12, fontSize: 12, color: '#854d0e' }}>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>📹 Instrucciones (30-60 segundos):</div>
+                  <div>1. Sal afuera de tu domicilio</div>
+                  <div>2. Muestra la fachada y número de tu casa</div>
+                  <div>3. Di en voz alta tu nombre y la fecha de hoy</div>
+                  <div>4. Entra al domicilio brevemente</div>
+                  <div style={{ marginTop: 4, fontStyle: 'italic', color: '#92400e' }}>MP4 o MOV · máximo 50 MB</div>
+                </div>
+                {/* Upload — usa la prop onUploadLifeVideo pasada desde OperatorView */}
+                <label style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  padding: '12px 0', borderRadius: 12,
+                  background: 'linear-gradient(135deg,#f59e0b,#d97706)',
+                  color: '#fff', fontSize: 14, fontWeight: 700,
+                  cursor: 'pointer', width: '100%',
+                }}>
+                  🎥 Subir video de prueba de vida
+                  <input
+                    type="file" accept="video/*" style={{ display: 'none' }}
+                    onChange={e => { if (e.target.files[0] && onUploadLifeVideo) onUploadLifeVideo(e.target.files[0]) }}
+                  />
+                </label>
+                {lifeVideoUploading && (
+                  <div style={{ marginTop: 10, background: '#eff6ff', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 16, height: 16, border: '2px solid #bfdbfe', borderTop: '2px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, color: '#1e40af', fontWeight: 600 }}>Subiendo video... {lifeVideoProgress}%</span>
+                  </div>
+                )}
+                {lifeVideoError && (
+                  <div style={{ marginTop: 8, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', color: '#dc2626', fontSize: 13 }}>
+                    ⚠️ {lifeVideoError}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── TARJETA MI CUENTA DEL MES ── */}
         {commissionData && !loadingCommission && (

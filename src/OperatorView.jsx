@@ -56,6 +56,46 @@ const OperatorView = () => {
   const [showInfografias, setShowInfografias]       = useState(false);
   const [infografias, setInfografias]               = useState([]);
   const [loadingInfografias, setLoadingInfografias] = useState(false);
+
+  // ── Video prueba de vida (post-aprobación, Opción A) ──────────────────────
+  const [lifeVideoUploading, setLifeVideoUploading] = useState(false)
+  const [lifeVideoProgress, setLifeVideoProgress]   = useState(0)
+  const [lifeVideoError, setLifeVideoError]         = useState('')
+
+  const handleUploadLifeVideo = async (file) => {
+    if (!file || !user) return
+    if (file.size > 50 * 1024 * 1024) { setLifeVideoError('El video no debe pesar más de 50 MB.'); return }
+    setLifeVideoUploading(true); setLifeVideoError(''); setLifeVideoProgress(0)
+    try {
+      const path = await uploadFile({ file, folder: 'video_de_prueba_de_vida', userId: user.id, onProgress: setLifeVideoProgress })
+      // Guardar en profile
+      const token = getToken()
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ proof_of_life_video_url: path, updated_at: new Date().toISOString() }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      // Notificar al admin por WhatsApp — función Edge existente
+      try {
+        await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: '5539377258',
+            message: `🎥 *Video de prueba de vida recibido*\nOperador: ${profile?.full_name}\nTeléfono: ${profile?.phone}\nRevisar en el panel de admin para aprobar.`,
+          }),
+        })
+      } catch {} // No bloquear si falla la notificación
+      // Refrescar perfil
+      try { await loadProfileDirect() } catch { await loadProfile() }
+      setLifeVideoError('')
+    } catch (e) {
+      setLifeVideoError(e.message)
+    } finally {
+      setLifeVideoUploading(false)
+    }
+  }
   const [selectedInfografia, setSelectedInfografia] = useState(null); // índice 0-3
   // Comisiones del ciclo
   const [commissionData, setCommissionData]         = useState(null);
@@ -1733,6 +1773,10 @@ const OperatorView = () => {
           savingZone={savingZone} zoneSuccess={zoneSuccess} zoneError={zoneError}
           submitZoneRequest={submitZoneRequest} geocodeZoneAddress={geocodeZoneAddress}
           profile={profile} isMobile={isMobile}
+          onUploadLifeVideo={handleUploadLifeVideo}
+          lifeVideoUploading={lifeVideoUploading}
+          lifeVideoProgress={lifeVideoProgress}
+          lifeVideoError={lifeVideoError}
           billingHistory={billingHistory} loadingBilling={loadingBilling} fetchBillingHistory={fetchBillingHistory}
         />
         {/* ── TAB SOLICITUDES ── */}
