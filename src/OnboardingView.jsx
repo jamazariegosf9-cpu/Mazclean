@@ -730,7 +730,7 @@ export default function OnboardingView({ onComplete }) {
                   iconBg: '#fffbeb',
                   iconColor: '#d97706',
                   title: 'Datos de tu vehículo',
-                  desc: 'Foto y placa — solo si tu punto de partida está a más de 2 km del centro de tu zona de trabajo elegida.',
+                  desc: '🚗 Vehículo propio — Solamente aplica si tu zona supera 2 km de radio. Puede ser bicicleta, moto o auto según tus distancias.',
                   highlight: true,
                 },
               ].map((item, i) => (

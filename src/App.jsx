@@ -171,6 +171,102 @@ function useIsMobile() {
 
 const PENDING_STATUSES = ['pending_review', 'pendiente']
 
+// ── Pantalla de selección de rol — visitantes sin sesión ──────────────────────
+function RoleSelector({ onOperator, onClient }) {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', h)
+    return () => window.removeEventListener('resize', h)
+  }, [])
+
+  const IMAGE_URL = 'https://ysdmkbwmthrjgvyuvcmm.supabase.co/storage/v1/object/public/Academia/Anuncio%20Operadores.png'
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'radial-gradient(circle at 50% 30%, #0f2b80 0%, #061135 100%)',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      fontFamily: "'Poppins','DM Sans',sans-serif",
+      padding: isMobile ? '24px 20px' : '40px 20px',
+      gap: 0,
+    }}>
+      {/* Logo */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 32 }}>
+        <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>💧</div>
+        <span style={{ fontSize: 24, fontWeight: 800, color: '#F0F6FF', letterSpacing: '-0.5px' }}>MAZ CLEAN</span>
+      </div>
+
+      <h1 style={{ fontSize: isMobile ? 22 : 28, fontWeight: 800, color: '#fff', margin: '0 0 8px', textAlign: 'center', lineHeight: 1.25 }}>
+        ¿Qué quieres hacer?
+      </h1>
+      <p style={{ fontSize: 14, color: '#8CA0BF', margin: '0 0 36px', textAlign: 'center' }}>
+        Selecciona cómo quieres usar MAZ CLEAN
+      </p>
+
+      <div style={{
+        display: 'flex', flexDirection: isMobile ? 'column' : 'row',
+        gap: 16, width: '100%', maxWidth: 600,
+      }}>
+        {/* Tarjeta Operador */}
+        <button onClick={onOperator} style={{
+          flex: 1, background: 'rgba(59,130,246,0.1)',
+          border: '2px solid rgba(59,130,246,0.4)',
+          borderRadius: 20, padding: isMobile ? '24px 20px' : '32px 24px',
+          cursor: 'pointer', textAlign: 'center', fontFamily: 'inherit',
+          transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+        }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.2)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.7)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.1)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.4)'; e.currentTarget.style.transform = 'translateY(0)' }}
+        >
+          <div style={{ width: 64, height: 64, borderRadius: 16, overflow: 'hidden', border: '2px solid rgba(59,130,246,0.4)' }}>
+            <img src={IMAGE_URL} alt="Operador" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 10%' }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 4 }}>🚗 Quiero ser Operador</div>
+            <div style={{ fontSize: 13, color: '#93c5fd', lineHeight: 1.5 }}>Genera ingresos lavando autos a domicilio en tu zona</div>
+          </div>
+          <div style={{ background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', color: '#fff', padding: '10px 24px', borderRadius: 10, fontSize: 14, fontWeight: 700, width: '100%' }}>
+            Ver cómo funciona →
+          </div>
+        </button>
+
+        {/* Tarjeta Cliente */}
+        <button onClick={onClient} style={{
+          flex: 1, background: 'rgba(16,185,129,0.08)',
+          border: '2px solid rgba(16,185,129,0.35)',
+          borderRadius: 20, padding: isMobile ? '24px 20px' : '32px 24px',
+          cursor: 'pointer', textAlign: 'center', fontFamily: 'inherit',
+          transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+        }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.18)'; e.currentTarget.style.borderColor = 'rgba(16,185,129,0.6)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.08)'; e.currentTarget.style.borderColor = 'rgba(16,185,129,0.35)'; e.currentTarget.style.transform = 'translateY(0)' }}
+        >
+          <div style={{ width: 64, height: 64, borderRadius: 16, background: 'rgba(16,185,129,0.15)', border: '2px solid rgba(16,185,129,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>
+            🧼
+          </div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 4 }}>🧼 Soy Cliente</div>
+            <div style={{ fontSize: 13, color: '#6ee7b7', lineHeight: 1.5 }}>Reserva un lavado profesional a domicilio para tu auto</div>
+          </div>
+          <div style={{ background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', padding: '10px 24px', borderRadius: 10, fontSize: 14, fontWeight: 700, width: '100%' }}>
+            Reservar ahora →
+          </div>
+        </button>
+      </div>
+
+      {/* Ya tengo cuenta */}
+      <p style={{ fontSize: 13, color: '#4a5568', margin: '28px 0 0', textAlign: 'center' }}>
+        ¿Ya tienes cuenta?{' '}
+        <button onClick={onClient} style={{ background: 'none', border: 'none', color: '#00C8FF', cursor: 'pointer', fontSize: 13, fontWeight: 600, padding: 0, fontFamily: 'inherit' }}>
+          Iniciar sesión
+        </button>
+      </p>
+    </div>
+  )
+}
+
 function Navbar({ view, setView, onShowAuth }) {
   const { user, profile, signOut } = useAuth()
   const isMobile = useIsMobile()
@@ -490,12 +586,30 @@ function AppInner() {
     )
   }
 
-  // Landing page sin Navbar — pantalla completa para conversión
-  if (view === 'home' && !user) {
+  // Sin sesión → pantalla de selección de rol
+  if (view === 'home' && !user && !authModal) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#061135' }}>
+        <RoleSelector
+          onOperator={() => setAuthModal('operator_landing')}
+          onClient={() => setAuthModal('client')}
+        />
+        {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
+      </div>
+    )
+  }
+
+  // Operador landing — sin Navbar
+  if (view === 'home' && !user && authModal === 'operator_landing') {
     return (
       <div style={{ minHeight: '100vh', background: '#061135' }}>
         <LandingOperador onRegister={() => setAuthModal('operator')} />
-        {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
+        {authModal && authModal !== 'operator_landing' && (
+          <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />
+        )}
+        {authModal === 'operator' && (
+          <AuthModal defaultTab="operator" onClose={() => setAuthModal(null)} />
+        )}
       </div>
     )
   }
