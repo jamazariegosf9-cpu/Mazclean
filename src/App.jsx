@@ -299,8 +299,7 @@ function RoleSelector({ onOperator, onClient }) {
       {/* Tarjetas lado a lado — Cliente primero, luego Operador */}
       <div style={{
         display: 'flex', flexDirection: 'row',
-        gap: 12, width: '100%', maxWidth: 560, flex: 1,
-        maxHeight: 420,
+        gap: 12, width: '100%', maxWidth: 560, flexShrink: 0,
       }}>
 
         {/* ── CLIENTE (primero) ── */}
@@ -315,8 +314,8 @@ function RoleSelector({ onOperator, onClient }) {
             Cliente
           </div>
           {/* Imagen */}
-          <div style={{ width: '100%', flex: 1, borderRadius: 12, overflow: 'hidden', minHeight: 0 }}>
-            <img src={IMG_CLIENTE} alt="Cliente MAZ CLEAN" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 15%', display: 'block' }} />
+          <div style={{ width: '100%', height: 140, flexShrink: 0, borderRadius: 12, overflow: 'hidden' }}>
+            <img src={IMG_CLIENTE} alt="Cliente MAZ CLEAN" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 10%', display: 'block' }} />
           </div>
           {/* Texto */}
           <div style={{ flexShrink: 0 }}>
@@ -341,8 +340,8 @@ function RoleSelector({ onOperator, onClient }) {
             Operador
           </div>
           {/* Imagen */}
-          <div style={{ width: '100%', flex: 1, borderRadius: 12, overflow: 'hidden', minHeight: 0 }}>
-            <img src={IMG_OPERADOR} alt="Operadores MAZ CLEAN" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 20%', display: 'block' }} />
+          <div style={{ width: '100%', height: 140, flexShrink: 0, borderRadius: 12, overflow: 'hidden' }}>
+            <img src={IMG_OPERADOR} alt="Operadores MAZ CLEAN" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 15%', display: 'block' }} />
           </div>
           {/* Texto */}
           <div style={{ flexShrink: 0 }}>
