@@ -361,6 +361,7 @@ export default function OnboardingView({ onComplete }) {
   const [fullName, setFullName] = useState(profile?.full_name || '')
   // Fix: limpiar prefijo +52 del teléfono guardado
   const [phone, setPhone]       = useState(cleanPhone(profile?.phone || ''))
+  // curp conservado en DB pero no se pide en registro simplificado
   const [curp, setCurp]         = useState(profile?.curp || '')
 
   // Paso 2 — Identidad completa (INE + Selfie + Comprobante + Video)
@@ -539,8 +540,7 @@ export default function OnboardingView({ onComplete }) {
   const handleStep1 = async () => {
     if (!fullName.trim()) { setError('El nombre completo es requerido.'); return }
     if (!/^\d{10}$/.test(phone.replace(/\s/g,''))) { setError('El teléfono debe tener 10 dígitos.'); return }
-    if (!curp.trim() || curp.trim().length < 18) { setError('La CURP debe tener 18 caracteres.'); return }
-    await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,''), curp: curp.trim().toUpperCase() }, 2)
+    await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,'') }, 2)
   }
 
   // Paso 2: INE + Selfie + Comprobante + Video
@@ -549,12 +549,11 @@ export default function OnboardingView({ onComplete }) {
     if (!ineBackUrl)      { setError('Sube el reverso de tu INE.'); return }
     if (!selfieIdUrl)     { setError('Sube tu selfie con el INE.'); return }
     if (!proofAddressUrl) { setError('Sube tu comprobante de domicilio.'); return }
-    if (!proofLifeUrl)    { setError('Sube el video de prueba de vida.'); return }
     await saveStep({
       ine_front_url: ineFrontUrl, ine_back_url: ineBackUrl,
       selfie_with_id_url: selfieIdUrl,
       proof_of_address_url: proofAddressUrl,
-      proof_of_life_video_url: proofLifeUrl,
+      // proof_of_life_video_url: pedido post-aprobación en OperatorAccount
     }, 3)
   }
 
@@ -623,7 +622,7 @@ export default function OnboardingView({ onComplete }) {
   // Paso 3 Zona: 2 subs base + 1 extra si radio > 2 km
   const STEPS = [
     { n: 1, label: 'Datos',      icon: '👤', subs: 1 },
-    { n: 2, label: 'Identidad',  icon: '🪪', subs: 5 },
+    { n: 2, label: 'Identidad',  icon: '🪪', subs: 4 },
     { n: 3, label: 'Zona',       icon: '📍', subs: radius > 2 ? 3 : 2 },
     { n: 4, label: 'Materiales', icon: '🧴', subs: 1 },
     { n: 5, label: 'Contrato',   icon: '📋', subs: 2 },
@@ -784,11 +783,6 @@ export default function OnboardingView({ onComplete }) {
                 <input style={inp} placeholder="Ej: 5512345678" type="tel" maxLength={10} value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g,''))} />
                 <p style={{ fontSize: 11, color: '#9ca3af', margin: '4px 0 0' }}>Solo los 10 dígitos, sin código de país</p>
               </div>
-              <div>
-                <label style={lbl}>CURP *</label>
-                <input style={{ ...inp, textTransform: 'uppercase', fontFamily: 'monospace' }} placeholder="Ej: MAAZ900101HDFRZN01" maxLength={18} value={curp} onChange={e => setCurp(e.target.value.toUpperCase())} />
-                <p style={{ fontSize: 11, color: '#9ca3af', margin: '4px 0 0' }}>18 caracteres — puedes consultarla en gob.mx/curp</p>
-              </div>
               <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px' }}>
                 <p style={{ fontSize: 13, color: '#166534', margin: 0, lineHeight: 1.5 }}>📱 Usaremos este teléfono para coordinar servicios y enviarte notificaciones por WhatsApp.</p>
               </div>
@@ -851,28 +845,11 @@ export default function OnboardingView({ onComplete }) {
                 </div>
                 <PhotoUpload label="Comprobante de domicilio" icon="📄" value={proofAddressUrl} onChange={setProofAddressUrl} accept="image/*,.pdf" maxMB={15} disabled={!canEdit('proof_of_address_url')} />
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
-                <NavButtons onBack={prevSub} onNext={() => { if (!proofAddressUrl) { setError('Sube tu comprobante de domicilio.'); return } nextSub() }} />
+                <NavButtons onBack={prevSub} onNext={() => { if (!proofAddressUrl) { setError('Sube tu comprobante de domicilio.'); return } handleStep2() }} nextLabel="Guardar y continuar →" nextColor="#10b981" />
               </>
             )}
 
-            {/* Sub 5: Video prueba de vida */}
-            {subStep === 5 && (
-              <>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🎥 Video de prueba de vida</h2>
-                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Un video corto para confirmar tu identidad.</p>
-                <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: '#854d0e', margin: '0 0 6px' }}>📹 Instrucciones (30-60 segundos):</p>
-                  {['1. Sal afuera de tu domicilio','2. Muestra la fachada y el número de tu casa','3. Di en voz alta tu nombre y la fecha de hoy','4. Entra al domicilio brevemente'].map(i => (
-                    <div key={i} style={{ fontSize: 12, color: '#854d0e', marginBottom: 4 }}>{i}</div>
-                  ))}
-                  <p style={{ fontSize: 11, color: '#92400e', margin: '6px 0 0', fontStyle: 'italic' }}>MP4 o MOV, máximo 50 MB</p>
-                </div>
-                <PhotoUpload label="Video de prueba de vida" icon="🎥" value={proofLifeUrl} onChange={setProofLifeUrl} accept="video/*" maxMB={50} disabled={!canEdit('proof_of_life_video_url')} />
-                {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
-                <NavButtons onBack={prevSub} onNext={() => { if (!proofLifeUrl) { setError('Sube el video de prueba de vida.'); return } handleStep2() }} nextLabel="Guardar y continuar →" nextColor="#10b981" />
-              </>
-            )}
-          </div>
+            </div>
         )}
 
         {/* ════ PASO 3 — Zona de trabajo ════ */}
@@ -1105,7 +1082,7 @@ export default function OnboardingView({ onComplete }) {
                     <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>Operador de Estética Automotriz · Versión 1.0</div>
                     <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>Fecha: {new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
                   </div>
-                  <p><strong>I. PARTES.</strong> MAZ CLEAN, plataforma digital operada por <strong>Juan Alberto Mazariegos Fernandez</strong> (en adelante "MAZ CLEAN" o "la Plataforma"), y <strong>{profile?.full_name || fullName}</strong> con CURP <strong>{profile?.curp || curp}</strong> (en adelante "el Operador").</p>
+                  <p><strong>I. PARTES.</strong> MAZ CLEAN, plataforma digital operada por <strong>Juan Alberto Mazariegos Fernandez</strong> (en adelante "MAZ CLEAN" o "la Plataforma"), y <strong>{profile?.full_name || fullName}</strong> (en adelante "el Operador").</p>
                   <p><strong>II. OBJETO.</strong> El presente contrato regula los términos bajo los cuales el Operador accede a la plataforma tecnológica MAZ CLEAN para ofrecer servicios de estética automotriz a domicilio de manera <strong>independiente</strong>, sin que exista relación laboral alguna con MAZ CLEAN. MAZ CLEAN actúa exclusivamente como intermediario tecnológico.</p>
                   <p><strong>III. MEMBRESÍA.</strong> Para acceder a la plataforma, el Operador pagará una <strong>membresía semanal de ${membershipConfig?.operator_price || 50} MXN</strong>, renovable automáticamente cada 7 días desde la fecha de activación. Este monto podrá modificarse con al menos 7 días de anticipación. La membresía no garantiza un número mínimo de servicios.</p>
                   <p><strong>IV. COMISIONES POR SERVICIO.</strong> MAZ CLEAN aplica una comisión sobre el precio total de cada servicio finalizado, conforme al nivel de calificación del Operador: <strong>Operador (0–3.9 ⭐) 10% · Pro (4.0–4.4 ⭐) 9% · Pro+ (4.5–4.7 ⭐) 8% · Elite (4.8–5.0 ⭐) 7%</strong>. Dicha comisión se acumula durante el ciclo de 7 días del Operador y se suma a la membresía en la fecha de renovación. MAZ CLEAN podrá modificar estos porcentajes notificando al Operador con mínimo <strong>7 días naturales de anticipación</strong>. El nivel de calificación se calcula sobre los últimos 7 días y se actualiza automáticamente.</p>
@@ -1172,7 +1149,7 @@ export default function OnboardingView({ onComplete }) {
               ine_back_url:            { step: 2, subStep: 2 },
               selfie_with_id_url:      { step: 2, subStep: 3 },
               proof_of_address_url:    { step: 2, subStep: 4 },
-              proof_of_life_video_url: { step: 2, subStep: 5 },
+              // proof_of_life_video_url: verificación post-aprobación
               vehicle_photo_url:       { step: 3, subStep: 3 },
               kit_photo_url:           { step: 4, subStep: 1 },
               terms_accepted_at:       { step: 5, subStep: 2 },
@@ -1245,11 +1222,10 @@ export default function OnboardingView({ onComplete }) {
               <div style={{ background: '#f9fafb', borderRadius: 12, padding: '16px 20px', textAlign: 'left' }}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: '#374151', margin: '0 0 12px' }}>📋 Estado de tu solicitud:</p>
                 {[
-                  { label: 'Datos personales + CURP',   done: !!profile?.full_name && !!profile?.curp },
+                  { label: 'Datos personales',          done: !!profile?.full_name },
                   { label: 'INE frente y reverso',       done: !!profile?.ine_front_url && !!profile?.ine_back_url },
                   { label: 'Selfie con INE',             done: !!profile?.selfie_with_id_url },
                   { label: 'Comprobante de domicilio',   done: !!profile?.proof_of_address_url },
-                  { label: 'Video de prueba de vida',    done: !!profile?.proof_of_life_video_url },
                   { label: 'Zona de trabajo',            done: !!profile?.base_address },
                   { label: 'Kit de materiales',          done: !!profile?.kit_photo_url },
                   { label: 'Contrato firmado',           done: !!profile?.terms_accepted_at },

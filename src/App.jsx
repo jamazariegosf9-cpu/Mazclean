@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthModal from './components/auth/AuthModal'
 import BookingView from './BookingView'
 import OnboardingView from './OnboardingView'
+import LandingOperador from './LandingOperador'
 import { Menu, X } from 'lucide-react'
 import './App.css'
 
@@ -462,7 +463,7 @@ function AppInner() {
         <StatusScreen
           icon="⏳"
           title="Perfil en revision"
-          message="Tu registro esta siendo revisado por el administrador. Te notificaremos cuando sea aprobado."
+          message="Tu registro está siendo revisado. Te notificaremos por WhatsApp en máximo 4 horas hábiles."
           onSignOut={signOut}
         />
       )
@@ -492,7 +493,8 @@ function AppInner() {
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>
       <Navbar view={view} setView={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />
-      {view === 'home'     && <HomeView setView={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />}
+      {view === 'home'     && !user && <LandingOperador onRegister={() => setAuthModal('operator')} />}
+      {view === 'home'     && user  && <HomeView setView={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />}
       {view === 'booking'  && <BookingViewProtected onNavigate={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />}
       {view === 'client'   && <ClientView onNavigate={navigateTo} />}
       {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}

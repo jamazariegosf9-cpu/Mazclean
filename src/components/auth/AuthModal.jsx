@@ -414,7 +414,7 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
             <p style={S.subtitle}>Registra tu cuenta para ofrecer servicios de lavado</p>
 
             <div style={S.infoBox}>
-              🚗 Despues de crear tu cuenta completaras un proceso de registro de 5 pasos. Tu perfil sera revisado por el administrador antes de poder recibir servicios.
+              🚗 Después de crear tu cuenta completarás un proceso de registro rápido (~8 minutos). Tu perfil será revisado por el administrador antes de poder recibir servicios.
             </div>
 
             {error && <div style={S.errorBox}>{error}</div>}
