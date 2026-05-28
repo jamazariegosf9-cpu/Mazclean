@@ -23,8 +23,6 @@ function useIsMobile() {
   return isMobile
 }
 
-
-
 const getStorageUrl = (path) => {
   if (!path) return null
   if (path.startsWith('http')) return path
@@ -269,7 +267,7 @@ export default function OnboardingView({ onComplete }) {
   const [phone, setPhone]       = useState(profile?.phone || '')
   const [curp, setCurp]         = useState(profile?.curp || '')
 
-  // Paso 2 — Identidad + Banco
+  // Paso 2 — Identidad (banco conservado en estado por si se requiere a futuro, no se muestra)
   const [ineFrontUrl, setIneFrontUrl]   = useState(profile?.ine_front_url || '')
   const [ineBackUrl, setIneBackUrl]     = useState(profile?.ine_back_url || '')
   const [selfieIdUrl, setSelfieIdUrl]   = useState(profile?.selfie_with_id_url || '')
@@ -306,7 +304,7 @@ export default function OnboardingView({ onComplete }) {
   const [termsAccepted, setTermsAccepted]     = useState(!!profile?.terms_accepted_at)
   const [signature, setSignature]             = useState(null)
   const [uploadingSignature, setUploadingSignature] = useState(false)
-  const [membershipConfig, setMembershipConfig] = useState({ operator_price: 200, client_price: 30 })
+  const [membershipConfig, setMembershipConfig] = useState({ operator_price: 50, client_price: 30 })
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -508,21 +506,16 @@ export default function OnboardingView({ onComplete }) {
     await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,''), curp: curp.trim().toUpperCase() }, 2)
   }
 
+  // ── Paso 2: solo INE frente, reverso y selfie — banco eliminado del flujo ─
   const handleStep2 = async () => {
     if (!ineFrontUrl) { setError('Sube el frente de tu INE.'); return }
     if (!ineBackUrl)  { setError('Sube el reverso de tu INE.'); return }
     if (!selfieIdUrl) { setError('Sube tu selfie con el INE.'); return }
-    const clabeClean = clabe.replace(/\s/g,'')
-    if (!clabeClean && !profile?.clabe) { setError('La CLABE es requerida.'); return }
-    if (clabeClean && !validarCLABE(clabeClean)) { setClabeError('CLABE inválida. Verifica los 18 dígitos.'); return }
-    if (!clabeHolder.trim()) { setError('El nombre del titular es requerido.'); return }
-    if (!bankName) { setError('Selecciona un banco.'); return }
-    const clabeToSave = clabeClean ? '****' + clabeClean.slice(14) : profile?.clabe
-    await saveStep({ ine_front_url: ineFrontUrl, ine_back_url: ineBackUrl, selfie_with_id_url: selfieIdUrl, clabe: clabeToSave, clabe_holder: clabeHolder.trim(), bank_name: bankName }, 3)
+    await saveStep({ ine_front_url: ineFrontUrl, ine_back_url: ineBackUrl, selfie_with_id_url: selfieIdUrl }, 3)
   }
 
   const handleStep3 = async () => {
-    if (!baseAddress.trim())  { setError('Ingresa tu dirección base.'); return }
+    if (!baseAddress.trim())  { setError('Ingresa tu punto de partida.'); return }
     if (!proofAddressUrl)     { setError('Sube tu comprobante de domicilio.'); return }
     if (!proofLifeUrl)        { setError('Sube el video de prueba de vida.'); return }
     if (!selectedDays.length) { setError('Selecciona al menos un día de trabajo.'); return }
@@ -600,10 +593,10 @@ export default function OnboardingView({ onComplete }) {
     finally { setSaving(false) }
   }
 
-  // ── Configuración de pasos ────────────────────────────────────────────────
+  // ── Configuración de pasos — Paso 2 ahora tiene 3 sub-pasos (sin banco) ──
   const STEPS = [
     { n: 1, label: 'Datos',      icon: '👤', subs: 1 },
-    { n: 2, label: 'Identidad',  icon: '🪪', subs: 4 },
+    { n: 2, label: 'Identidad',  icon: '🪪', subs: 3 },
     { n: 3, label: 'Zona',       icon: '📍', subs: 5 },
     { n: 4, label: 'Materiales', icon: '🧴', subs: 1 },
     { n: 5, label: 'Contrato',   icon: '📋', subs: 2 },
@@ -631,7 +624,7 @@ export default function OnboardingView({ onComplete }) {
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div style={{ fontSize: 40, marginBottom: 8 }}>💧</div>
           <h1 style={{ fontSize: isMobile ? 20 : 24, fontWeight: 800, color: '#1f2937', margin: '0 0 4px' }}>Registro de Operador</h1>
-          <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Este proceso toma aproximadamente 10-15 minutos</p>
+          <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Este proceso toma aproximadamente <strong>~8 minutos</strong></p>
         </div>
 
         {/* Barra de progreso */}
@@ -673,30 +666,59 @@ export default function OnboardingView({ onComplete }) {
             <div style={{ textAlign: 'center', marginBottom: 20 }}>
               <div style={{ fontSize: 48, marginBottom: 8 }}>📋</div>
               <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1f2937', margin: '0 0 8px' }}>Antes de comenzar</h2>
-              <p style={{ fontSize: 14, color: '#6b7280', margin: 0, lineHeight: 1.6 }}>Ten a la mano los siguientes documentos y materiales. El proceso toma aproximadamente <strong>10-15 minutos</strong>.</p>
+              <p style={{ fontSize: 14, color: '#6b7280', margin: 0, lineHeight: 1.6 }}>Ten a la mano los siguientes documentos y materiales. El proceso toma aproximadamente <strong>~8 minutos</strong>.</p>
             </div>
+
+            {/* Mensaje motivacional */}
+            <div style={{ background: 'linear-gradient(135deg,#eff6ff,#f0fdf4)', border: '1.5px solid #bfdbfe', borderRadius: 12, padding: '14px 16px', marginBottom: 16, textAlign: 'center' }}>
+              <p style={{ fontSize: 14, fontWeight: 700, color: '#1e40af', margin: '0 0 4px' }}>🚀 ¡Estás a minutos de empezar a ganar!</p>
+              <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.5 }}>Únete a la comunidad MAZ CLEAN y genera ingresos en tu zona de trabajo.</p>
+            </div>
+
             <div style={{ display: 'grid', gap: 10, marginBottom: 20 }}>
               {[
-                { icon: '🪪', title: 'Identificación oficial', desc: 'INE o licencia de conducir — frente y reverso' },
-                { icon: '🤳', title: 'Selfie con tu INE', desc: 'Foto tuya sosteniendo tu identificación' },
-                { icon: '🏦', title: 'Datos bancarios', desc: 'CLABE interbancaria de 18 dígitos y nombre del banco' },
-                { icon: '📄', title: 'Comprobante de domicilio', desc: 'Recibo de luz, agua o internet — máximo 3 meses de antigüedad' },
-                { icon: '🎥', title: 'Video de prueba de vida', desc: 'Video de 30-60 seg mostrando la fachada de tu domicilio' },
-                { icon: '🧴', title: 'Kit de materiales', desc: 'Shampoo pH neutro, producto waterless + atomizador, microfibras por color (azul/negro/gris), brocha de detailing, cubeta doble balde, aspiradora portátil, antibacterial y limpiador de cristales' },
-                { icon: '🚗', title: 'Datos de tu vehículo', desc: 'Foto y placa — solo si operarás a más de 2 km de tu domicilio' },
+                {
+                  icon: '🪪',
+                  title: 'Identificación oficial',
+                  desc: 'INE o licencia de conducir — frente y reverso',
+                },
+                {
+                  icon: '📄',
+                  title: 'Comprobante de domicilio',
+                  desc: 'Recibo de luz, agua o internet — máximo 3 meses de antigüedad',
+                },
+                {
+                  icon: '🧴',
+                  title: 'Kit de materiales',
+                  desc: 'Shampoo pH neutro, waterless + atomizador, microfibras por color, brocha de detailing, cubeta doble balde, aspiradora portátil, antibacterial y limpiador de cristales.',
+                  extra: '💰 Inversión estimada: $400–$800 MXN — muy probablemente ya tienes varios artículos en casa, por lo que tu inversión real puede ser mucho menor.',
+                },
+                {
+                  icon: '🚗🏍️🚲',
+                  title: 'Datos de tu vehículo',
+                  desc: 'Foto y placa — solo si tu punto de partida está a más de 2 km del centro de tu zona de trabajo elegida.',
+                  highlight: true,
+                },
               ].map((item, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: '#f9fafb', borderRadius: 12, padding: '12px 14px', border: '1px solid #e5e7eb' }}>
-                  <span style={{ fontSize: 22, flexShrink: 0 }}>{item.icon}</span>
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: '#f9fafb', borderRadius: 12, padding: '12px 14px', border: `1px solid ${item.highlight ? '#fde68a' : '#e5e7eb'}` }}>
+                  <span style={{ fontSize: item.icon.length > 2 ? 16 : 22, flexShrink: 0, marginTop: item.icon.length > 2 ? 2 : 0 }}>{item.icon}</span>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: '#1f2937', marginBottom: 2 }}>{item.title}</div>
                     <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>{item.desc}</div>
+                    {item.extra && (
+                      <div style={{ fontSize: 12, color: '#065f46', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '6px 10px', marginTop: 6, lineHeight: 1.5 }}>
+                        {item.extra}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
+
             <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginBottom: 20 }}>
               <p style={{ fontSize: 13, color: '#1e40af', margin: 0, lineHeight: 1.5 }}>💡 <strong>Consejo:</strong> Prepara todos los documentos antes de iniciar para completar el registro sin interrupciones.</p>
             </div>
+
             {profile?.operator_status === 'aprobado' ? (
               <button onClick={onComplete} style={{ width: '100%', padding: '15px 0', background: '#10b981', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
                 Ir al Panel de Operador →
@@ -737,7 +759,7 @@ export default function OnboardingView({ onComplete }) {
           </div>
         )}
 
-        {/* ════ PASO 2 — Identidad + Banco ════ */}
+        {/* ════ PASO 2 — Identidad (INE + Selfie) — sin datos bancarios ════ */}
         {step === 2 && (
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
             {subStep === 1 && (
@@ -770,41 +792,7 @@ export default function OnboardingView({ onComplete }) {
                 </div>
                 <PhotoUpload label="Selfie con INE" icon="🤳" value={selfieIdUrl} onChange={setSelfieIdUrl} capture="user" disabled={!canEdit('selfie_with_id_url')} />
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
-                <NavButtons onBack={prevSub} onNext={() => { if (!selfieIdUrl) { setError('Sube tu selfie con el INE.'); return } nextSub() }} />
-              </>
-            )}
-            {subStep === 4 && (
-              <>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🏦 Datos bancarios</h2>
-                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 20px' }}>Para recibir tus liquidaciones semanales vía SPEI.</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <div>
-                    <label style={lbl}>CLABE interbancaria (18 dígitos) *</label>
-                    <input style={{ ...inp, borderColor: clabeError ? '#fca5a5' : '#e5e7eb', fontFamily: 'monospace', background: !canEdit('clabe') ? '#f3f4f6' : '#fff' }}
-                      placeholder="012345678901234567" type="tel" maxLength={18}
-                      disabled={!canEdit('clabe')}
-                      value={clabe} onChange={e => { if(canEdit('clabe')){ setClabe(e.target.value.replace(/\D/g,'')); setClabeError('') }}} />
-                    {clabeError && <p style={{ fontSize: 12, color: '#dc2626', margin: '4px 0 0' }}>⚠️ {clabeError}</p>}
-                    {clabe.length === 18 && !clabeError && validarCLABE(clabe) && <p style={{ fontSize: 12, color: '#10b981', margin: '4px 0 0' }}>✅ CLABE válida</p>}
-                    {profile?.clabe && !clabe && <p style={{ fontSize: 12, color: '#6b7280', margin: '4px 0 0' }}>CLABE registrada: {profile.clabe}</p>}
-                  </div>
-                  <div>
-                    <label style={lbl}>Nombre del titular *</label>
-                    <input style={inp} placeholder="Como aparece en tu cuenta" value={clabeHolder} onChange={e => setClabeHolder(e.target.value)} />
-                  </div>
-                  <div>
-                    <label style={lbl}>Banco *</label>
-                    <select value={bankName} onChange={e => setBankName(e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
-                      <option value="">Selecciona tu banco</option>
-                      {BANCOS.map(b => <option key={b} value={b}>{b}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginTop: 16 }}>
-                  <p style={{ fontSize: 12, color: '#854d0e', margin: 0, lineHeight: 1.5 }}>🔒 Solo mostramos los últimos 4 dígitos de tu CLABE. Las liquidaciones se realizan cada 7 días desde tu fecha de activación.</p>
-                </div>
-                {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 16, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
-                <NavButtons onBack={prevSub} onNext={handleStep2} nextLabel="Guardar y continuar →" nextColor="#10b981" />
+                <NavButtons onBack={prevSub} onNext={() => { if (!selfieIdUrl) { setError('Sube tu selfie con el INE.'); return } handleStep2() }} nextLabel="Guardar y continuar →" nextColor="#10b981" />
               </>
             )}
           </div>
@@ -815,8 +803,11 @@ export default function OnboardingView({ onComplete }) {
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
             {subStep === 1 && (
               <>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🏠 Tu dirección base</h2>
-                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 20px' }}>¿Desde dónde saldrás a atender los servicios?</p>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🏠 Tu punto de partida</h2>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 8px' }}>¿Desde dónde saldrás a atender los servicios?</p>
+                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+                  <p style={{ fontSize: 12, color: '#1e40af', margin: 0, lineHeight: 1.5 }}>💡 No tiene que ser tu domicilio — puede ser desde donde tú decidas partir: tu colonia, tu trabajo, donde te sea más práctico.</p>
+                </div>
                 <div style={{ marginBottom: 16 }}>
                   <label style={lbl}>Dirección o colonia de origen *</label>
                   <textarea style={{ ...inp, height: 80, resize: 'vertical', fontSize: 14 }}
@@ -855,7 +846,7 @@ export default function OnboardingView({ onComplete }) {
                 </div>
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
                 <NavButtons onBack={() => goStepSafe(2)} onNext={() => {
-                    if (!baseAddress.trim()) { setError('Ingresa tu dirección.'); return }
+                    if (!baseAddress.trim()) { setError('Ingresa tu punto de partida.'); return }
                     if (!baseLat || !baseLng) { setError('Confirma tu dirección en el mapa antes de continuar.'); return }
                     nextSub()
                   }} />
@@ -864,7 +855,7 @@ export default function OnboardingView({ onComplete }) {
             {subStep === 2 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>📍 Zona de cobertura</h2>
-                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 20px' }}>Define hasta qué distancia puedes atender servicios.</p>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 20px' }}>Define hasta qué distancia puedes atender servicios desde tu zona de trabajo elegida.</p>
                 <div style={{ marginBottom: 20 }}>
                   <label style={lbl}>
                     Radio de cobertura: <strong>{radius} km</strong>
@@ -876,7 +867,7 @@ export default function OnboardingView({ onComplete }) {
                   </div>
                   {radius > 2 && (
                     <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginTop: 10 }}>
-                      <p style={{ fontSize: 13, color: '#92400e', margin: 0, lineHeight: 1.5 }}>🚗 Como tu radio es mayor a 2 km, deberás indicar tu medio de transporte propio en el siguiente paso.</p>
+                      <p style={{ fontSize: 13, color: '#92400e', margin: 0, lineHeight: 1.5 }}>🚗 Como tu radio supera los 2 km desde tu zona de trabajo elegida, deberás indicar tu medio de transporte propio en el siguiente paso.</p>
                     </div>
                   )}
                 </div>
@@ -959,18 +950,26 @@ export default function OnboardingView({ onComplete }) {
             {subStep === 5 && radius > 2 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🚗 Tu medio de transporte</h2>
-                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Como tu zona supera los 2 km, necesitamos verificar tu transporte propio.</p>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 8px' }}>Tu zona de trabajo elegida supera los 2 km — necesitamos verificar tu transporte propio.</p>
+                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+                  <p style={{ fontSize: 12, color: '#1e40af', margin: 0, lineHeight: 1.5 }}>📍 La distancia se mide desde tu <strong>punto de partida</strong> hasta el centro de tu <strong>zona de trabajo elegida</strong>, no necesariamente desde tu domicilio.</p>
+                </div>
                 <div style={{ marginBottom: 16 }}>
                   <label style={lbl}>Tipo de transporte *</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
-                    {[{ value: 'auto', label: '🚗 Automóvil' }, { value: 'motocicleta', label: '🏍️ Motocicleta' }, { value: 'camioneta', label: '🚐 Camioneta' }, { value: 'bicicleta_electrica', label: '⚡ Bici eléctrica' }].map(opt => (
+                    {[
+                      { value: 'auto',               label: '🚗 Automóvil' },
+                      { value: 'motocicleta',         label: '🏍️ Motocicleta' },
+                      { value: 'camioneta',           label: '🚐 Camioneta' },
+                      { value: 'bicicleta',           label: '🚲 Bicicleta' },
+                      { value: 'bicicleta_electrica', label: '⚡ Bici eléctrica' },
+                    ].map(opt => (
                       <button key={opt.value} onClick={() => setVehicleType(opt.value)}
                         style={{ padding: '10px 16px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: 'none', background: vehicleType === opt.value ? '#3b82f6' : '#f3f4f6', color: vehicleType === opt.value ? '#fff' : '#374151', minHeight: 40 }}>
                         {opt.label}
                       </button>
                     ))}
                   </div>
-                  <p style={{ fontSize: 11, color: '#9ca3af', margin: '4px 0 0' }}>Transporte público y bicicleta convencional no aplican para zonas mayores a 2 km.</p>
                 </div>
                 <PhotoUpload label="Foto del vehículo" hint="La placa debe ser legible en la fotografía." icon="🚗" value={vehiclePhotoUrl} onChange={setVehiclePhotoUrl} capture="environment" disabled={!canEdit('vehicle_photo_url')} />
                 <div style={{ marginBottom: 8 }}>
@@ -989,7 +988,7 @@ export default function OnboardingView({ onComplete }) {
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🧴 Kit de materiales</h2>
             <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Sube una foto de tu kit completo para verificar que tienes todo lo necesario.</p>
-            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: '14px 16px', marginBottom: 12 }}>
               <p style={{ fontSize: 13, fontWeight: 700, color: '#1e40af', margin: '0 0 8px' }}>✅ Materiales obligatorios:</p>
               {[
                 'Shampoo pH neutro para autos',
@@ -1004,6 +1003,12 @@ export default function OnboardingView({ onComplete }) {
                 <div key={m} style={{ fontSize: 13, color: '#1e40af', marginBottom: 4 }}>• {m}</div>
               ))}
               <p style={{ fontSize: 12, color: '#6b7280', margin: '8px 0 0', fontStyle: 'italic' }}>Recomendado: producto base agua para tablero y plásticos interiores</p>
+            </div>
+            {/* Costo estimado del kit */}
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
+              <p style={{ fontSize: 13, color: '#065f46', margin: 0, lineHeight: 1.6 }}>
+                💰 <strong>Inversión estimada: $400–$800 MXN</strong> — muy probablemente ya tienes varios artículos en casa (shampoo, microfibras, cubeta), por lo que tu inversión real puede ser mucho menor.
+              </p>
             </div>
             <PhotoUpload label="Foto del kit" hint="Coloca todos los materiales visibles en la foto." icon="📦" value={kitPhotoUrl} onChange={setKitPhotoUrl} capture="environment" disabled={!canEdit('kit_photo_url')} />
             {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
@@ -1136,7 +1141,6 @@ export default function OnboardingView({ onComplete }) {
               ine_front_url:           { step: 2, subStep: 1 },
               ine_back_url:            { step: 2, subStep: 2 },
               selfie_with_id_url:      { step: 2, subStep: 3 },
-              clabe:                   { step: 2, subStep: 4 },
               proof_of_address_url:    { step: 3, subStep: 3 },
               proof_of_life_video_url: { step: 3, subStep: 3 },
               vehicle_photo_url:       { step: 3, subStep: 5 },
@@ -1223,16 +1227,15 @@ export default function OnboardingView({ onComplete }) {
               <div style={{ background: '#f9fafb', borderRadius: 12, padding: '16px 20px', textAlign: 'left' }}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: '#374151', margin: '0 0 12px' }}>📋 Estado de tu solicitud:</p>
                 {[
-                  { label: 'Datos personales + CURP', done: !!profile?.full_name && !!profile?.curp },
-                  { label: 'INE frente y reverso',    done: !!profile?.ine_front_url && !!profile?.ine_back_url },
-                  { label: 'Selfie con INE',           done: !!profile?.selfie_with_id_url },
-                  { label: 'Datos bancarios',          done: !!profile?.clabe },
-                  { label: 'Zona de trabajo',          done: !!profile?.base_address },
-                  { label: 'Comprobante de domicilio', done: !!profile?.proof_of_address_url },
-                  { label: 'Video de prueba de vida',  done: !!profile?.proof_of_life_video_url },
-                  { label: 'Kit de materiales',        done: !!profile?.kit_photo_url },
-                  { label: 'Contrato firmado',         done: !!profile?.terms_accepted_at },
-                  { label: 'Firma digital',            done: !!profile?.signature_url },
+                  { label: 'Datos personales + CURP',   done: !!profile?.full_name && !!profile?.curp },
+                  { label: 'INE frente y reverso',       done: !!profile?.ine_front_url && !!profile?.ine_back_url },
+                  { label: 'Selfie con INE',             done: !!profile?.selfie_with_id_url },
+                  { label: 'Zona de trabajo',            done: !!profile?.base_address },
+                  { label: 'Comprobante de domicilio',   done: !!profile?.proof_of_address_url },
+                  { label: 'Video de prueba de vida',    done: !!profile?.proof_of_life_video_url },
+                  { label: 'Kit de materiales',          done: !!profile?.kit_photo_url },
+                  { label: 'Contrato firmado',           done: !!profile?.terms_accepted_at },
+                  { label: 'Firma digital',              done: !!profile?.signature_url },
                 ].map(item => (
                   <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                     <span style={{ fontSize: 14 }}>{item.done ? '✅' : '⏳'}</span>
