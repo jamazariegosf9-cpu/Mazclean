@@ -175,7 +175,7 @@ const PENDING_STATUSES = ['pending_review', 'pendiente']
 
 // ── Globo flotante de Max — abre WhatsApp ─────────────────────────────────────
 // Opción B: visible en pantallas seleccionadas, no en onboarding ni modales
-const WHATSAPP_MAX = 'https://wa.me/message/K2T33UDXT6XZN1'
+const WHATSAPP_MAX = 'https://wa.me/525539377258?text=Hola%2C%20quiero%20información%20sobre%20MAZ%20CLEAN%20%F0%9F%9A%97'
 
 function MaxFAB({ visible = true }) {
   const [tooltip, setTooltip] = useState(false)
