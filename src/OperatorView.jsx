@@ -313,6 +313,17 @@ const OperatorView = () => {
     return () => { if (gpsWatcherRef.current !== null) navigator.geolocation.clearWatch(gpsWatcherRef.current); };
   }, [bookings, user]);
 
+  // ── Sign out seguro — limpia localStorage antes de redirigir ─────────────
+  const handleSignOut = async () => {
+    try {
+      localStorage.removeItem('mazclean-auth')
+      localStorage.removeItem('supabase.auth.token')
+      sessionStorage.clear()
+      await supabase.auth.signOut()
+    } catch {}
+    window.location.href = '/'
+  }
+
   // ── GUARDS (después de todos los hooks) ───────────────────────────────────
   if (profile?.role !== 'admin' && (!profile || !profile.onboarding_done)) {
     const step = profile?.onboarding_step || 1;
@@ -326,7 +337,9 @@ const OperatorView = () => {
           <button onClick={() => window.location.reload()} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', border: 'none', borderRadius: 12, color: '#fff', fontWeight: 700, fontSize: 16, cursor: 'pointer', marginBottom: 12 }}>
             {step > 1 ? 'Continuar registro (Paso ' + step + '/5)' : 'Iniciar registro'}
           </button>
-          <button onClick={() => signOut()} style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: '#8CA0BF', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>Cerrar sesion</button>
+          <button onClick={handleSignOut} style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: '#8CA0BF', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+            Cerrar sesión
+          </button>
         </div>
       </div>
     );
@@ -338,9 +351,16 @@ const OperatorView = () => {
       <div style={{ minHeight: '100vh', background: '#050A14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ background: 'rgba(59,130,246,0.08)', border: '1.5px solid rgba(59,130,246,0.3)', borderRadius: 20, padding: '40px 32px', maxWidth: 420, width: '100%', textAlign: 'center' }}>
           <div style={{ fontSize: 56, marginBottom: 16 }}>⏳</div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F0F6FF', marginBottom: 12 }}>Perfil en revision</h2>
-          <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 24, lineHeight: 1.6 }}>Tu registro esta siendo revisado por el administrador. Te notificaremos cuando sea aprobado.</p>
-          <button onClick={() => signOut()} style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: '#8CA0BF', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>Cerrar sesion</button>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F0F6FF', marginBottom: 12 }}>Perfil en revisión</h2>
+          <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 8, lineHeight: 1.6 }}>
+            Tu registro está siendo revisado por el administrador.
+          </p>
+          <p style={{ color: '#60a5fa', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
+            📱 Te notificaremos por WhatsApp en máximo <strong style={{ color: '#93c5fd' }}>4 horas hábiles</strong>.
+          </p>
+          <button onClick={handleSignOut} style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: '#8CA0BF', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+            Cerrar sesión
+          </button>
         </div>
       </div>
     );
