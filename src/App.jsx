@@ -260,94 +260,106 @@ function MaxFAB({ visible = true }) {
 }
 
 function RoleSelector({ onOperator, onClient }) {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
-  useEffect(() => {
-    const h = () => setIsMobile(window.innerWidth < 768)
-    window.addEventListener('resize', h)
-    return () => window.removeEventListener('resize', h)
-  }, [])
-
-  const IMG_OPERADOR = 'https://ysdmkbwmthrjgvyuvcmm.supabase.co/storage/v1/object/public/Academia/Operadores.png'
+  // Nueva imagen sin logo duplicado
+  const IMG_OPERADOR = 'https://ysdmkbwmthrjgvyuvcmm.supabase.co/storage/v1/object/public/Academia/Operadores%201.png'
   const IMG_CLIENTE  = 'https://ysdmkbwmthrjgvyuvcmm.supabase.co/storage/v1/object/public/Academia/Cliente.png'
+
+  const cardBase = {
+    flex: 1, borderRadius: 18, padding: '12px 12px 14px',
+    cursor: 'pointer', textAlign: 'center', fontFamily: 'inherit',
+    transition: 'all 0.18s', display: 'flex', flexDirection: 'column',
+    alignItems: 'center', gap: 8, border: '2px solid transparent',
+  }
 
   return (
     <div style={{
-      minHeight: '100vh',
-      background: 'radial-gradient(circle at 50% 30%, #0f2b80 0%, #061135 100%)',
+      height: '100vh', maxHeight: '100vh', overflow: 'hidden',
+      background: 'radial-gradient(circle at 50% 25%, #0f2b80 0%, #061135 100%)',
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
       fontFamily: "'Poppins','DM Sans',sans-serif",
-      padding: isMobile ? '24px 20px' : '40px 20px',
-      gap: 0,
+      padding: '16px 16px 12px',
+      boxSizing: 'border-box',
     }}>
-      {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 32 }}>
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>💧</div>
-        <span style={{ fontSize: 24, fontWeight: 800, color: '#F0F6FF', letterSpacing: '-0.5px' }}>MAZ CLEAN</span>
+
+      {/* Header — logo + título compacto */}
+      <div style={{ textAlign: 'center', marginBottom: 16, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>💧</div>
+          <span style={{ fontSize: 20, fontWeight: 800, color: '#F0F6FF', letterSpacing: '-0.3px' }}>MAZ CLEAN</span>
+        </div>
+        <h1 style={{ fontSize: 20, fontWeight: 800, color: '#fff', margin: '0 0 4px', lineHeight: 1.2 }}>
+          ¿Qué quieres hacer?
+        </h1>
+        <p style={{ fontSize: 13, color: '#8CA0BF', margin: 0 }}>
+          Selecciona tu perfil
+        </p>
       </div>
 
-      <h1 style={{ fontSize: isMobile ? 22 : 28, fontWeight: 800, color: '#fff', margin: '0 0 8px', textAlign: 'center', lineHeight: 1.25 }}>
-        ¿Qué quieres hacer?
-      </h1>
-      <p style={{ fontSize: 14, color: '#8CA0BF', margin: '0 0 36px', textAlign: 'center' }}>
-        Selecciona cómo quieres usar MAZ CLEAN
-      </p>
-
+      {/* Tarjetas lado a lado — Cliente primero, luego Operador */}
       <div style={{
-        display: 'flex', flexDirection: isMobile ? 'column' : 'row',
-        gap: 16, width: '100%', maxWidth: 600,
+        display: 'flex', flexDirection: 'row',
+        gap: 12, width: '100%', maxWidth: 560, flex: 1,
+        maxHeight: 420,
       }}>
-        {/* Tarjeta Operador */}
-        <button onClick={onOperator} style={{
-          flex: 1, background: 'rgba(59,130,246,0.1)',
-          border: '2px solid rgba(59,130,246,0.4)',
-          borderRadius: 20, padding: isMobile ? '24px 20px' : '32px 24px',
-          cursor: 'pointer', textAlign: 'center', fontFamily: 'inherit',
-          transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
-        }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.2)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.7)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.1)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.4)'; e.currentTarget.style.transform = 'translateY(0)' }}
-        >
-          <div style={{ width: '100%', height: 160, borderRadius: 14, overflow: 'hidden', border: '2px solid rgba(59,130,246,0.3)', marginBottom: 4 }}>
-            <img src={IMG_OPERADOR} alt="Operadores MAZ CLEAN" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 20%' }} />
-          </div>
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 4 }}>🚗 Quiero ser Operador</div>
-            <div style={{ fontSize: 13, color: '#93c5fd', lineHeight: 1.5 }}>Genera ingresos lavando autos a domicilio en tu zona</div>
-          </div>
-          <div style={{ background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', color: '#fff', padding: '10px 24px', borderRadius: 10, fontSize: 14, fontWeight: 700, width: '100%' }}>
-            Ver cómo funciona →
-          </div>
-        </button>
 
-        {/* Tarjeta Cliente */}
-        <button onClick={onClient} style={{
-          flex: 1, background: 'rgba(16,185,129,0.08)',
-          border: '2px solid rgba(16,185,129,0.35)',
-          borderRadius: 20, padding: isMobile ? '24px 20px' : '32px 24px',
-          cursor: 'pointer', textAlign: 'center', fontFamily: 'inherit',
-          transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
-        }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.18)'; e.currentTarget.style.borderColor = 'rgba(16,185,129,0.6)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+        {/* ── CLIENTE (primero) ── */}
+        <button
+          onClick={onClient}
+          style={{ ...cardBase, background: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.35)' }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.18)'; e.currentTarget.style.borderColor = '#10b981'; e.currentTarget.style.transform = 'translateY(-2px)' }}
           onMouseLeave={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.08)'; e.currentTarget.style.borderColor = 'rgba(16,185,129,0.35)'; e.currentTarget.style.transform = 'translateY(0)' }}
         >
-          <div style={{ width: '100%', height: 160, borderRadius: 14, overflow: 'hidden', border: '2px solid rgba(16,185,129,0.3)', marginBottom: 4 }}>
-            <img src={IMG_CLIENTE} alt="Cliente MAZ CLEAN" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 15%' }} />
+          {/* Badge de rol */}
+          <div style={{ background: 'rgba(16,185,129,0.2)', border: '1px solid #10b981', color: '#6ee7b7', padding: '3px 14px', borderRadius: 20, fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', flexShrink: 0 }}>
+            Cliente
           </div>
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 4 }}>🧼 Soy Cliente</div>
-            <div style={{ fontSize: 13, color: '#6ee7b7', lineHeight: 1.5 }}>Reserva un lavado profesional a domicilio para tu auto</div>
+          {/* Imagen */}
+          <div style={{ width: '100%', flex: 1, borderRadius: 12, overflow: 'hidden', minHeight: 0 }}>
+            <img src={IMG_CLIENTE} alt="Cliente MAZ CLEAN" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 15%', display: 'block' }} />
           </div>
-          <div style={{ background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', padding: '10px 24px', borderRadius: 10, fontSize: 14, fontWeight: 700, width: '100%' }}>
+          {/* Texto */}
+          <div style={{ flexShrink: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', marginBottom: 3 }}>🧼 Soy Cliente</div>
+            <div style={{ fontSize: 11, color: '#6ee7b7', lineHeight: 1.4 }}>Reserva un lavado profesional a domicilio</div>
+          </div>
+          {/* CTA */}
+          <div style={{ background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', padding: '9px 0', borderRadius: 10, fontSize: 13, fontWeight: 700, width: '100%', flexShrink: 0 }}>
             Reservar ahora →
           </div>
         </button>
+
+        {/* ── OPERADOR (segundo) ── */}
+        <button
+          onClick={onOperator}
+          style={{ ...cardBase, background: 'rgba(59,130,246,0.1)', borderColor: 'rgba(59,130,246,0.4)' }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.2)'; e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.1)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.4)'; e.currentTarget.style.transform = 'translateY(0)' }}
+        >
+          {/* Badge de rol */}
+          <div style={{ background: 'rgba(59,130,246,0.2)', border: '1px solid #3b82f6', color: '#93c5fd', padding: '3px 14px', borderRadius: 20, fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', flexShrink: 0 }}>
+            Operador
+          </div>
+          {/* Imagen */}
+          <div style={{ width: '100%', flex: 1, borderRadius: 12, overflow: 'hidden', minHeight: 0 }}>
+            <img src={IMG_OPERADOR} alt="Operadores MAZ CLEAN" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 20%', display: 'block' }} />
+          </div>
+          {/* Texto */}
+          <div style={{ flexShrink: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', marginBottom: 3 }}>🚗 Ser Operador</div>
+            <div style={{ fontSize: 11, color: '#93c5fd', lineHeight: 1.4 }}>Genera ingresos lavando autos en tu zona</div>
+          </div>
+          {/* CTA */}
+          <div style={{ background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', color: '#fff', padding: '9px 0', borderRadius: 10, fontSize: 13, fontWeight: 700, width: '100%', flexShrink: 0 }}>
+            Ver cómo funciona →
+          </div>
+        </button>
       </div>
 
-      {/* Ya tengo cuenta */}
-      <p style={{ fontSize: 13, color: '#4a5568', margin: '28px 0 0', textAlign: 'center' }}>
+      {/* Footer — login */}
+      <p style={{ fontSize: 12, color: '#4a5568', margin: '12px 0 0', textAlign: 'center', flexShrink: 0 }}>
         ¿Ya tienes cuenta?{' '}
-        <button onClick={onClient} style={{ background: 'none', border: 'none', color: '#00C8FF', cursor: 'pointer', fontSize: 13, fontWeight: 600, padding: 0, fontFamily: 'inherit' }}>
+        <button onClick={onClient} style={{ background: 'none', border: 'none', color: '#00C8FF', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: 0, fontFamily: 'inherit' }}>
           Iniciar sesión
         </button>
       </p>
