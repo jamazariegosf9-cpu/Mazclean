@@ -151,8 +151,10 @@ function PhotoUpload({ label, hint, icon, value, onChange, accept = 'image/*', c
     finally { setUploading(false) }
   }
 
-  const isVideo = value && (value.includes('.mp4') || value.includes('.mov') || accept.includes('video'))
-  const isPdf   = value && (value.includes('.pdf') || accept.includes('pdf'))
+  // Detección basada solo en el valor guardado — no en el accept del input
+  // Esto evita que campos que aceptan PDF traten imágenes JPG como documento
+  const isVideo = value && (value.includes('.mp4') || value.includes('.mov'))
+  const isPdf   = value && value.includes('.pdf')
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -256,29 +258,34 @@ function SignaturePad({ onSign, signed }) {
   )
 }
 
-// ── Componente MapaZona — Google Maps Static con círculo SVG overlay ──────────
-function MapaZona({ lat, lng, radius, onConfirm, onBack }) {
-  const [confirmed, setConfirmed] = useState(false)
-
-  // Google Maps Static API con marcador central
+// ── Componente MapaZona — Google Maps Static con círculo aproximado ───────────
+// Usamos 8 puntos para el círculo (suficiente aproximación visual)
+// y coordenadas con 4 decimales para mantener la URL bajo el límite de 8192 chars
+function buildMapUrl(lat, lng, radius, key) {
+  if (!key) return null
   const zoom   = radius >= 10 ? 11 : radius >= 5 ? 12 : radius >= 3 ? 13 : 14
-  const size   = '600x400'
-  // Aproximación de grados para el radio en km (1 grado lat ≈ 111 km)
   const degLat = radius / 111
   const degLng = radius / (111 * Math.cos(lat * Math.PI / 180))
-  // Generar puntos del círculo para el path de Google Maps
-  const circlePoints = Array.from({ length: 32 }, (_, i) => {
-    const angle = (i * 360) / 32 * Math.PI / 180
-    const pLat  = lat + degLat * Math.sin(angle)
-    const pLng  = lng + degLng * Math.cos(angle)
-    return `${pLat},${pLng}`
+  // 8 puntos = octágono — visualmente suficiente, URL corta
+  const pts = Array.from({ length: 8 }, (_, i) => {
+    const a = (i * 2 * Math.PI) / 8
+    return `${(lat + degLat * Math.sin(a)).toFixed(4)},${(lng + degLng * Math.cos(a)).toFixed(4)}`
   })
-  circlePoints.push(circlePoints[0]) // cerrar el círculo
-  const pathParam  = `color:0x3b82f6ff|fillcolor:0x3b82f630|weight:3|${circlePoints.join('|')}`
-  const markerParam = `color:red|label:P|${lat},${lng}`
-  const mapUrl = GOOGLE_MAPS_KEY
-    ? `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${zoom}&size=${size}&maptype=roadmap&markers=${encodeURIComponent(markerParam)}&path=${encodeURIComponent(pathParam)}&key=${GOOGLE_MAPS_KEY}`
-    : null
+  pts.push(pts[0])
+  const path   = `color:0x3b82f6ff|fillcolor:0x3b82f640|weight:3|${pts.join('|')}`
+  const marker = `color:red|label:P|${lat.toFixed(4)},${lng.toFixed(4)}`
+  const url = `https://maps.googleapis.com/maps/api/staticmap`
+    + `?center=${lat.toFixed(4)},${lng.toFixed(4)}`
+    + `&zoom=${zoom}&size=560x320&maptype=roadmap`
+    + `&markers=${encodeURIComponent(marker)}`
+    + `&path=${encodeURIComponent(path)}`
+    + `&key=${key}`
+  return url
+}
+
+function MapaZona({ lat, lng, radius, onConfirm, onBack }) {
+  const [confirmed, setConfirmed] = useState(false)
+  const mapUrl = buildMapUrl(lat, lng, radius, GOOGLE_MAPS_KEY)
 
   const handleConfirm = () => { setConfirmed(true); onConfirm() }
 
