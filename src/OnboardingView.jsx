@@ -4,7 +4,7 @@ import { useAuth } from './context/AuthContext'
 
 const DIAS   = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo']
 const BANCOS = ['BBVA','Banamex','Santander','Banorte','HSBC','Inbursa','Scotiabank','Afirme','BanBajio','Azteca','Otro']
-const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || ''
+const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
 
 function validarCLABE(clabe) {
   if (!/^\d{18}$/.test(clabe)) return false
