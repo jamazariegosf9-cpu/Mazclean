@@ -172,6 +172,93 @@ function useIsMobile() {
 const PENDING_STATUSES = ['pending_review', 'pendiente']
 
 // ── Pantalla de selección de rol — visitantes sin sesión ──────────────────────
+
+// ── Globo flotante de Max — abre WhatsApp ─────────────────────────────────────
+// Opción B: visible en pantallas seleccionadas, no en onboarding ni modales
+const WHATSAPP_MAX = 'https://wa.me/message/K2T33UDXT6XZN1'
+
+function MaxFAB({ visible = true }) {
+  const [tooltip, setTooltip] = useState(false)
+  const [pulse, setPulse]     = useState(true)
+
+  useEffect(() => {
+    // Quitar pulso después de 4s para no molestar
+    const t = setTimeout(() => setPulse(false), 4000)
+    return () => clearTimeout(t)
+  }, [])
+
+  if (!visible) return null
+
+  return (
+    <div style={{ position: 'fixed', bottom: 24, right: 20, zIndex: 999, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+      {/* Tooltip */}
+      {tooltip && (
+        <div style={{
+          background: '#1e293b', border: '1px solid rgba(255,255,255,0.12)',
+          borderRadius: 12, padding: '10px 14px', maxWidth: 200,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+          animation: 'fadeInUp 0.2s ease',
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 2 }}>💬 Hola, soy Max</div>
+          <div style={{ fontSize: 12, color: '#8CA0BF', lineHeight: 1.4 }}>¿Tienes dudas? Escríbeme por WhatsApp</div>
+          <div style={{ position: 'absolute', bottom: -6, right: 22, width: 12, height: 12, background: '#1e293b', transform: 'rotate(45deg)', borderRight: '1px solid rgba(255,255,255,0.12)', borderBottom: '1px solid rgba(255,255,255,0.12)' }} />
+        </div>
+      )}
+
+      {/* Botón FAB */}
+      <a
+        href={WHATSAPP_MAX}
+        target="_blank"
+        rel="noopener noreferrer"
+        onMouseEnter={() => setTooltip(true)}
+        onMouseLeave={() => setTooltip(false)}
+        style={{
+          width: 60, height: 60, borderRadius: '50%',
+          background: '#00a86b',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 4px 20px rgba(0,168,107,0.5)',
+          textDecoration: 'none', flexShrink: 0,
+          position: 'relative',
+        }}
+      >
+        {/* Anillo de pulso */}
+        {pulse && (
+          <div style={{
+            position: 'absolute', inset: -4,
+            borderRadius: '50%',
+            border: '3px solid rgba(0,168,107,0.5)',
+            animation: 'maxPulse 1.5s ease-out infinite',
+          }} />
+        )}
+        {/* Ícono WhatsApp */}
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff">
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+          <path d="M11.999 0C5.373 0 0 5.373 0 12c0 2.115.554 4.103 1.522 5.827L.06 23.446a.5.5 0 00.613.61l5.757-1.505A11.943 11.943 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.802 9.802 0 01-5.027-1.383l-.36-.214-3.733.977.998-3.63-.235-.374A9.77 9.77 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182c5.429 0 9.818 4.388 9.818 9.818 0 5.429-4.389 9.818-9.819 9.818z"/>
+        </svg>
+        {/* Label MAX */}
+        <div style={{
+          position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)',
+          background: '#1e40af', color: '#fff',
+          fontSize: 9, fontWeight: 800, padding: '2px 6px',
+          borderRadius: 20, letterSpacing: 0.5, whiteSpace: 'nowrap',
+          border: '1.5px solid rgba(255,255,255,0.2)',
+        }}>MAX</div>
+      </a>
+
+      <style>{`
+        @keyframes maxPulse {
+          0%   { transform: scale(1);   opacity: 0.8; }
+          100% { transform: scale(1.6); opacity: 0; }
+        }
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </div>
+  )
+}
+
 function RoleSelector({ onOperator, onClient }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   useEffect(() => {
@@ -180,7 +267,8 @@ function RoleSelector({ onOperator, onClient }) {
     return () => window.removeEventListener('resize', h)
   }, [])
 
-  const IMAGE_URL = 'https://ysdmkbwmthrjgvyuvcmm.supabase.co/storage/v1/object/public/Academia/Anuncio%20Operadores.png'
+  const IMG_OPERADOR = 'https://ysdmkbwmthrjgvyuvcmm.supabase.co/storage/v1/object/public/Academia/Operadores.png'
+  const IMG_CLIENTE  = 'https://ysdmkbwmthrjgvyuvcmm.supabase.co/storage/v1/object/public/Academia/Cliente.png'
 
   return (
     <div style={{
@@ -220,8 +308,8 @@ function RoleSelector({ onOperator, onClient }) {
           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.2)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.7)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
           onMouseLeave={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.1)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.4)'; e.currentTarget.style.transform = 'translateY(0)' }}
         >
-          <div style={{ width: 64, height: 64, borderRadius: 16, overflow: 'hidden', border: '2px solid rgba(59,130,246,0.4)' }}>
-            <img src={IMAGE_URL} alt="Operador" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 10%' }} />
+          <div style={{ width: '100%', height: 160, borderRadius: 14, overflow: 'hidden', border: '2px solid rgba(59,130,246,0.3)', marginBottom: 4 }}>
+            <img src={IMG_OPERADOR} alt="Operadores MAZ CLEAN" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 20%' }} />
           </div>
           <div>
             <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 4 }}>🚗 Quiero ser Operador</div>
@@ -243,8 +331,8 @@ function RoleSelector({ onOperator, onClient }) {
           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.18)'; e.currentTarget.style.borderColor = 'rgba(16,185,129,0.6)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
           onMouseLeave={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.08)'; e.currentTarget.style.borderColor = 'rgba(16,185,129,0.35)'; e.currentTarget.style.transform = 'translateY(0)' }}
         >
-          <div style={{ width: 64, height: 64, borderRadius: 16, background: 'rgba(16,185,129,0.15)', border: '2px solid rgba(16,185,129,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>
-            🧼
+          <div style={{ width: '100%', height: 160, borderRadius: 14, overflow: 'hidden', border: '2px solid rgba(16,185,129,0.3)', marginBottom: 4 }}>
+            <img src={IMG_CLIENTE} alt="Cliente MAZ CLEAN" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 15%' }} />
           </div>
           <div>
             <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 4 }}>🧼 Soy Cliente</div>
@@ -594,6 +682,7 @@ function AppInner() {
           onOperator={() => setAuthModal('operator_landing')}
           onClient={() => setAuthModal('client')}
         />
+        <MaxFAB visible={!authModal} />
         {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
       </div>
     )
@@ -604,9 +693,7 @@ function AppInner() {
     return (
       <div style={{ minHeight: '100vh', background: '#061135' }}>
         <LandingOperador onRegister={() => setAuthModal('operator')} />
-        {authModal && authModal !== 'operator_landing' && (
-          <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />
-        )}
+        <MaxFAB visible={authModal !== 'operator'} />
         {authModal === 'operator' && (
           <AuthModal defaultTab="operator" onClose={() => setAuthModal(null)} />
         )}
@@ -620,6 +707,8 @@ function AppInner() {
       {view === 'home'     && <HomeView setView={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />}
       {view === 'booking'  && <BookingViewProtected onNavigate={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />}
       {view === 'client'   && <ClientView onNavigate={navigateTo} />}
+      {/* MaxFAB — visible en home y operator, oculto en booking/client/modal */}
+      <MaxFAB visible={!authModal && (view === 'home' || view === 'operator')} />
       {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
     </div>
   )
