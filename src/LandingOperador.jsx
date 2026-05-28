@@ -44,26 +44,12 @@ export default function LandingOperador({ onRegister }) {
           />
           {/* Gradiente inferior para fundir con contenido */}
           <div style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0, height: '60%',
+            position: 'absolute', bottom: 0, left: 0, right: 0, height: '65%',
             background: 'linear-gradient(to bottom, transparent, #061135)',
           }} />
-          {/* Logo flotante sobre la imagen */}
+          {/* Solo badge de promo — logo ya está en la imagen */}
           <div style={{
-            position: 'absolute', top: 14, left: 16,
-            display: 'flex', alignItems: 'center', gap: 8,
-          }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 8,
-              background: 'linear-gradient(135deg,#00C8FF,#00E5C8)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
-            }}>💧</div>
-            <span style={{ fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', textShadow: '0 1px 4px rgba(0,0,0,0.5)' }}>
-              MAZ CLEAN
-            </span>
-          </div>
-          {/* Badge promo sobre la imagen */}
-          <div style={{
-            position: 'absolute', top: 14, right: 16,
+            position: 'absolute', top: 14, right: 14,
             background: 'linear-gradient(135deg,#00b4d8,#00d4ff)',
             color: '#061135', padding: '5px 12px', borderRadius: 20,
             fontSize: 11, fontWeight: 800,
@@ -198,18 +184,6 @@ export default function LandingOperador({ onRegister }) {
         gap: 28,
         zIndex: 1,
       }}>
-
-        {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 10,
-            background: 'linear-gradient(135deg,#00C8FF,#00E5C8)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
-          }}>💧</div>
-          <span style={{ fontSize: 22, fontWeight: 800, color: '#F0F6FF', letterSpacing: '-0.5px' }}>
-            MAZ CLEAN
-          </span>
-        </div>
 
         {/* Título */}
         <div>
