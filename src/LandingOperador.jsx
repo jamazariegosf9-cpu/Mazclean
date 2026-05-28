@@ -1,249 +1,357 @@
 // ============================================================
-// MAZ CLEAN — LandingOperador
+// MAZ CLEAN — LandingOperador v2
 // src/LandingOperador.jsx
-// Landing page pre-registro de operadores
-// Se muestra antes del AuthModal cuando el prospecto llega
-// desde el anuncio o el bot de WhatsApp
+// Mobile-first — todo visible sin scroll en 375px
+// Sin navbar, imagen full-width, CTA WhatsApp siempre visible
 // ============================================================
 import { useEffect, useState } from 'react'
 
 const WHATSAPP_URL = 'https://wa.me/message/K2T33UDXT6XZN1'
 const IMAGE_URL    = 'https://ysdmkbwmthrjgvyuvcmm.supabase.co/storage/v1/object/public/Academia/Anuncio%20Operadores.png'
 
-function useIsMobile() {
+export default function LandingOperador({ onRegister }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', h)
     return () => window.removeEventListener('resize', h)
   }, [])
-  return isMobile
-}
-
-export default function LandingOperador({ onRegister }) {
-  const isMobile = useIsMobile()
-  const [imgLoaded, setImgLoaded] = useState(false)
 
   const benefits = [
-    { icon: '🕐', text: 'Tú decides tu horario y zona de trabajo' },
-    { icon: '🎓', text: 'Certificación profesional completamente gratis' },
-    { icon: '📱', text: 'App propia para gestionar tus servicios' },
-    { icon: '💰', text: 'Sin inversión inicial — solo tus ganas de trabajar' },
-    { icon: '🚗', text: 'Clientes a domicilio, tú solo lavas' },
+    '🕐 Tú decides tu horario y zona',
+    '🎓 Certificación profesional gratis',
+    '📱 App propia para gestionar servicios',
   ]
 
+  if (isMobile) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: '#061135',
+        display: 'flex',
+        flexDirection: 'column',
+        fontFamily: "'Poppins', 'DM Sans', sans-serif",
+        position: 'relative',
+      }}>
+
+        {/* ── Imagen hero full-width ── */}
+        <div style={{ position: 'relative', width: '100%', height: '42vh', flexShrink: 0 }}>
+          <img
+            src={IMAGE_URL}
+            alt="Operadores MAZ CLEAN"
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 20%', display: 'block' }}
+          />
+          {/* Gradiente inferior para fundir con contenido */}
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0, height: '60%',
+            background: 'linear-gradient(to bottom, transparent, #061135)',
+          }} />
+          {/* Logo flotante sobre la imagen */}
+          <div style={{
+            position: 'absolute', top: 14, left: 16,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: 'linear-gradient(135deg,#00C8FF,#00E5C8)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
+            }}>💧</div>
+            <span style={{ fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', textShadow: '0 1px 4px rgba(0,0,0,0.5)' }}>
+              MAZ CLEAN
+            </span>
+          </div>
+          {/* Badge promo sobre la imagen */}
+          <div style={{
+            position: 'absolute', top: 14, right: 16,
+            background: 'linear-gradient(135deg,#00b4d8,#00d4ff)',
+            color: '#061135', padding: '5px 12px', borderRadius: 20,
+            fontSize: 11, fontWeight: 800,
+            boxShadow: '0 2px 8px rgba(0,180,216,0.4)',
+          }}>
+            📅 Mayo–Junio GRATIS
+          </div>
+        </div>
+
+        {/* ── Contenido principal ── */}
+        <div style={{
+          flex: 1,
+          padding: '0 20px 20px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14,
+          marginTop: -8,
+        }}>
+
+          {/* Título */}
+          <div>
+            <h1 style={{
+              fontSize: 24, fontWeight: 800, color: '#ffffff',
+              margin: '0 0 6px', lineHeight: 1.2,
+            }}>
+              Gana dinero lavando autos{' '}
+              <span style={{ color: '#00C8FF' }}>— sé tu propio jefe 🚗</span>
+            </h1>
+            <p style={{ fontSize: 13, color: '#8CA0BF', margin: 0 }}>
+              Únete a <strong style={{ color: '#fff' }}>MAZ CLEAN</strong> como Operador Certificado
+            </p>
+          </div>
+
+          {/* Beneficios — solo 3, compactos */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {benefits.map((b, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 22, height: 22, borderRadius: '50%',
+                  background: 'rgba(0,230,118,0.15)', border: '1.5px solid #00e676',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0, fontSize: 11, color: '#00e676', fontWeight: 700,
+                }}>✓</div>
+                <span style={{ fontSize: 13, color: '#e2e8f0', fontWeight: 500 }}>{b}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Ganancia estimada — compacta */}
+          <div style={{
+            background: 'rgba(59,130,246,0.12)',
+            border: '1px solid rgba(59,130,246,0.25)',
+            borderRadius: 12, padding: '10px 14px',
+            display: 'flex', gap: 20, alignItems: 'center',
+          }}>
+            <div>
+              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Por servicio</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#60a5fa' }}>$150–$300</div>
+            </div>
+            <div style={{ width: 1, height: 32, background: 'rgba(59,130,246,0.3)' }} />
+            <div>
+              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Semanal estimado</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#60a5fa' }}>$4,000–$8,000</div>
+            </div>
+          </div>
+
+          {/* CTAs */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <a
+              href={WHATSAPP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                background: '#00a86b', color: '#fff',
+                padding: '15px', borderRadius: 14,
+                fontWeight: 700, fontSize: 16, textDecoration: 'none',
+                boxShadow: '0 4px 16px rgba(0,168,107,0.45)',
+              }}
+            >
+              <WhatsAppIcon /> 👉 Escríbenos por WhatsApp
+            </a>
+
+            <button
+              onClick={onRegister}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                background: 'transparent',
+                border: '2px solid rgba(255,255,255,0.25)',
+                color: '#e2e8f0', padding: '13px', borderRadius: 14,
+                fontWeight: 600, fontSize: 14, cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              📝 Registrarme directamente
+            </button>
+          </div>
+
+          {/* Footer */}
+          <p style={{ fontSize: 12, color: '#4a5568', margin: 0, textAlign: 'center' }}>
+            ¿Ya tienes cuenta?{' '}
+            <button onClick={onRegister} style={{
+              background: 'none', border: 'none', color: '#00C8FF',
+              cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: 0,
+            }}>
+              Iniciar sesión
+            </button>
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── DESKTOP ────────────────────────────────────────────────────────────────
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'radial-gradient(circle at 50% 30%, #0f2b80 0%, #061135 100%)',
+      background: 'radial-gradient(circle at 40% 50%, #0f2b80 0%, #061135 100%)',
       display: 'flex',
-      flexDirection: isMobile ? 'column' : 'row',
-      alignItems: isMobile ? 'stretch' : 'center',
-      justifyContent: 'center',
+      alignItems: 'stretch',
       fontFamily: "'Poppins', 'DM Sans', sans-serif",
-      overflowX: 'hidden',
+      overflow: 'hidden',
     }}>
 
-      {/* ── Imagen lateral (desktop) / superior (mobile) ───────── */}
+      {/* ── Columna izquierda — contenido ── */}
       <div style={{
-        width: isMobile ? '100%' : '42%',
-        height: isMobile ? '38vh' : '100vh',
-        position: 'relative',
-        flexShrink: 0,
-        order: isMobile ? 0 : 2,
-      }}>
-        <img
-          src={IMAGE_URL}
-          alt="Operadores MAZ CLEAN"
-          onLoad={() => setImgLoaded(true)}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            objectPosition: 'center bottom',
-            opacity: imgLoaded ? 1 : 0,
-            transition: 'opacity 0.4s',
-          }}
-        />
-        {/* Gradiente de fusión */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: isMobile
-            ? 'linear-gradient(to bottom, rgba(6,17,53,0.7) 0%, rgba(6,17,53,0) 25%, rgba(6,17,53,0) 75%, rgba(6,17,53,1) 100%)'
-            : 'linear-gradient(to left, rgba(6,17,53,0) 30%, rgba(6,17,53,1) 100%)',
-        }} />
-      </div>
-
-      {/* ── Contenido principal ─────────────────────────────────── */}
-      <div style={{
-        flex: 1,
-        maxWidth: isMobile ? '100%' : 560,
-        padding: isMobile ? '24px 20px 40px' : '60px 56px',
+        flex: '0 0 52%',
         display: 'flex',
         flexDirection: 'column',
-        gap: isMobile ? 16 : 24,
-        order: isMobile ? 1 : 1,
+        justifyContent: 'center',
+        padding: '60px 56px 60px 64px',
+        gap: 28,
         zIndex: 1,
       }}>
 
         {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
-            width: 38, height: 38, borderRadius: 10,
+            width: 40, height: 40, borderRadius: 10,
             background: 'linear-gradient(135deg,#00C8FF,#00E5C8)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 18, flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
           }}>💧</div>
-          <span style={{ fontSize: 20, fontWeight: 800, color: '#F0F6FF', letterSpacing: '-0.5px' }}>
+          <span style={{ fontSize: 22, fontWeight: 800, color: '#F0F6FF', letterSpacing: '-0.5px' }}>
             MAZ CLEAN
           </span>
         </div>
 
-        {/* Título principal */}
+        {/* Título */}
         <div>
-          <h1 style={{
-            fontSize: isMobile ? 22 : 30,
-            fontWeight: 800,
-            color: '#ffffff',
-            margin: '0 0 8px',
-            lineHeight: 1.25,
-          }}>
-            ¿Quieres ser tu propio jefe{' '}
-            <span style={{ fontWeight: 400, color: '#93c5fd' }}>
-              ganando dinero lavando autos a domicilio?
-            </span> 🚗
+          <h1 style={{ fontSize: 36, fontWeight: 800, color: '#fff', margin: '0 0 10px', lineHeight: 1.2 }}>
+            Gana dinero lavando autos{' '}
+            <span style={{ color: '#00C8FF' }}>— sé tu propio jefe 🚗</span>
           </h1>
-          <p style={{ fontSize: isMobile ? 14 : 16, color: '#8CA0BF', margin: 0, lineHeight: 1.6 }}>
-            Únete a <strong style={{ color: '#fff' }}>MAZ CLEAN</strong> como Operador Certificado
+          <p style={{ fontSize: 16, color: '#8CA0BF', margin: 0 }}>
+            Únete a <strong style={{ color: '#fff' }}>MAZ CLEAN</strong> como Operador Certificado en Ciudad de México
           </p>
         </div>
 
-        {/* Badge de promoción */}
+        {/* Badge promo */}
         <div style={{
-          display: 'inline-flex',
-          alignSelf: 'flex-start',
+          display: 'inline-flex', alignSelf: 'flex-start',
           background: 'linear-gradient(135deg,#00b4d8,#00d4ff)',
-          color: '#061135',
-          padding: '8px 18px',
-          borderRadius: 12,
-          fontWeight: 700,
-          fontSize: isMobile ? 13 : 15,
+          color: '#061135', padding: '8px 20px', borderRadius: 12,
+          fontWeight: 800, fontSize: 14,
           boxShadow: '0 4px 14px rgba(0,180,216,0.35)',
-          gap: 8,
-          alignItems: 'center',
+          gap: 8, alignItems: 'center',
         }}>
-          📅 Mayo y Junio —{' '}
-          <span style={{ fontWeight: 800 }}>SIN costo de membresía</span>
+          📅 Mayo y Junio — SIN costo de membresía
         </div>
 
-        {/* Lista de beneficios */}
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {benefits.map((b, i) => (
+        {/* Beneficios */}
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {[
+            'Tú decides tu horario y zona de trabajo',
+            'Certificación profesional completamente gratis',
+            'App propia para gestionar tus servicios',
+            'Sin inversión inicial — solo tus ganas de trabajar',
+            'Clientes a domicilio, tú solo lavas',
+          ].map((b, i) => (
             <li key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{
-                width: 28, height: 28, borderRadius: '50%',
-                background: 'rgba(0,230,118,0.15)',
-                border: '1.5px solid #00e676',
+                width: 26, height: 26, borderRadius: '50%',
+                background: 'rgba(0,230,118,0.15)', border: '1.5px solid #00e676',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0, fontSize: 14,
+                flexShrink: 0, fontSize: 13, color: '#00e676', fontWeight: 700,
               }}>✓</div>
-              <span style={{ fontSize: isMobile ? 13 : 15, color: '#e2e8f0', fontWeight: 500, lineHeight: 1.4 }}>
-                {b.text}
-              </span>
+              <span style={{ fontSize: 15, color: '#e2e8f0', fontWeight: 500 }}>{b}</span>
             </li>
           ))}
         </ul>
 
-        {/* Ganancia estimada */}
+        {/* Ganancia */}
         <div style={{
           background: 'rgba(59,130,246,0.12)',
-          border: '1.5px solid rgba(59,130,246,0.3)',
-          borderRadius: 14,
-          padding: '14px 18px',
+          border: '1.5px solid rgba(59,130,246,0.25)',
+          borderRadius: 14, padding: '16px 20px',
+          display: 'flex', gap: 32, alignItems: 'center',
         }}>
-          <div style={{ fontSize: isMobile ? 12 : 13, color: '#93c5fd', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            💵 ¿Cuánto puedo ganar?
+          <div>
+            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', marginBottom: 2 }}>Por servicio</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#60a5fa' }}>$150–$300 MXN</div>
           </div>
-          <div style={{ display: 'flex', gap: isMobile ? 12 : 20, flexWrap: 'wrap' }}>
-            {[
-              { label: 'Por servicio', value: '$150–$300' },
-              { label: 'Semanal (4-6 servicios/día)', value: '$4,000–$8,000' },
-            ].map(({ label, value }) => (
-              <div key={label}>
-                <div style={{ fontSize: isMobile ? 11 : 12, color: '#64748b' }}>{label}</div>
-                <div style={{ fontSize: isMobile ? 16 : 18, fontWeight: 800, color: '#60a5fa' }}>{value} MXN</div>
-              </div>
-            ))}
+          <div style={{ width: 1, height: 40, background: 'rgba(59,130,246,0.3)' }} />
+          <div>
+            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', marginBottom: 2 }}>Semanal (4–6 servicios/día)</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#60a5fa' }}>$4,000–$8,000 MXN</div>
           </div>
         </div>
 
         {/* CTAs */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* CTA Principal — WhatsApp */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 420 }}>
           <a
             href={WHATSAPP_URL}
             target="_blank"
             rel="noopener noreferrer"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-              background: '#00a86b',
-              color: '#fff',
-              padding: isMobile ? '14px' : '16px',
-              borderRadius: 14,
-              fontWeight: 700,
-              fontSize: isMobile ? 15 : 16,
-              textDecoration: 'none',
+              background: '#00a86b', color: '#fff',
+              padding: '16px 28px', borderRadius: 14,
+              fontWeight: 700, fontSize: 16, textDecoration: 'none',
               boxShadow: '0 5px 18px rgba(0,168,107,0.4)',
-              transition: 'transform 0.15s',
             }}
-            onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
-            onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
           >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
-              <path d="M11.999 0C5.373 0 0 5.373 0 12c0 2.115.554 4.103 1.522 5.827L.06 23.446a.5.5 0 00.613.61l5.757-1.505A11.943 11.943 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.802 9.802 0 01-5.027-1.383l-.36-.214-3.733.977.998-3.63-.235-.374A9.77 9.77 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182c5.429 0 9.818 4.388 9.818 9.818 0 5.429-4.389 9.818-9.819 9.818z"/>
-            </svg>
-            👉 Escríbenos por WhatsApp ahora
+            <WhatsAppIcon /> 👉 Escríbenos por WhatsApp ahora
           </a>
-
-          {/* CTA Secundario — Registro directo */}
           <button
             onClick={onRegister}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              background: 'rgba(255,255,255,0.06)',
-              border: '1.5px solid rgba(255,255,255,0.18)',
-              color: '#e2e8f0',
-              padding: isMobile ? '13px' : '15px',
-              borderRadius: 14,
-              fontWeight: 600,
-              fontSize: isMobile ? 14 : 15,
-              cursor: 'pointer',
-              transition: 'background 0.2s',
-              fontFamily: 'inherit',
+              background: 'transparent',
+              border: '2px solid rgba(255,255,255,0.2)',
+              color: '#cbd5e1', padding: '14px', borderRadius: 14,
+              fontWeight: 600, fontSize: 15, cursor: 'pointer',
+              fontFamily: 'inherit', transition: 'border-color 0.2s',
             }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.10)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+            onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.45)'}
+            onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)'}
           >
             📝 Registrarme directamente
           </button>
         </div>
 
-        {/* Footer */}
-        <p style={{ fontSize: 12, color: '#4a5568', margin: 0, textAlign: isMobile ? 'center' : 'left' }}>
+        <p style={{ fontSize: 13, color: '#4a5568', margin: 0 }}>
           ¿Ya tienes cuenta?{' '}
-          <button
-            onClick={onRegister}
-            style={{ background: 'none', border: 'none', color: '#00C8FF', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: 0 }}
-          >
+          <button onClick={onRegister} style={{
+            background: 'none', border: 'none', color: '#00C8FF',
+            cursor: 'pointer', fontSize: 13, fontWeight: 600, padding: 0,
+          }}>
             Iniciar sesión
           </button>
         </p>
+      </div>
+
+      {/* ── Columna derecha — imagen ── */}
+      <div style={{
+        flex: '0 0 48%',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        {/* Gradiente de fusión izquierdo */}
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 1,
+          background: 'linear-gradient(to right, #061135 0%, rgba(6,17,53,0.3) 35%, transparent 65%)',
+        }} />
+        <img
+          src={IMAGE_URL}
+          alt="Operadores MAZ CLEAN"
+          style={{
+            width: '100%', height: '100%',
+            objectFit: 'cover',
+            objectPosition: 'center center',
+            display: 'block',
+          }}
+        />
       </div>
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap');
       `}</style>
     </div>
+  )
+}
+
+function WhatsAppIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+      <path d="M11.999 0C5.373 0 0 5.373 0 12c0 2.115.554 4.103 1.522 5.827L.06 23.446a.5.5 0 00.613.61l5.757-1.505A11.943 11.943 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.802 9.802 0 01-5.027-1.383l-.36-.214-3.733.977.998-3.63-.235-.374A9.77 9.77 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182c5.429 0 9.818 4.388 9.818 9.818 0 5.429-4.389 9.818-9.819 9.818z"/>
+    </svg>
   )
 }

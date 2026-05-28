@@ -490,11 +490,20 @@ function AppInner() {
     )
   }
 
+  // Landing page sin Navbar — pantalla completa para conversión
+  if (view === 'home' && !user) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#061135' }}>
+        <LandingOperador onRegister={() => setAuthModal('operator')} />
+        {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
+      </div>
+    )
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: '#050A14' }}>
       <Navbar view={view} setView={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />
-      {view === 'home'     && !user && <LandingOperador onRegister={() => setAuthModal('operator')} />}
-      {view === 'home'     && user  && <HomeView setView={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />}
+      {view === 'home'     && <HomeView setView={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />}
       {view === 'booking'  && <BookingViewProtected onNavigate={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />}
       {view === 'client'   && <ClientView onNavigate={navigateTo} />}
       {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
