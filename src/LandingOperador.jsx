@@ -6,7 +6,7 @@
 // ============================================================
 import { useEffect, useState } from 'react'
 
-const WHATSAPP_URL = 'https://wa.me/message/K2T33UDXT6XZN1'
+const WHATSAPP_URL = 'https://wa.me/525539377258?text=Hola%2C%20quiero%20información%20sobre%20MAZ%20CLEAN%20%F0%9F%9A%97'
 const IMAGE_URL    = 'https://ysdmkbwmthrjgvyuvcmm.supabase.co/storage/v1/object/public/Academia/Anuncio%20Operadores.png'
 
 export default function LandingOperador({ onRegister }) {
@@ -19,9 +19,9 @@ export default function LandingOperador({ onRegister }) {
   }, [])
 
   const benefits = [
-    '🕐 Tú decides tu horario y zona',
-    '🎓 Certificación profesional gratis',
-    '📱 App propia para gestionar servicios',
+    '🧴 Kit completo de materiales financiado',
+    '📅 Membresía GRATIS mayo y junio',
+    '🚗 Mínimo 3 servicios/semana garantizados',
   ]
 
   if (isMobile) {
@@ -55,7 +55,7 @@ export default function LandingOperador({ onRegister }) {
             fontSize: 11, fontWeight: 800,
             boxShadow: '0 2px 8px rgba(0,180,216,0.4)',
           }}>
-            📅 Mayo–Junio GRATIS
+            ⚡ Solo primeros 15 — Kit financiado
           </div>
         </div>
 
@@ -75,8 +75,8 @@ export default function LandingOperador({ onRegister }) {
               fontSize: 24, fontWeight: 800, color: '#ffffff',
               margin: '0 0 6px', lineHeight: 1.2,
             }}>
-              Gana dinero lavando autos{' '}
-              <span style={{ color: '#00C8FF' }}>— sé tu propio jefe 🚗</span>
+              Sin inversión inicial —{' '}
+              <span style={{ color: '#00C8FF' }}>únete y empieza a ganar 🚗</span>
             </h1>
             <p style={{ fontSize: 13, color: '#8CA0BF', margin: 0 }}>
               Únete a <strong style={{ color: '#fff' }}>MAZ CLEAN</strong> como Operador Certificado
@@ -113,6 +113,7 @@ export default function LandingOperador({ onRegister }) {
             <div>
               <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Semanal estimado</div>
               <div style={{ fontSize: 18, fontWeight: 800, color: '#60a5fa' }}>$4,000–$8,000</div>
+              <div style={{ fontSize: 9, color: '#10b981', marginTop: 2 }}>Kit financiado sin anticipo ✓</div>
             </div>
           </div>
 
@@ -205,17 +206,17 @@ export default function LandingOperador({ onRegister }) {
           boxShadow: '0 4px 14px rgba(0,180,216,0.35)',
           gap: 8, alignItems: 'center',
         }}>
-          📅 Mayo y Junio — SIN costo de membresía
+          ⚡ Solo primeros 15 — Kit financiado + Membresía GRATIS mayo-junio
         </div>
 
         {/* Beneficios */}
         <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {[
-            'Tú decides tu horario y zona de trabajo',
-            'Certificación profesional completamente gratis',
-            'App propia para gestionar tus servicios',
-            'Sin inversión inicial — solo tus ganas de trabajar',
-            'Clientes a domicilio, tú solo lavas',
+            'Kit completo de materiales financiado — sin anticipo inicial',
+            'Membresía GRATIS durante mayo y junio 2026',
+            'Mínimo 3 servicios por semana garantizados las primeras 4 semanas',
+            'Tú cobras directo al cliente — efectivo o transferencia',
+            'Certificación profesional gratis desde tu celular',
           ].map((b, i) => (
             <li key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{
@@ -244,6 +245,7 @@ export default function LandingOperador({ onRegister }) {
           <div>
             <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', marginBottom: 2 }}>Semanal (4–6 servicios/día)</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: '#60a5fa' }}>$4,000–$8,000 MXN</div>
+            <div style={{ fontSize: 11, color: '#10b981', marginTop: 2 }}>Kit financiado sin anticipo ✓</div>
           </div>
         </div>
 
