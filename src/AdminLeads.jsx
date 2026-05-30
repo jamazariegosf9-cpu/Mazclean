@@ -241,20 +241,30 @@ export default function AdminLeads({ isMobile }) {
 
   const fetchMsgCounts = async (leadsData) => {
     try {
-      // Traer todos los conversation_ids de los leads
       const convIds = leadsData.map(l => toConversationId(l.phone))
       if (!convIds.length) return
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/messages?conversation_id=in.(${convIds.map(c => `"${c}"`).join(',')})&select=conversation_id`,
+        `${SUPABASE_URL}/rest/v1/messages?conversation_id=in.(${convIds.map(c => `"${c}"`).join(',')})&select=conversation_id,content,direction,read_at,created_at&order=created_at.asc`,
         { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
       )
       if (!res.ok) return
       const data = await res.json()
-      const counts = {}
+      // Agrupar por conversation_id — último mensaje, no leídos
+      const grouped = {}
       for (const msg of data) {
-        counts[msg.conversation_id] = (counts[msg.conversation_id] || 0) + 1
+        const cid = msg.conversation_id
+        if (!grouped[cid]) grouped[cid] = { last_message: '', last_at: '', unread: 0 }
+        // Actualizar último mensaje
+        if (!grouped[cid].last_at || new Date(msg.created_at) > new Date(grouped[cid].last_at)) {
+          grouped[cid].last_message = msg.content
+          grouped[cid].last_at      = msg.created_at
+        }
+        // Contar no leídos inbound
+        if (msg.direction === 'inbound' && !msg.read_at) {
+          grouped[cid].unread++
+        }
       }
-      setMsgCounts(counts)
+      setMsgCounts(grouped)
     } catch {}
   }
 
@@ -361,98 +371,99 @@ export default function AdminLeads({ isMobile }) {
         </div>
       )}
 
-      {/* Lista de leads */}
-      {!loading && filtered.map(lead => {
-        const isRegistered = !!lead.profile
-        const membershipOk = lead.profile?.membership_status === 'activa'
-        const convId       = toConversationId(lead.phone)
-        const msgCount     = msgCounts[convId] || 0
-        const hasMessages  = msgCount > 0
-
-        return (
-          <div key={lead.id} style={{ background: '#fff', borderRadius: 14,
-            border: `1px solid ${isRegistered ? '#bbf7d0' : '#e5e7eb'}`,
-            overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-
-            {/* Header del card */}
-            <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#1f2937', marginBottom: 2 }}>
-                  {lead.profile?.full_name || formatPhone(lead.phone)}
-                </div>
-                {lead.profile?.full_name && (
-                  <div style={{ fontSize: 12, color: '#6b7280', fontFamily: 'monospace' }}>
-                    {formatPhone(lead.phone)}
-                  </div>
-                )}
-                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
-                  📅 {timeAgo(lead.created_at)} · {new Date(lead.created_at).toLocaleDateString('es-MX')}
-                </div>
-              </div>
-
-              {/* Status badges */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
-                <span style={{
-                  fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '3px 10px',
-                  background: isRegistered ? '#f0fdf4' : '#fffbeb',
-                  color:      isRegistered ? '#059669' : '#d97706',
-                  border:     `1px solid ${isRegistered ? '#bbf7d0' : '#fde68a'}`
-                }}>
-                  {isRegistered ? '✅ Registrado' : '⏳ Sin registrar'}
-                </span>
-                {isRegistered && (
-                  <span style={{
-                    fontSize: 11, fontWeight: 600, borderRadius: 99, padding: '3px 10px',
-                    background: membershipOk ? '#eff6ff' : '#f9fafb',
-                    color:      membershipOk ? '#1e40af' : '#6b7280',
-                    border:     `1px solid ${membershipOk ? '#bfdbfe' : '#e5e7eb'}`
-                  }}>
-                    {membershipOk ? '💳 Membresía activa' : '💳 Sin membresía'}
-                  </span>
-                )}
-              </div>
+      {/* Lista de leads — estilo MessagingInbox */}
+      {!loading && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {filtered.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: '#9ca3af' }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🎯</div>
+              {leads.length === 0
+                ? 'Aún no hay prospectos — cuando alguien llegue del anuncio aparecerá aquí'
+                : 'No hay resultados para esta búsqueda'}
             </div>
+          ) : filtered.map(lead => {
+            const isRegistered = !!lead.profile
+            const membershipOk = lead.profile?.membership_status === 'activa'
+            const convId       = toConversationId(lead.phone)
+            const conv         = msgCounts[convId] || {}
+            const unread       = conv.unread || 0
+            const lastMsg      = conv.last_message || lead.ad_message || ''
+            const lastAt       = conv.last_at || lead.created_at
 
-            {/* Mensaje original del anuncio */}
-            {lead.ad_message && (
-              <div style={{ margin: '0 16px 12px', padding: '8px 12px',
-                background: '#f8fafc', borderRadius: 8, border: '1px solid #f1f5f9' }}>
-                <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  Mensaje del anuncio
-                </div>
-                <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.5 }}>
-                  "{lead.ad_message}"
-                </div>
-              </div>
-            )}
-
-            {/* Footer — fuente + botón conversación */}
-            <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 11, color: '#9ca3af' }}>
-                📢 {lead.source === 'facebook_ad' ? 'Anuncio Facebook' : lead.source}
-                {hasMessages && (
-                  <span style={{ marginLeft: 8, background: '#7c3aed', color: '#fff', borderRadius: 99, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>
-                    {msgCount} msgs
-                  </span>
-                )}
-              </span>
-
-              {/* Botón — Ver/Iniciar conversación en lugar de WhatsApp externo */}
-              <button
+            return (
+              <div
+                key={lead.id}
                 onClick={() => setSelectedLead(lead)}
                 style={{
-                  padding: '7px 16px',
-                  background: hasMessages ? '#7c3aed' : '#6366f1',
-                  border: 'none', borderRadius: 99,
-                  color: '#fff', fontSize: 12, fontWeight: 700,
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+                  background:   '#fff',
+                  borderRadius: 12,
+                  padding:      '12px 16px',
+                  cursor:       'pointer',
+                  border:       unread > 0 ? '1.5px solid #bfdbfe' : '1.5px solid #f3f4f6',
+                  boxShadow:    '0 1px 4px rgba(0,0,0,0.06)',
+                  display:      'flex',
+                  alignItems:   'center',
+                  gap:          12,
+                }}
+              >
+                {/* Avatar */}
+                <div style={{
+                  width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
+                  background: isRegistered ? '#f5f3ff' : '#fffbeb',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
                 }}>
-                💬 {hasMessages ? `Ver conversación (${msgCount})` : 'Iniciar conversación'}
-              </button>
-            </div>
-          </div>
-        )
-      })}
+                  {isRegistered ? '🔧' : '🎯'}
+                </div>
+
+                {/* Info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* Fila 1: nombre + tiempo */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                    <div style={{ fontWeight: unread > 0 ? 700 : 600, fontSize: 13, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
+                      {lead.profile?.full_name || formatPhone(lead.phone)}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#9ca3af', flexShrink: 0 }}>
+                      {timeAgo(lastAt)}
+                    </div>
+                  </div>
+                  {/* Fila 2: último mensaje */}
+                  <div style={{ fontSize: 12, color: unread > 0 ? '#374151' : '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: unread > 0 ? 600 : 400 }}>
+                    {lastMsg ? lastMsg.slice(0, 80) : 'Sin mensajes aún'}
+                  </div>
+                  {/* Fila 3: badges estado */}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, borderRadius: 99, padding: '1px 8px',
+                      background: isRegistered ? '#f0fdf4' : '#fffbeb',
+                      color:      isRegistered ? '#059669' : '#d97706',
+                      border:     `1px solid ${isRegistered ? '#bbf7d0' : '#fde68a'}`
+                    }}>
+                      {isRegistered ? '✅ Registrado' : '⏳ Sin registrar'}
+                    </span>
+                    {isRegistered && membershipOk && (
+                      <span style={{ fontSize: 10, fontWeight: 600, borderRadius: 99, padding: '1px 8px', background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe' }}>
+                        💳 Membresía activa
+                      </span>
+                    )}
+                    <span style={{ fontSize: 10, color: '#9ca3af' }}>
+                      📢 Facebook
+                    </span>
+                  </div>
+                </div>
+
+                {/* Badge no leídos */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end', flexShrink: 0 }}>
+                  {unread > 0 && (
+                    <div style={{ background: '#7c3aed', color: '#fff', borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
+                      {unread}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {!loading && leads.length > 0 && (
         <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', paddingBottom: 8 }}>
