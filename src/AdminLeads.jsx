@@ -226,14 +226,40 @@ export default function AdminLeads({ isMobile }) {
   const fetchLeads = useCallback(async () => {
     setLoading(true); setError('')
     try {
+      // Query 1: ad_leads con join por profile_id (los que ya tienen vínculo)
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/ad_leads?order=created_at.desc&limit=100&select=*,profile:profile_id(id,full_name,role,membership_status)`,
         { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
       )
       if (!res.ok) throw new Error('Error al cargar prospectos')
       const data = await res.json()
+
+      // Query 2: buscar profiles por los últimos 10 dígitos del teléfono
+      // para mostrar nombre aunque profile_id sea null
+      const phones10 = data
+        .filter(l => !l.profile)
+        .map(l => l.phone.replace(/\D/g, '').slice(-10))
+      
+      if (phones10.length > 0) {
+        const res2 = await fetch(
+          `${SUPABASE_URL}/rest/v1/profiles?phone=in.(${phones10.map(p => `"${p}"`).join(',')})&select=phone,full_name,operator_status,membership_status`,
+          { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
+        )
+        if (res2.ok) {
+          const profiles = await res2.json()
+          const byPhone = {}
+          for (const p of profiles) byPhone[p.phone] = p
+          // Inyectar profile en leads que no lo tienen por profile_id
+          for (const lead of data) {
+            if (!lead.profile) {
+              const digits10 = lead.phone.replace(/\D/g, '').slice(-10)
+              if (byPhone[digits10]) lead.profile = byPhone[digits10]
+            }
+          }
+        }
+      }
+
       setLeads(data)
-      // Cargar conteo de mensajes por conversación
       fetchMsgCounts(data)
     } catch (e) { setError(e.message) }
     finally { setLoading(false) }
@@ -241,27 +267,13 @@ export default function AdminLeads({ isMobile }) {
 
   const fetchMsgCounts = async (leadsData) => {
     try {
-      // Generar todos los posibles formatos de conversation_id para cada lead
-      const allConvIds = []
-      const phoneToLead = {}
-      for (const lead of leadsData) {
-        const digits = lead.phone.replace(/\D/g, '')
-        const formats = [
-          '+' + digits,
-          '+52' + digits.slice(-10),
-          '+521' + digits.slice(-10),
-          digits,
-          '52' + digits.slice(-10),
-        ]
-        for (const f of formats) {
-          if (!allConvIds.includes(f)) allConvIds.push(f)
-          phoneToLead[f] = toConversationId(lead.phone)
-        }
-      }
-      if (!allConvIds.length) return
+      // Construir set de conversation_ids canónicos de los leads
+      const leadConvIds = new Set(leadsData.map(l => toConversationId(l.phone)))
 
+      // Traer TODOS los mensajes — misma lógica que MessagingInbox
+      // Sin filtrar por conversation_id para evitar problemas de formato
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/messages?conversation_id=in.(${allConvIds.map(c => `"${c}"`).join(',')})&select=conversation_id,content,direction,read_at,created_at,from_phone&order=created_at.desc`,
+        `${SUPABASE_URL}/rest/v1/messages?select=conversation_id,content,direction,read_at,created_at,from_phone&order=created_at.desc&limit=500`,
         { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
       )
       if (!res.ok) return
@@ -269,9 +281,14 @@ export default function AdminLeads({ isMobile }) {
 
       const grouped = {}
       for (const msg of data) {
-        // Normalizar conversation_id al formato canónico del lead
-        const cid = phoneToLead[msg.conversation_id] || msg.conversation_id
+        if (!msg.conversation_id) continue
+        // Normalizar el conversation_id del mensaje al formato canónico
+        const cid = toConversationId(msg.conversation_id)
+        // Solo procesar mensajes de leads que tenemos
+        if (!leadConvIds.has(cid)) continue
+
         if (!grouped[cid]) {
+          // order=desc — el primero que encontramos por conv ES el más reciente
           grouped[cid] = {
             last_message: msg.content,
             last_at:      msg.created_at,
@@ -288,6 +305,7 @@ export default function AdminLeads({ isMobile }) {
       setMsgCounts(grouped)
     } catch (e) { console.error('fetchMsgCounts:', e) }
   }
+
 
   useEffect(() => { fetchLeads() }, [fetchLeads])
 
@@ -441,7 +459,7 @@ export default function AdminLeads({ isMobile }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {/* Fila 1: nombre + tiempo */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                    <div style={{ fontWeight: unread > 0 ? 700 : 600, fontSize: 13, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
                       {lead.profile?.full_name || lead.name || formatPhone(lead.phone)}
                     </div>
                     <div style={{ fontSize: 11, color: '#9ca3af', flexShrink: 0 }}>
@@ -449,9 +467,15 @@ export default function AdminLeads({ isMobile }) {
                     </div>
                   </div>
                   {/* Fila 2: quién envió + último mensaje */}
-                  <div style={{ fontSize: 12, color: unread > 0 ? '#374151' : '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: unread > 0 ? 600 : 400 }}>
+                  <div style={{ fontSize: 12, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: unread > 0 ? 600 : 400 }}>
                     {lastSender && (
-                      <span style={{ fontWeight: 700, color: lastSender === 'Prospecto' ? '#6b7280' : lastSender === 'Asesor' ? '#059669' : '#3b82f6', marginRight: 4 }}>
+                      <span style={{
+                        fontWeight: 800,
+                        color: lastSender === 'Prospecto' ? '#374151'
+                             : lastSender === 'Asesor'    ? '#059669'
+                             : '#2563eb',
+                        marginRight: 4
+                      }}>
                         {lastSender}:
                       </span>
                     )}
