@@ -41,12 +41,12 @@ function formatTime(dateStr) {
   return new Date(dateStr).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
 }
 
-// Normaliza el teléfono del lead al formato conversation_id (+521XXXXXXXXXX)
+// Normaliza el teléfono al formato conversation_id que usa Twilio: +521XXXXXXXXXX
 function toConversationId(phone) {
   const digits = phone.replace(/\D/g, '')
-  if (digits.startsWith('521') && digits.length === 13) return '+' + digits
-  if (digits.startsWith('52')  && digits.length === 12) return '+' + digits
-  if (digits.length === 10) return '+52' + digits
+  if (digits.startsWith('521') && digits.length === 13) return '+' + digits        // +5215512345678 ✓
+  if (digits.startsWith('52')  && digits.length === 12) return '+521' + digits.slice(-10) // +525512345678 → +5215512345678
+  if (digits.length === 10) return '+521' + digits                                  // 5512345678 → +5215512345678
   return '+' + digits
 }
 
@@ -241,20 +241,37 @@ export default function AdminLeads({ isMobile }) {
 
   const fetchMsgCounts = async (leadsData) => {
     try {
-      const convIds = leadsData.map(l => toConversationId(l.phone))
-      if (!convIds.length) return
+      // Generar todos los posibles formatos de conversation_id para cada lead
+      const allConvIds = []
+      const phoneToLead = {}
+      for (const lead of leadsData) {
+        const digits = lead.phone.replace(/\D/g, '')
+        const formats = [
+          '+' + digits,
+          '+52' + digits.slice(-10),
+          '+521' + digits.slice(-10),
+          digits,
+          '52' + digits.slice(-10),
+        ]
+        for (const f of formats) {
+          if (!allConvIds.includes(f)) allConvIds.push(f)
+          phoneToLead[f] = toConversationId(lead.phone)
+        }
+      }
+      if (!allConvIds.length) return
+
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/messages?conversation_id=in.(${convIds.map(c => `"${c}"`).join(',')})&select=conversation_id,content,direction,read_at,created_at,sender_role,from_phone&order=created_at.desc`,
+        `${SUPABASE_URL}/rest/v1/messages?conversation_id=in.(${allConvIds.map(c => `"${c}"`).join(',')})&select=conversation_id,content,direction,read_at,created_at,from_phone&order=created_at.desc`,
         { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
       )
       if (!res.ok) return
       const data = await res.json()
-      // Agrupar por conversation_id — último mensaje, no leídos
+
       const grouped = {}
       for (const msg of data) {
-        const cid = msg.conversation_id
+        // Normalizar conversation_id al formato canónico del lead
+        const cid = phoneToLead[msg.conversation_id] || msg.conversation_id
         if (!grouped[cid]) {
-          // Con order=desc, el primer mensaje que encontramos por conversación ES el más reciente
           grouped[cid] = {
             last_message: msg.content,
             last_at:      msg.created_at,
@@ -264,13 +281,12 @@ export default function AdminLeads({ isMobile }) {
             unread: 0,
           }
         }
-        // Contar no leídos inbound (recorremos todos)
         if (msg.direction === 'inbound' && !msg.read_at) {
           grouped[cid].unread++
         }
       }
       setMsgCounts(grouped)
-    } catch {}
+    } catch (e) { console.error('fetchMsgCounts:', e) }
   }
 
   useEffect(() => { fetchLeads() }, [fetchLeads])
@@ -279,7 +295,7 @@ export default function AdminLeads({ isMobile }) {
     const matchSearch = search === '' ||
       lead.phone.includes(search) ||
       lead.ad_message?.toLowerCase().includes(search.toLowerCase()) ||
-      lead.profile?.full_name?.toLowerCase().includes(search.toLowerCase())
+      lead.profile?.full_name?.toLowerCase().includes(search.toLowerCase()) || lead.name?.toLowerCase().includes(search.toLowerCase())
     const matchFilter =
       filter === 'all'        ? true :
       filter === 'registered' ? !!lead.profile :
@@ -426,7 +442,7 @@ export default function AdminLeads({ isMobile }) {
                   {/* Fila 1: nombre + tiempo */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
                     <div style={{ fontWeight: unread > 0 ? 700 : 600, fontSize: 13, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
-                      {lead.profile?.full_name || formatPhone(lead.phone)}
+                      {lead.profile?.full_name || lead.name || formatPhone(lead.phone)}
                     </div>
                     <div style={{ fontSize: 11, color: '#9ca3af', flexShrink: 0 }}>
                       {timeAgo(lastAt)}
