@@ -244,7 +244,7 @@ export default function AdminLeads({ isMobile }) {
       const convIds = leadsData.map(l => toConversationId(l.phone))
       if (!convIds.length) return
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/messages?conversation_id=in.(${convIds.map(c => `"${c}"`).join(',')})&select=conversation_id,content,direction,read_at,created_at&order=created_at.asc`,
+        `${SUPABASE_URL}/rest/v1/messages?conversation_id=in.(${convIds.map(c => `"${c}"`).join(',')})&select=conversation_id,content,direction,read_at,created_at,sender_role,from_phone&order=created_at.asc`,
         { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
       )
       if (!res.ok) return
@@ -253,12 +253,13 @@ export default function AdminLeads({ isMobile }) {
       const grouped = {}
       for (const msg of data) {
         const cid = msg.conversation_id
-        if (!grouped[cid]) grouped[cid] = { last_message: '', last_at: '', unread: 0 }
-        // Actualizar último mensaje
-        if (!grouped[cid].last_at || new Date(msg.created_at) > new Date(grouped[cid].last_at)) {
-          grouped[cid].last_message = msg.content
-          grouped[cid].last_at      = msg.created_at
-        }
+        if (!grouped[cid]) grouped[cid] = { last_message: '', last_at: '', last_sender: '', unread: 0 }
+        // Siempre actualizar — como el orden es asc, el último loop es el más reciente
+        grouped[cid].last_message = msg.content
+        grouped[cid].last_at      = msg.created_at
+        grouped[cid].last_sender  = msg.direction === 'outbound'
+          ? (msg.from_phone === 'mazclean' ? 'Asesor' : 'Max')
+          : 'Prospecto'
         // Contar no leídos inbound
         if (msg.direction === 'inbound' && !msg.read_at) {
           grouped[cid].unread++
@@ -389,6 +390,7 @@ export default function AdminLeads({ isMobile }) {
             const unread       = conv.unread || 0
             const lastMsg      = conv.last_message || lead.ad_message || ''
             const lastAt       = conv.last_at || lead.created_at
+            const lastSender   = conv.last_sender || (lead.ad_message ? 'Prospecto' : '')
 
             return (
               <div
@@ -426,9 +428,14 @@ export default function AdminLeads({ isMobile }) {
                       {timeAgo(lastAt)}
                     </div>
                   </div>
-                  {/* Fila 2: último mensaje */}
+                  {/* Fila 2: quién envió + último mensaje */}
                   <div style={{ fontSize: 12, color: unread > 0 ? '#374151' : '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: unread > 0 ? 600 : 400 }}>
-                    {lastMsg ? lastMsg.slice(0, 80) : 'Sin mensajes aún'}
+                    {lastSender && (
+                      <span style={{ fontWeight: 700, color: lastSender === 'Prospecto' ? '#6b7280' : lastSender === 'Asesor' ? '#059669' : '#3b82f6', marginRight: 4 }}>
+                        {lastSender}:
+                      </span>
+                    )}
+                    {lastMsg ? lastMsg.slice(0, 70) : 'Sin mensajes aún'}
                   </div>
                   {/* Fila 3: badges estado */}
                   <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>

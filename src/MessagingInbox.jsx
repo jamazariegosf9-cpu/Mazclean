@@ -36,6 +36,9 @@ function useConversations(token) {
             user_id:         msg.direction === 'inbound' ? msg.user_id : null,
             last_message:    msg.content,
             last_at:         msg.created_at,
+            last_sender:     msg.direction === 'outbound'
+              ? (msg.from_phone === 'mazclean' ? 'Asesor' : 'Max')
+              : 'Usuario',
             unread:          0,
             escalated:       false,
             admin_replied:   false,
@@ -61,6 +64,9 @@ function useConversations(token) {
         if (new Date(msg.created_at) > new Date(grouped[msg.conversation_id].last_at)) {
           grouped[msg.conversation_id].last_message = msg.content;
           grouped[msg.conversation_id].last_at      = msg.created_at;
+          grouped[msg.conversation_id].last_sender  = msg.direction === 'outbound'
+            ? (msg.from_phone === 'mazclean' ? 'Asesor' : 'Max')
+            : 'Usuario';
         }
       }
 
@@ -442,7 +448,12 @@ export default function MessagingInbox({ token, isMobile }) {
                 <div style={{ fontSize: 11, color: '#9ca3af', flexShrink: 0 }}>{formatTime(conv.last_at)}</div>
               </div>
               <div style={{ fontSize: 12, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {conv.last_message?.slice(0, 80)}
+                {conv.last_sender && (
+                  <span style={{ fontWeight: 700, marginRight: 4, color: conv.last_sender === 'Usuario' ? '#6b7280' : conv.last_sender === 'Asesor' ? '#059669' : '#3b82f6' }}>
+                    {conv.last_sender}:
+                  </span>
+                )}
+                {conv.last_message?.slice(0, 70)}
               </div>
             </div>
 
