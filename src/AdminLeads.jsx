@@ -41,6 +41,20 @@ function formatTime(dateStr) {
   return new Date(dateStr).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
 }
 
+
+// Estatus del operador — colores y etiquetas
+function operatorStatusBadge(status) {
+  const map = {
+    'pendiente':       { label: '🕐 Onboarding pendiente', bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
+    'pending_review':  { label: '🔍 En revisión',          bg: '#eff6ff', color: '#1e40af', border: '#bfdbfe' },
+    'docs_requeridos': { label: '📄 Docs requeridos',      bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
+    'aprobado':        { label: '✅ Aprobado',             bg: '#f0fdf4', color: '#059669', border: '#bbf7d0' },
+    'rechazado':       { label: '❌ Rechazado',            bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
+    'suspendido':      { label: '⏸️ Suspendido',           bg: '#f9fafb', color: '#6b7280', border: '#e5e7eb' },
+  }
+  return map[status] || { label: `📋 ${status}`, bg: '#f9fafb', color: '#6b7280', border: '#e5e7eb' }
+}
+
 // Normaliza el teléfono al formato conversation_id que usa Twilio: +521XXXXXXXXXX
 function toConversationId(phone) {
   const digits = phone.replace(/\D/g, '')
@@ -482,17 +496,25 @@ export default function AdminLeads({ isMobile }) {
                     {lastMsg ? lastMsg.slice(0, 70) : 'Sin mensajes aún'}
                   </div>
                   {/* Fila 3: badges estado */}
-                  <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, borderRadius: 99, padding: '1px 8px',
-                      background: isRegistered ? '#f0fdf4' : '#fffbeb',
-                      color:      isRegistered ? '#059669' : '#d97706',
-                      border:     `1px solid ${isRegistered ? '#bbf7d0' : '#fde68a'}`
-                    }}>
-                      {isRegistered ? '✅ Registrado' : '⏳ Sin registrar'}
-                    </span>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {/* Sin registrar */}
+                    {!isRegistered && (
+                      <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: '2px 8px', background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a' }}>
+                        ⏳ Sin registrar
+                      </span>
+                    )}
+                    {/* Estatus del operador si ya se registró */}
+                    {isRegistered && lead.profile?.operator_status && (() => {
+                      const s = operatorStatusBadge(lead.profile.operator_status)
+                      return (
+                        <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: '2px 8px', background: s.bg, color: s.color, border: `1px solid ${s.border}` }}>
+                          {s.label}
+                        </span>
+                      )
+                    })()}
+                    {/* Membresía activa */}
                     {isRegistered && membershipOk && (
-                      <span style={{ fontSize: 10, fontWeight: 600, borderRadius: 99, padding: '1px 8px', background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe' }}>
+                      <span style={{ fontSize: 10, fontWeight: 600, borderRadius: 99, padding: '2px 8px', background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe' }}>
                         💳 Membresía activa
                       </span>
                     )}
