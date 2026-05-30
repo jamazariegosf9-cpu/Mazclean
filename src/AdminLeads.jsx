@@ -244,7 +244,7 @@ export default function AdminLeads({ isMobile }) {
       const convIds = leadsData.map(l => toConversationId(l.phone))
       if (!convIds.length) return
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/messages?conversation_id=in.(${convIds.map(c => `"${c}"`).join(',')})&select=conversation_id,content,direction,read_at,created_at,sender_role,from_phone&order=created_at.asc`,
+        `${SUPABASE_URL}/rest/v1/messages?conversation_id=in.(${convIds.map(c => `"${c}"`).join(',')})&select=conversation_id,content,direction,read_at,created_at,sender_role,from_phone&order=created_at.desc`,
         { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
       )
       if (!res.ok) return
@@ -253,14 +253,18 @@ export default function AdminLeads({ isMobile }) {
       const grouped = {}
       for (const msg of data) {
         const cid = msg.conversation_id
-        if (!grouped[cid]) grouped[cid] = { last_message: '', last_at: '', last_sender: '', unread: 0 }
-        // Siempre actualizar — como el orden es asc, el último loop es el más reciente
-        grouped[cid].last_message = msg.content
-        grouped[cid].last_at      = msg.created_at
-        grouped[cid].last_sender  = msg.direction === 'outbound'
-          ? (msg.from_phone === 'mazclean' ? 'Asesor' : 'Max')
-          : 'Prospecto'
-        // Contar no leídos inbound
+        if (!grouped[cid]) {
+          // Con order=desc, el primer mensaje que encontramos por conversación ES el más reciente
+          grouped[cid] = {
+            last_message: msg.content,
+            last_at:      msg.created_at,
+            last_sender:  msg.direction === 'outbound'
+              ? (msg.from_phone === 'mazclean' ? 'Asesor' : 'Max')
+              : 'Prospecto',
+            unread: 0,
+          }
+        }
+        // Contar no leídos inbound (recorremos todos)
         if (msg.direction === 'inbound' && !msg.read_at) {
           grouped[cid].unread++
         }
