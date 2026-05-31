@@ -330,10 +330,16 @@ function ConversationThread({ conv, token, onBack, onRefetch, isMobile }) {
 }
 
 // ── Componente principal: MessagingInbox ──────────────────────────────────────
-export default function MessagingInbox({ token, isMobile }) {
+export default function MessagingInbox({ token, isMobile, onUnreadChange }) {
   const { conversations, loading, refetch } = useConversations(token);
   const [selected, setSelected]             = useState(null);
   const [filter, setFilter]                 = useState('all'); // 'all' | 'escalated' | 'unread'
+
+  // Sincronizar badge del tab con el conteo real de MessagingInbox
+  useEffect(() => {
+    const total = conversations.reduce((s, c) => s + c.unread, 0);
+    if (onUnreadChange) onUnreadChange(total);
+  }, [conversations, onUnreadChange]);
 
   if (loading) {
     return <div style={{ textAlign: 'center', padding: 40, color: '#9ca3af' }}>Cargando conversaciones...</div>;

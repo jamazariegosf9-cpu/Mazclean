@@ -423,6 +423,13 @@ const AdminViewC = () => {
     fetchData();
     fetchUnattendedBookings();
     fetchUnreadMessages();
+
+    // Polling cada 15 segundos — garantiza sincronización aunque Realtime falle
+    const pollInterval = setInterval(() => {
+      fetchUnreadMessages();
+    }, 15000);
+
+    // Realtime como refuerzo adicional
     const channel = supabase
       .channel('admin-updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
@@ -436,7 +443,11 @@ const AdminViewC = () => {
         fetchUnreadMessages();
       })
       .subscribe();
-    return () => supabase.removeChannel(channel);
+
+    return () => {
+      clearInterval(pollInterval);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -972,6 +983,7 @@ const AdminViewC = () => {
                 return SUPABASE_ANON_KEY;
               })()}
               isMobile={isMobile}
+              onUnreadChange={(count) => setUnreadMessages(count)}
             />
           </div>
         )}
