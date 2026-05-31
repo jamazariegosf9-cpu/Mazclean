@@ -429,6 +429,12 @@ const AdminViewC = () => {
         fetchData();
         fetchUnattendedBookings();
       })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
+        fetchUnreadMessages();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, () => {
+        fetchUnreadMessages();
+      })
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, []);
