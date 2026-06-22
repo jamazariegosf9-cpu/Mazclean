@@ -754,9 +754,24 @@ const AdminViewB = ({
     if (reviewAction === 'reject_docs' && rejectedDocs.length === 0) { setReviewError('Selecciona al menos un documento.'); return; }
     if (reviewAction === 'reject' && !rejectionReason.trim()) { setReviewError('El motivo de rechazo es obligatorio.'); return; }
     setSavingReview(true); setReviewError('');
+
+    // Timeout de seguridad — libera el botón si algo cuelga más de 15 segundos
+    const safetyTimer = setTimeout(() => {
+      setSavingReview(false);
+      setReviewError('La operación tardó demasiado. Verifica tu conexión y vuelve a intentarlo.');
+    }, 15000);
+
     try {
-      const { data: { user: adminUser } } = await supabase.auth.getUser();
-      let updatePayload = { reviewed_at: new Date().toISOString(), reviewed_by: adminUser?.id || null };
+      // Obtener admin con timeout explícito
+      let adminUserId = null;
+      try {
+        const { data: { user: adminUser } } = await supabase.auth.getUser();
+        adminUserId = adminUser?.id || null;
+      } catch (authErr) {
+        console.warn('No se pudo obtener usuario admin:', authErr.message);
+      }
+
+      let updatePayload = { reviewed_at: new Date().toISOString(), reviewed_by: adminUserId };
       if (reviewAction === 'approve') {
         updatePayload = { ...updatePayload, operator_status: 'aprobado', status: 'activo', rejected_documents: [] };
       } else if (reviewAction === 'reject_docs') {
@@ -765,13 +780,14 @@ const AdminViewB = ({
       } else {
         updatePayload = { ...updatePayload, operator_status: 'rechazado', onboarding_done: false, onboarding_step: 1, rejected_documents: [], rejection_reason: rejectionReason.trim() };
       }
+
       const { error } = await supabase.from('profiles').update(updatePayload).eq('id', reviewingOp.id);
       if (error) throw error;
+
       const phone = reviewingOp?.phone;
       if (phone) {
         try {
           if (reviewAction === 'approve') {
-            // Primera aprobación (pending_review) vs aprobación posterior (docs_requeridos)
             const waEvent = reviewingOp.operator_status === 'docs_requeridos'
               ? 'operator_docs_approved'
               : 'operator_approved'
@@ -783,6 +799,7 @@ const AdminViewB = ({
           }
         } catch (wsErr) { console.warn('WhatsApp omitido:', wsErr.message); }
       }
+
       if (reviewAction === 'approve' || reviewAction === 'reject') {
         setPendingOperators(prev => prev.filter(o => o.id !== reviewingOp.id));
       } else {
@@ -790,8 +807,12 @@ const AdminViewB = ({
       }
       setOperators(prev => prev.map(o => o.id === reviewingOp.id ? { ...o, operator_status: updatePayload.operator_status } : o));
       setReviewModal(false);
-    } catch (err) { setReviewError(err.message); }
-    finally { setSavingReview(false); }
+    } catch (err) {
+      setReviewError(err.message || 'Error inesperado. Intenta de nuevo.');
+    } finally {
+      clearTimeout(safetyTimer);
+      setSavingReview(false);
+    }
   };
 
   // ── Delete operador ───────────────────────────────────────────────────────
