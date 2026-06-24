@@ -9,7 +9,8 @@ import {
 import { supabase } from './lib/supabase';
 import AdminAcademia from './AdminAcademia';
 import { sendWhatsApp } from './lib/whatsapp';
-import AdminViewA from './AdminViewA';
+import AdminViewA from './AdminViewA'
+import AdminMetrics from './AdminMetrics';
 import MessagingInbox from './MessagingInbox';
 import AdminPayments from './AdminPayments';
 import AdminLeads from './AdminLeads';
@@ -886,6 +887,7 @@ const AdminViewC = () => {
             { id: 'promociones', label: `🏷️ Promociones${promotions.filter(p => p.is_active && new Date(p.valid_until) > new Date()).length > 0 ? ` (${promotions.filter(p => p.is_active && new Date(p.valid_until) > new Date()).length})` : ''}`, icon: '🏷️' },
             { id: 'pagos',       label: '🏦 Pagos',         icon: '🏦' },
             { id: 'prospectos',   label: '🎯 Prospectos',    icon: '🎯' },
+            { id: 'metricas',    label: '📊 Métricas',      icon: '📊' },
           ]
           const activeTabLabel = allTabs.find(t => t.id === activeTab)?.label || 'Menú'
           if (!isMobile) {
@@ -1060,6 +1062,12 @@ const AdminViewC = () => {
         {activeTab === 'prospectos' && (
           <div style={{ marginTop: 16 }}>
             <AdminLeads isMobile={isMobile} />
+          </div>
+        )}
+
+        {activeTab === 'metricas' && (
+          <div style={{ padding: '16px 0' }}>
+            <AdminMetrics />
           </div>
         )}
 
