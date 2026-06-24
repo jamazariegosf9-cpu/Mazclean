@@ -10,6 +10,7 @@ import OnboardingView from './OnboardingView'
 import LandingOperador from './LandingOperador'
 import { Menu, X } from 'lucide-react'
 import './App.css'
+import Analytics from './lib/analytics'
 
 // ── Toast System ─────────────────────────────────────────────────────────────
 export const ToastContext = createContext(null)
@@ -469,7 +470,7 @@ function HomeView({ setView, onShowAuth }) {
         Reserva un lavado profesional sin salir de casa.
       </p>
       {user ? (
-        <button onClick={() => setView('booking')} style={{ padding: isMobile ? '14px 32px' : '16px 40px', fontSize: 16, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, minHeight: 52, width: isMobile ? '100%' : 'auto', maxWidth: 320 }}>
+        <button onClick={() => { Analytics.clickReservar(); setView('booking'); }} style={{ padding: isMobile ? '14px 32px' : '16px 40px', fontSize: 16, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, minHeight: 52, width: isMobile ? '100%' : 'auto', maxWidth: 320 }}>
           Reservar Ahora
         </button>
       ) : (
@@ -529,8 +530,12 @@ function AppInner() {
   // ── Manejo del botón Atrás del navegador ─────────────────────────────────
   const viewHistory = useRef(['home'])
 
+  // Track session start — excluye admins automáticamente
+  useEffect(() => { Analytics.sessionStart() }, [])
+
   const navigateTo = (newView) => {
     if (newView === view) return
+    Analytics.pageView('/' + newView)
     viewHistory.current = [...viewHistory.current, newView]
     window.history.pushState({ view: newView }, '', window.location.pathname)
     setView(newView)

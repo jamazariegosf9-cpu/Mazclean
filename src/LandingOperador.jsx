@@ -5,6 +5,7 @@
 // Sin navbar, imagen full-width, CTA WhatsApp siempre visible
 // ============================================================
 import { useEffect, useState } from 'react'
+import Analytics from './lib/analytics'
 
 const WHATSAPP_URL = 'https://wa.me/525539377258?text=Hola%2C%20quiero%20información%20sobre%20MAZ%20CLEAN%20%F0%9F%9A%97'
 const IMAGE_URL    = 'https://ysdmkbwmthrjgvyuvcmm.supabase.co/storage/v1/object/public/Academia/Anuncio%20Operadores.png'
@@ -16,6 +17,15 @@ export default function LandingOperador({ onRegister }) {
     const h = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', h)
     return () => window.removeEventListener('resize', h)
+  }, [])
+
+  useEffect(() => {
+    Analytics.pageView('/operador')
+    // Detectar llegada desde Facebook Ads
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('fbclid') || params.get('utm_source') === 'facebook') {
+      Analytics.facebookAdArrival(params.get('utm_campaign') || 'facebook_ad')
+    }
   }, [])
 
   const benefits = [
@@ -123,6 +133,7 @@ export default function LandingOperador({ onRegister }) {
               href={WHATSAPP_URL}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => Analytics.trackEvent?.('click_whatsapp_operador') || import('./lib/analytics').then(m => m.trackEvent('click_whatsapp_operador'))}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
                 background: '#00a86b', color: '#fff',
@@ -135,7 +146,7 @@ export default function LandingOperador({ onRegister }) {
             </a>
 
             <button
-              onClick={onRegister}
+              onClick={() => { Analytics.clickOperador(); onRegister(); }}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                 background: 'transparent',
@@ -255,6 +266,7 @@ export default function LandingOperador({ onRegister }) {
             href={WHATSAPP_URL}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => Analytics.trackEvent?.('click_whatsapp_operador')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
               background: '#00a86b', color: '#fff',
@@ -266,7 +278,7 @@ export default function LandingOperador({ onRegister }) {
             <WhatsAppIcon /> 👉 Escríbenos por WhatsApp ahora
           </a>
           <button
-            onClick={onRegister}
+            onClick={() => { Analytics.clickOperador(); onRegister(); }}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               background: 'transparent',

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import Analytics from './lib/analytics'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
 import { sendWhatsApp } from './lib/whatsapp'
@@ -94,6 +95,7 @@ function useIsMobile() {
 }
 
 export default function BookingView({ onNavigate }) {
+  useEffect(() => { Analytics.bookingStarted() }, [])
   const { user } = useAuth()
   const isMobile = useIsMobile()
   const [step, setStep]       = useState(1)
@@ -609,6 +611,9 @@ export default function BookingView({ onNavigate }) {
       const insertData = await insertRes.json()
       const newBooking = Array.isArray(insertData) ? insertData[0] : insertData
       if (!newBooking?.id) throw new Error('No se obtuvo ID del booking')
+
+      // Track reserva completada
+      Analytics.bookingCompleted(service?.name || 'lavado')
 
       clearTimeout(timeoutId)
 

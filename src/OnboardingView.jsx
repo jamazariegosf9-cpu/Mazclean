@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import Analytics from './lib/analytics'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
 
@@ -344,6 +345,8 @@ export default function OnboardingView({ onComplete }) {
   const { user, profile, updateProfile, loadProfile, loadProfileDirect } = useAuth()
   const isMobile = useIsMobile()
 
+  useEffect(() => { Analytics.onboardingStart() }, [])
+
   const [step, setStep] = useState(() => {
     if (
       profile?.operator_status === 'docs_requeridos' &&
@@ -463,6 +466,7 @@ export default function OnboardingView({ onComplete }) {
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
       try { await loadProfileDirect() } catch {}
+      Analytics.onboardingStep(next)
       setStep(next); setSubStep(1)
     } catch (e) { setError(e.message) }
     finally { setSaving(false) }
@@ -612,6 +616,7 @@ export default function OnboardingView({ onComplete }) {
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
       try { await loadProfileDirect() } catch {}
+      Analytics.onboardingComplete()
       setStep(6); setSubStep(1)
     } catch (e) { setError(e.message) }
     finally { setSaving(false) }
