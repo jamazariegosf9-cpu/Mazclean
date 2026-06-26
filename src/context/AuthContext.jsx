@@ -1,5 +1,5 @@
 // ============================================================
-// MAZ CLEAN -- AuthContext [Blindado]
+// MAZ CLEAN -- AuthContext [Blindado contra Caídas de Recovery]
 // src/context/AuthContext.jsx
 // ============================================================
 import { createContext, useContext, useEffect, useState, useRef } from 'react'
@@ -44,6 +44,12 @@ export function AuthProvider({ children }) {
   }
 
   const handleExpiredSession = async (reason = 'expirada') => {
+    // Si estamos recuperando contraseña, NO destruimos la sesión bajo ninguna circunstancia
+    if (isRecoveryFlow) {
+      console.log('[AuthContext] Intento de expiración ignorado: Flujo de recuperación activo.')
+      return
+    }
+
     console.warn('[AuthContext] Sesión', reason, '— cerrando y purgando localmente...')
     try { 
       await supabase.auth.signOut({ scope: 'local' }) 
@@ -119,6 +125,7 @@ export function AuthProvider({ children }) {
         }
 
         if (event === 'SIGNED_OUT') {
+          if (isRecoveryFlow) return // Bloqueo de des-autenticación en recuperación
           await new Promise(resolve => setTimeout(resolve, 1000))
           const token = getTokenFromStorage()
           if (token) {
@@ -217,7 +224,10 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [isRecoveryFlow])
 
+  // Watcher de inactividad / expiración modificado para ignorar el flujo de recuperación
   useEffect(() => {
+    if (isRecoveryFlow) return // Desactivación absoluta del watcher si se está restableciendo contraseña
+
     const interval = setInterval(async () => {
       if (!authState.user) return
       if (document.hidden) return
@@ -225,7 +235,7 @@ export function AuthProvider({ children }) {
         const token = getTokenFromStorage()
         if (!token) {
           await new Promise(resolve => setTimeout(resolve, 3000))
-          if (!authState.user) return
+          if (!authState.user || isRecoveryFlow) return
           const tokenRetry = getTokenFromStorage()
           if (!tokenRetry) await handleExpiredSession('expirada (watcher periódico)')
           return
@@ -240,7 +250,7 @@ export function AuthProvider({ children }) {
     }, 60 * 1000)
 
     return () => clearInterval(interval)
-  }, [authState.user])
+  }, [authState.user, isRecoveryFlow])
 
   const signUp = async ({ email, password, fullName, phone, role = 'cliente' }) => {
     const { data, error } = await supabase.auth.signUp({
