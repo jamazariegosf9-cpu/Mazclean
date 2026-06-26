@@ -1,7 +1,6 @@
 // src/ResetPasswordView.jsx
-// Pantalla de restablecimiento de contraseña
-// Se muestra cuando Supabase redirige al usuario tras clic en el email de reset
-// Lee el token del hash del URL y llama a supabase.auth.updateUser()
+// Pantalla de restablecimiento de contraseña - MAZ CLEAN
+// Corregido: Centrado absoluto en pantalla (Flexbox validado)
 
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
@@ -50,14 +49,11 @@ export default function ResetPasswordView({ onDone }) {
     setLoading(true)
 
     try {
-      // Intentamos la actualización directa de la contraseña
       const { data, error: updateError } = await supabase.auth.updateUser({
         password: password
       })
 
       if (updateError) {
-        // TRUCO DE CONTROL: Si Supabase dice que falta sesión o expiró, validamos si en segundo plano
-        // la sesión del hash ya se había asimilado de forma local y el usuario ya está autenticado.
         if (updateError.message.includes('session') || updateError.message.includes('expired')) {
           const { data: currentSession } = await supabase.auth.getSession()
           
@@ -72,7 +68,6 @@ export default function ResetPasswordView({ onDone }) {
         throw updateError
       }
 
-      // Si la API responde con éxito total de forma directa
       setSuccess(true)
       setTimeout(() => {
         if (onDone) onDone()
@@ -91,9 +86,11 @@ export default function ResetPasswordView({ onDone }) {
       minHeight: '100vh',
       display: 'flex',
       alignItems: 'center',
-      justify: 'center',
+      justifyContent: 'center', // Propiedad corregida para alineación horizontal perfecta
       padding: '24px 16px',
-      background: '#050A14'
+      background: '#050A14',
+      width: '100vw',
+      boxSizing: 'border-box'
     }}>
       <div style={{
         background: '#ffffff',
