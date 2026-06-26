@@ -371,6 +371,13 @@ function Navbar({ view, setView, onShowAuth }) {
 
   const handleNav = (id) => { setView(id); setMenuOpen(false) }
 
+  // FIX: Función para manejar el logout y resetear vista
+  const handleSignOut = async () => {
+    await signOut();
+    setView('home');
+    setMenuOpen(false);
+  }
+
   return (
     <>
       <nav style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(5,10,20,0.97)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
@@ -394,7 +401,7 @@ function Navbar({ view, setView, onShowAuth }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
               {roleBadge && <span style={{ padding: '3px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: roleBadge.color + '20', color: roleBadge.color, whiteSpace: 'nowrap' }}>{roleBadge.label}</span>}
               {profile?.role !== 'admin' && <span style={{ color: '#8CA0BF', fontSize: 12, whiteSpace: 'nowrap' }}>{profile?.full_name?.split(' ')[0] || 'Usuario'}</span>}
-              <button onClick={signOut} style={{ padding: '6px 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'none', color: '#F87171', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>Salir</button>
+              <button onClick={handleSignOut} style={{ padding: '6px 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'none', color: '#F87171', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>Salir</button>
             </div>
           )}
           {!isMobile && !user && (
@@ -425,7 +432,7 @@ function Navbar({ view, setView, onShowAuth }) {
             {user ? (
               <div style={{ padding: '8px 20px' }}>
                 {roleBadge && <div style={{ marginBottom: 8 }}><span style={{ padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, background: roleBadge.color + '20', color: roleBadge.color }}>{roleBadge.label}</span></div>}
-                <button onClick={() => { signOut(); setMenuOpen(false) }} style={{ width: '100%', padding: '12px', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 10, background: 'rgba(248,113,113,0.08)', color: '#F87171', cursor: 'pointer', fontSize: 15, fontWeight: 600 }}>Cerrar sesion</button>
+                <button onClick={handleSignOut} style={{ width: '100%', padding: '12px', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 10, background: 'rgba(248,113,113,0.08)', color: '#F87171', cursor: 'pointer', fontSize: 15, fontWeight: 600 }}>Cerrar sesion</button>
               </div>
             ) : (
               <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
