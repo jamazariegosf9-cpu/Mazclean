@@ -249,7 +249,7 @@ export function AuthProvider({ children }) {
 
   const resetPassword = async (email) => {
     const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
+      redirectTo: `${window.location.origin}/?type=recovery`,
     })
     return { data, error }
   }

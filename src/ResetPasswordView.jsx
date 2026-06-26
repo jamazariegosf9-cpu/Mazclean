@@ -16,18 +16,30 @@ export default function ResetPasswordView({ onDone }) {
   const [showConfirm, setShowConfirm] = useState(false)
   const [tokenReady, setTokenReady]   = useState(false)
 
-  // Supabase maneja el token del hash automáticamente via onAuthStateChange
-  // Solo necesitamos esperar el evento PASSWORD_RECOVERY
+  // Supabase maneja el token automáticamente — detectar sesión activa
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
+    // Si llegamos aquí, Supabase ya procesó el token del email
+    // Verificar si hay sesión activa (el token fue procesado)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
         setTokenReady(true)
       }
     })
-    // Si ya hay sesión activa con recovery token, marcar listo
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setTokenReady(true)
+
+    // También escuchar el evento PASSWORD_RECOVERY por si llega después
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+        setTokenReady(true)
+      }
     })
+
+    // Si hay parámetros de recovery en el URL, marcar listo después de un momento
+    // para darle tiempo a Supabase de procesar el token
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('type') === 'recovery' || window.location.hash.includes('type=recovery')) {
+      setTimeout(() => setTokenReady(true), 1500)
+    }
+
     return () => subscription.unsubscribe()
   }, [])
 
