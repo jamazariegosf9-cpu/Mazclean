@@ -1,6 +1,7 @@
 import ClientView from './ClientView'
 import OperatorView from './OperatorView'
 import AdminViewC from './AdminViewC'
+import ResetPasswordView from './ResetPasswordView'
 import TrackingPublic from './TrackingPublic'
 import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
@@ -10,6 +11,7 @@ import OnboardingView from './OnboardingView'
 import LandingOperador from './LandingOperador'
 import { Menu, X } from 'lucide-react'
 import './App.css'
+import { supabase } from './lib/supabase'
 import Analytics from './lib/analytics'
 
 // ── Toast System ─────────────────────────────────────────────────────────────
@@ -37,6 +39,17 @@ const TOAST_COLORS = {
 
 function ToastContainer({ toasts, onRemove }) {
   if (toasts.length === 0) return null
+  // Mostrar ResetPasswordView si hay token de recuperación activo
+  if (showResetPassword) {
+    return (
+      <ResetPasswordView onDone={() => {
+        setShowResetPassword(false)
+        window.location.hash = ''
+        setAuthModal('login')
+      }} />
+    )
+  }
+
   return (
     <div style={{
       position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)',
@@ -523,6 +536,7 @@ function AppInner() {
   const { loading, user, profile, signOut, loadProfile: refreshProfile } = useAuth()
   const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
+  const [showResetPassword, setShowResetPassword] = useState(false)
 
   const trackingId = getTrackingId()
   const handleOnboardingComplete = () => { refreshProfile() }
@@ -532,6 +546,21 @@ function AppInner() {
 
   // Track session start — excluye admins automáticamente
   useEffect(() => { Analytics.sessionStart() }, [])
+
+  // Detectar evento PASSWORD_RECOVERY de Supabase (usuario llegó desde email de reset)
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowResetPassword(true)
+      }
+    })
+    // También detectar si el hash del URL contiene type=recovery
+    const hash = window.location.hash
+    if (hash.includes('type=recovery') || hash.includes('type=signup')) {
+      setShowResetPassword(true)
+    }
+    return () => subscription.unsubscribe()
+  }, [])
 
   const navigateTo = (newView) => {
     if (newView === view) return

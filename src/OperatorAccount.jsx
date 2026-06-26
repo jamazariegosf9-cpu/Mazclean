@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Clock } from 'lucide-react';
 import { LevelBadge } from './OperatorHelpers';
+import ChangePasswordModal from './ChangePasswordModal';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -34,6 +35,7 @@ function ZoneMapPicker({ lat, lng, onMove }) {
   const mapInstanceRef = useRef(null)
   const markerRef      = useRef(null)
   const [mapsLoaded, setMapsLoaded] = useState(!!window.google?.maps)
+  const [showChangePassword, setShowChangePassword] = useState(false)
 
   useEffect(() => {
     if (mapsLoaded) return
@@ -135,6 +137,7 @@ export default function OperatorAccount({
 }) {
   return (
     <>
+      {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
       <style>{`@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }`}</style>
         {activeTab === 'micuenta' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -412,6 +415,17 @@ export default function OperatorAccount({
               <p style={{ color: '#9ca3af', fontSize: 14 }}>Completa servicios para ver tu resumen de cuenta.</p>
             </div>
           )}
+
+          {/* ── SEGURIDAD DE CUENTA ── */}
+          <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e5e7eb', padding: '16px 18px' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#374151', marginBottom: 12 }}>🔐 Seguridad de cuenta</div>
+            <button
+              onClick={() => setShowChangePassword(true)}
+              style={{ width: '100%', padding: '12px 16px', background: '#f8fafc', border: '1.5px solid #e5e7eb', borderRadius: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 14, color: '#374151', fontWeight: 600 }}>
+              <span>🔑 Cambiar contraseña</span>
+              <span style={{ color: '#9ca3af', fontSize: 12 }}>→</span>
+            </button>
+          </div>
 
           </div>
         )}

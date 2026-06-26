@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import ChangePasswordModal from './ChangePasswordModal'
 import { supabase } from './lib/supabase'
 import { useAuth } from './context/AuthContext'
 import RatingSlider from './RatingSlider'
@@ -107,6 +108,7 @@ export default function ClientView() {
   const [bookings, setBookings]           = useState([])
   const [activeBooking, setActiveBooking] = useState(null)
   const [tab, setTab]                     = useState('active')
+  const [showChangePassword, setShowChangePassword] = useState(false)
   const [loading, setLoading]             = useState(false)
   const [fetchError, setFetchError]       = useState('')
   const [mapsLoaded, setMapsLoaded]       = useState(false)
@@ -873,7 +875,20 @@ export default function ClientView() {
             )}
           </>
         )}
+
+        {/* ── SEGURIDAD DE CUENTA ── */}
+        <div style={{ marginTop: 16, borderTop: '1.5px solid #f3f4f6', paddingTop: 16 }}>
+          <button
+            onClick={() => setShowChangePassword(true)}
+            style={{ width: '100%', padding: '12px 16px', background: '#f8fafc', border: '1.5px solid #e5e7eb', borderRadius: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 14, color: '#374151', fontWeight: 600 }}>
+            <span>🔐 Cambiar contraseña</span>
+            <span style={{ color: '#9ca3af', fontSize: 12 }}>→</span>
+          </button>
+        </div>
+
       </div>
+
+      {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
 
       {/* ════ MODAL TÉRMINOS MEMBRESÍA CLIENTE ════ */}
       {showClientTerms && (
