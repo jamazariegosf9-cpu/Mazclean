@@ -536,7 +536,12 @@ function AppInner() {
   const { loading, user, profile, signOut, loadProfile: refreshProfile } = useAuth()
   const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
-  const [showResetPassword, setShowResetPassword] = useState(false)
+  // Detectar reset password ANTES de que AuthContext cargue la sesión
+  const [showResetPassword, setShowResetPassword] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    const hash   = window.location.hash
+    return params.get('type') === 'recovery' || hash.includes('type=recovery')
+  })
 
   const trackingId = getTrackingId()
   const handleOnboardingComplete = () => { refreshProfile() }
@@ -547,24 +552,8 @@ function AppInner() {
   // Track session start — excluye admins automáticamente
   useEffect(() => { Analytics.sessionStart() }, [])
 
-  // Detectar reset password — PKCE (code + type en URL) o hash legacy
+  // Escuchar evento PASSWORD_RECOVERY como respaldo adicional
   useEffect(() => {
-    // Método 1: Parámetros en el URL (Supabase PKCE flow — más común en producción)
-    const params = new URLSearchParams(window.location.search)
-    const urlType = params.get('type')
-    if (urlType === 'recovery') {
-      setShowResetPassword(true)
-      return
-    }
-
-    // Método 2: Hash del URL (Supabase implicit flow legacy)
-    const hash = window.location.hash
-    if (hash.includes('type=recovery')) {
-      setShowResetPassword(true)
-      return
-    }
-
-    // Método 3: Evento PASSWORD_RECOVERY de Supabase (se dispara cuando procesa el token)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         setShowResetPassword(true)
