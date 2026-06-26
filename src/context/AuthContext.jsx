@@ -177,10 +177,20 @@ export function AuthProvider({ children }) {
           return
         }
 
-        // Si hay recovery flow activo, no cargar el perfil — mostrar reset password
-        if (isRecoveryFlow) {
-          console.log('[AuthContext] initAuth bloqueado — recovery flow activo')
+        // ── Detectar recovery session ANTES de cargar el perfil ──────────────
+        // Supabase marca las sesiones de recovery con type='recovery' en el token
+        // o con amr que contiene el método de autenticación
+        const tokenPayload = session.access_token
+          ? JSON.parse(atob(session.access_token.split('.')[1]))
+          : null
+        const isRecovery = tokenPayload?.amr?.some((a) => a.method === 'recovery')
+          || tokenPayload?.type === 'recovery'
+
+        if (isRecovery) {
+          console.log('[AuthContext] initAuth — sesión de recovery detectada, bloqueando carga de perfil')
+          setIsRecoveryFlow(true)
           setAuthState({ user: session.user, profile: null, loading: false })
+          initDone.current = true
           return
         }
 
