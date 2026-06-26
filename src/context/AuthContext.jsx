@@ -7,7 +7,6 @@ import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
 
-// Lee el token directo de localStorage sin tocar supabase.auth (evita lock en móvil)
 function getTokenFromStorage() {
   try {
     const stored = localStorage.getItem('mazclean-auth')
@@ -17,14 +16,13 @@ function getTokenFromStorage() {
   } catch { return null }
 }
 
-// Verifica si el token en localStorage está expirado
 function isTokenExpired() {
   try {
     const stored = localStorage.getItem('mazclean-auth')
     if (!stored) return true
     const parsed = JSON.parse(stored)
     const expiresAt = parsed?.expires_at || parsed?.session?.expires_at
-    if (!expiresAt) return false // sin expires_at, asumir válido
+    if (!expiresAt) return false 
     return Math.floor(Date.now() / 1000) > expiresAt
   } catch { return false }
 }
@@ -40,7 +38,6 @@ export function AuthProvider({ children }) {
   const initDone         = useRef(false)
   const skipNextSignedIn = useRef(false)
 
-  // Centraliza la purga absoluta de datos locales ante sesiones muertas o corruptas
   const purgeLocalSession = () => {
     try { localStorage.removeItem('mazclean-auth') } catch {}
     setAuthState({ user: null, profile: null, loading: false })
@@ -49,19 +46,16 @@ export function AuthProvider({ children }) {
   const handleExpiredSession = async (reason = 'expirada') => {
     console.warn('[AuthContext] Sesión', reason, '— cerrando y purgando localmente...')
     try { 
-      // Intentamos avisar localmente a Supabase, ignoramos cualquier 403/error de red
       await supabase.auth.signOut({ scope: 'local' }) 
     } catch (err) {
       console.warn('[AuthContext] Fallo silencioso en signOut local de Supabase:', err.message)
     } finally {
-      // Garantía absoluta de limpieza
       purgeLocalSession()
       setSessionExpired(true)
     }
   }
 
   const loadProfile = async (user) => {
-    // Si no hay objeto usuario válido, abortamos de inmediato
     if (!user?.id) return { user: null, profile: null }
 
     try {
@@ -113,11 +107,14 @@ export function AuthProvider({ children }) {
       async (event, session) => {
         console.log('[AuthContext] Auth event:', event, '| session:', !!session)
 
-        // ── PASSWORD_RECOVERY — interceptar ANTES que cualquier otra lógica ──
         if (event === 'PASSWORD_RECOVERY') {
           console.log('[AuthContext] PASSWORD_RECOVERY detectado — activando recovery flow')
           setIsRecoveryFlow(true)
-          setAuthState(prev => ({ ...prev, loading: false }))
+          if (session?.user) {
+            setAuthState({ user: session.user, profile: null, loading: false })
+          } else {
+            setAuthState(prev => ({ ...prev, loading: false }))
+          }
           return
         }
 
@@ -145,12 +142,12 @@ export function AuthProvider({ children }) {
         }
 
         if (event === 'SIGNED_IN' && session?.user) {
-          // Si hay token de recovery en el URL, no cargar el perfil
-          // — App.jsx mostrará ResetPasswordView
           const params = new URLSearchParams(window.location.search)
           const hash   = window.location.hash
-          if (params.get('type') === 'recovery' || hash.includes('type=recovery')) {
+          if (params.get('type') === 'recovery' || hash.includes('type=recovery') || isRecoveryFlow) {
             console.log('[AuthContext] SIGNED_IN ignorado — recovery flow activo')
+            setIsRecoveryFlow(true)
+            setAuthState({ user: session.user, profile: null, loading: false })
             return
           }
           if (skipNextSignedIn.current) {
@@ -172,19 +169,24 @@ export function AuthProvider({ children }) {
           await handleExpiredSession('inválida (getSession error)')
           return
         }
+        
+        const params = new URLSearchParams(window.location.search)
+        const hash = window.location.hash
+        const urlHasRecovery = params.get('type') === 'recovery' || hash.includes('type=recovery')
+
         if (!session?.user) {
+          if (urlHasRecovery) {
+            setIsRecoveryFlow(true)
+          }
           setAuthState({ user: null, profile: null, loading: false })
           return
         }
 
-        // ── Detectar recovery session ANTES de cargar el perfil ──────────────
-        // Supabase marca las sesiones de recovery con type='recovery' en el token
-        // o con amr que contiene el método de autenticación
         const tokenPayload = session.access_token
           ? JSON.parse(atob(session.access_token.split('.')[1]))
           : null
         const isRecovery = tokenPayload?.amr?.some((a) => a.method === 'recovery')
-          || tokenPayload?.type === 'recovery'
+          || tokenPayload?.type === 'recovery' || urlHasRecovery
 
         if (isRecovery) {
           console.log('[AuthContext] initAuth — sesión de recovery detectada, bloqueando carga de perfil')
@@ -213,9 +215,8 @@ export function AuthProvider({ children }) {
 
     initAuth()
     return () => subscription.unsubscribe()
-  }, [])
+  }, [isRecoveryFlow])
 
-  // Watcher: verificar sesión cada 60 segundos
   useEffect(() => {
     const interval = setInterval(async () => {
       if (!authState.user) return
@@ -292,14 +293,11 @@ export function AuthProvider({ children }) {
     console.log('[AuthContext] Ejecutando signOut controlado...')
     setSessionExpired(false)
     try {
-      // Intentamos cerrar la sesión de forma limpia en el servidor
       await supabase.auth.signOut({ scope: 'local' })
     } catch (err) {
       console.warn('[AuthContext] Error destruyendo sesión en backend:', err.message)
     } finally {
-      // PASE LO QUE PASE, borramos el localStorage y limpiamos React para tumbar la UI
       purgeLocalSession()
-      // Pequeño delay y redirección forzada para limpiar remanentes o loops de GPS en segundo plano
       setTimeout(() => { window.location.href = '/' }, 100)
     }
   }

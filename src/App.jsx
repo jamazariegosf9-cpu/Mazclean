@@ -39,16 +39,6 @@ const TOAST_COLORS = {
 
 function ToastContainer({ toasts, onRemove }) {
   if (toasts.length === 0) return null
-  // Mostrar ResetPasswordView si hay token de recuperación activo
-  if (showResetPassword) {
-    return (
-      <ResetPasswordView onDone={() => {
-        setShowResetPassword(false)
-        window.location.hash = ''
-        setAuthModal('login')
-      }} />
-    )
-  }
 
   return (
     <div style={{
@@ -188,7 +178,6 @@ const PENDING_STATUSES = ['pending_review', 'pendiente']
 // ── Pantalla de selección de rol — visitantes sin sesión ──────────────────────
 
 // ── Globo flotante de Max — abre WhatsApp ─────────────────────────────────────
-// Opción B: visible en pantallas seleccionadas, no en onboarding ni modales
 const WHATSAPP_MAX = 'https://wa.me/525539377258?text=Hola%2C%20quiero%20información%20sobre%20MAZ%20CLEAN%20%F0%9F%9A%97'
 
 function MaxFAB({ visible = true }) {
@@ -196,7 +185,6 @@ function MaxFAB({ visible = true }) {
   const [pulse, setPulse]     = useState(true)
 
   useEffect(() => {
-    // Quitar pulso después de 4s para no molestar
     const t = setTimeout(() => setPulse(false), 4000)
     return () => clearTimeout(t)
   }, [])
@@ -205,7 +193,6 @@ function MaxFAB({ visible = true }) {
 
   return (
     <div style={{ position: 'fixed', bottom: 24, right: 20, zIndex: 999, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-      {/* Tooltip */}
       {tooltip && (
         <div style={{
           background: '#1e293b', border: '1px solid rgba(255,255,255,0.12)',
@@ -219,7 +206,6 @@ function MaxFAB({ visible = true }) {
         </div>
       )}
 
-      {/* Botón FAB */}
       <a
         href={WHATSAPP_MAX}
         target="_blank"
@@ -235,7 +221,6 @@ function MaxFAB({ visible = true }) {
           position: 'relative',
         }}
       >
-        {/* Anillo de pulso */}
         {pulse && (
           <div style={{
             position: 'absolute', inset: -4,
@@ -244,12 +229,10 @@ function MaxFAB({ visible = true }) {
             animation: 'maxPulse 1.5s ease-out infinite',
           }} />
         )}
-        {/* Ícono WhatsApp */}
         <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff">
           <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
           <path d="M11.999 0C5.373 0 0 5.373 0 12c0 2.115.554 4.103 1.522 5.827L.06 23.446a.5.5 0 00.613.61l5.757-1.505A11.943 11.943 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.802 9.802 0 01-5.027-1.383l-.36-.214-3.733.977.998-3.63-.235-.374A9.77 9.77 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182c5.429 0 9.818 4.388 9.818 9.818 0 5.429-4.389 9.818-9.819 9.818z"/>
         </svg>
-        {/* Label MAX */}
         <div style={{
           position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)',
           background: '#1e40af', color: '#fff',
@@ -274,7 +257,6 @@ function MaxFAB({ visible = true }) {
 }
 
 function RoleSelector({ onOperator, onClient }) {
-  // Nueva imagen sin logo duplicado
   const IMG_OPERADOR = 'https://ysdmkbwmthrjgvyuvcmm.supabase.co/storage/v1/object/public/Academia/Operadores%201.png'
   const IMG_CLIENTE  = 'https://ysdmkbwmthrjgvyuvcmm.supabase.co/storage/v1/object/public/Academia/Cliente.png'
 
@@ -296,7 +278,6 @@ function RoleSelector({ onOperator, onClient }) {
       boxSizing: 'border-box',
     }}>
 
-      {/* Header — logo + título compacto */}
       <div style={{ textAlign: 'center', marginBottom: 16, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 10 }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>💧</div>
@@ -310,66 +291,54 @@ function RoleSelector({ onOperator, onClient }) {
         </p>
       </div>
 
-      {/* Tarjetas lado a lado — Cliente primero, luego Operador */}
       <div style={{
         display: 'flex', flexDirection: 'row',
         gap: 12, width: '100%', maxWidth: 560, flexShrink: 0,
       }}>
 
-        {/* ── CLIENTE (primero) ── */}
         <button
           onClick={onClient}
           style={{ ...cardBase, background: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.35)' }}
           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.18)'; e.currentTarget.style.borderColor = '#10b981'; e.currentTarget.style.transform = 'translateY(-2px)' }}
           onMouseLeave={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.08)'; e.currentTarget.style.borderColor = 'rgba(16,185,129,0.35)'; e.currentTarget.style.transform = 'translateY(0)' }}
         >
-          {/* Badge de rol */}
           <div style={{ background: 'rgba(16,185,129,0.2)', border: '1px solid #10b981', color: '#6ee7b7', padding: '3px 14px', borderRadius: 20, fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', flexShrink: 0 }}>
             Cliente
           </div>
-          {/* Imagen */}
           <div style={{ width: '100%', height: 140, flexShrink: 0, borderRadius: 12, overflow: 'hidden' }}>
             <img src={IMG_CLIENTE} alt="Cliente MAZ CLEAN" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 10%', display: 'block' }} />
           </div>
-          {/* Texto */}
           <div style={{ flexShrink: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', marginBottom: 3 }}>🧼 Soy Cliente</div>
             <div style={{ fontSize: 11, color: '#6ee7b7', lineHeight: 1.4 }}>Reserva un lavado profesional a domicilio</div>
           </div>
-          {/* CTA */}
           <div style={{ background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', padding: '9px 0', borderRadius: 10, fontSize: 13, fontWeight: 700, width: '100%', flexShrink: 0 }}>
             Reservar ahora →
           </div>
         </button>
 
-        {/* ── OPERADOR (segundo) ── */}
         <button
           onClick={onOperator}
           style={{ ...cardBase, background: 'rgba(59,130,246,0.1)', borderColor: 'rgba(59,130,246,0.4)' }}
           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.2)'; e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.transform = 'translateY(-2px)' }}
           onMouseLeave={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.1)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.4)'; e.currentTarget.style.transform = 'translateY(0)' }}
         >
-          {/* Badge de rol */}
           <div style={{ background: 'rgba(59,130,246,0.2)', border: '1px solid #3b82f6', color: '#93c5fd', padding: '3px 14px', borderRadius: 20, fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', flexShrink: 0 }}>
             Operador
           </div>
-          {/* Imagen */}
           <div style={{ width: '100%', height: 140, flexShrink: 0, borderRadius: 12, overflow: 'hidden' }}>
             <img src={IMG_OPERADOR} alt="Operadores MAZ CLEAN" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 15%', display: 'block' }} />
           </div>
-          {/* Texto */}
           <div style={{ flexShrink: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', marginBottom: 3 }}>🚗 Ser Operador</div>
             <div style={{ fontSize: 11, color: '#93c5fd', lineHeight: 1.4 }}>Genera ingresos lavando autos en tu zona</div>
           </div>
-          {/* CTA */}
           <div style={{ background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', color: '#fff', padding: '9px 0', borderRadius: 10, fontSize: 13, fontWeight: 700, width: '100%', flexShrink: 0 }}>
             Ver cómo funciona →
           </div>
         </button>
       </div>
 
-      {/* Footer — login */}
       <p style={{ fontSize: 12, color: '#4a5568', margin: '12px 0 0', textAlign: 'center', flexShrink: 0 }}>
         ¿Ya tienes cuenta?{' '}
         <button onClick={onClient} style={{ background: 'none', border: 'none', color: '#00C8FF', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: 0, fontFamily: 'inherit' }}>
@@ -536,7 +505,7 @@ function AppInner() {
   const { loading, user, profile, signOut, loadProfile: refreshProfile, isRecoveryFlow } = useAuth()
   const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
-  // Detectar reset password — desde AuthContext (PASSWORD_RECOVERY event) o parámetro URL como fallback
+  
   const [showResetPassword, setShowResetPassword] = useState(() => {
     const params = new URLSearchParams(window.location.search)
     const hash   = window.location.hash
@@ -545,14 +514,10 @@ function AppInner() {
 
   const trackingId = getTrackingId()
   const handleOnboardingComplete = () => { refreshProfile() }
-
-  // ── Manejo del botón Atrás del navegador ─────────────────────────────────
   const viewHistory = useRef(['home'])
 
-  // Track session start — excluye admins automáticamente
   useEffect(() => { Analytics.sessionStart() }, [])
 
-  // Escuchar evento PASSWORD_RECOVERY como respaldo adicional
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
@@ -562,7 +527,6 @@ function AppInner() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Sincronizar con isRecoveryFlow del AuthContext
   useEffect(() => {
     if (isRecoveryFlow) setShowResetPassword(true)
   }, [isRecoveryFlow])
@@ -578,38 +542,31 @@ function AppInner() {
   useEffect(() => {
     const handlePopState = (e) => {
       if (viewHistory.current.length <= 1) {
-        // Estamos en la primera página — pedir confirmación de salida
         const confirm = window.confirm('¿Deseas salir de Maz Clean?')
         if (confirm) {
           window.history.back()
         } else {
-          // Volver a empujar el estado actual para no salir
           window.history.pushState({ view }, '', window.location.pathname)
         }
         return
       }
-      // Regresar a la vista anterior
       const newHistory = viewHistory.current.slice(0, -1)
       viewHistory.current = newHistory
       const prevView = newHistory[newHistory.length - 1]
       setView(prevView)
     }
 
-    // Registrar el estado inicial con dos entradas para que popstate
-    // siempre se dispare incluso desde la primera página
     window.history.replaceState({ view: 'home' }, '', window.location.pathname)
     window.history.pushState({ view: 'home' }, '', window.location.pathname)
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
   }, [view])
 
-  // CSS global + fix dinámico de overflow
   useEffect(() => {
     const style = document.createElement('style')
     style.textContent = '* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #050A14; color: #F0F6FF; font-family: sans-serif; overflow-x: hidden; max-width: 100vw; } html { overflow-x: hidden; }'
     document.head.appendChild(style)
 
-    // Fix dinámico: fuerza max-width en elementos que excedan el viewport
     const fixOverflow = () => {
       document.querySelectorAll('*').forEach(el => {
         if (el.offsetWidth > window.innerWidth) {
@@ -619,7 +576,6 @@ function AppInner() {
       })
     }
 
-    // Ejecutar al cargar y después de cada render
     fixOverflow()
     const timer = setTimeout(fixOverflow, 500)
     window.addEventListener('resize', fixOverflow)
@@ -634,6 +590,20 @@ function AppInner() {
   useEffect(() => {
     if (!loading && !user) setView('home')
   }, [loading, user])
+
+  // ── INTERCEPCIÓN PRIORITARIA DEL FLUJO DE RECUPERACIÓN ───────────────────
+  if (showResetPassword) {
+    return (
+      <ResetPasswordView onDone={() => {
+        setShowResetPassword(false)
+        window.location.hash = ''
+        const url = new URL(window.location)
+        url.searchParams.delete('type')
+        window.history.replaceState({}, '', url.pathname)
+        setAuthModal('login')
+      }} />
+    )
+  }
 
   if (trackingId) {
     return (
@@ -724,7 +694,6 @@ function AppInner() {
     )
   }
 
-  // Sin sesión → pantalla de selección de rol
   if (view === 'home' && !user && !authModal) {
     return (
       <div style={{ minHeight: '100vh', background: '#061135' }}>
@@ -738,7 +707,6 @@ function AppInner() {
     )
   }
 
-  // Operador landing — sin Navbar
   if (view === 'home' && !user && authModal === 'operator_landing') {
     return (
       <div style={{ minHeight: '100vh', background: '#061135' }}>
@@ -757,7 +725,6 @@ function AppInner() {
       {view === 'home'     && <HomeView setView={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />}
       {view === 'booking'  && <BookingViewProtected onNavigate={navigateTo} onShowAuth={(tab) => setAuthModal(tab)} />}
       {view === 'client'   && <ClientView onNavigate={navigateTo} />}
-      {/* MaxFAB — visible en home y operator, oculto en booking/client/modal */}
       <MaxFAB visible={!authModal && (view === 'home' || view === 'operator')} />
       {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
     </div>
