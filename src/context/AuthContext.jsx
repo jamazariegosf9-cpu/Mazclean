@@ -136,6 +136,14 @@ export function AuthProvider({ children }) {
         }
 
         if (event === 'SIGNED_IN' && session?.user) {
+          // Si hay token de recovery en el URL, no cargar el perfil
+          // — App.jsx mostrará ResetPasswordView
+          const params = new URLSearchParams(window.location.search)
+          const hash   = window.location.hash
+          if (params.get('type') === 'recovery' || hash.includes('type=recovery')) {
+            console.log('[AuthContext] SIGNED_IN ignorado — recovery flow activo')
+            return
+          }
           if (skipNextSignedIn.current) {
             skipNextSignedIn.current = false
             return
