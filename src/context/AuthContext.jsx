@@ -36,6 +36,7 @@ export function AuthProvider({ children }) {
     loading: true,
   })
   const [sessionExpired, setSessionExpired] = useState(false)
+  const [isRecoveryFlow, setIsRecoveryFlow] = useState(false)
   const initDone         = useRef(false)
   const skipNextSignedIn = useRef(false)
 
@@ -112,6 +113,14 @@ export function AuthProvider({ children }) {
       async (event, session) => {
         console.log('[AuthContext] Auth event:', event, '| session:', !!session)
 
+        // ── PASSWORD_RECOVERY — interceptar ANTES que cualquier otra lógica ──
+        if (event === 'PASSWORD_RECOVERY') {
+          console.log('[AuthContext] PASSWORD_RECOVERY detectado — activando recovery flow')
+          setIsRecoveryFlow(true)
+          setAuthState(prev => ({ ...prev, loading: false }))
+          return
+        }
+
         if (event === 'SIGNED_OUT') {
           await new Promise(resolve => setTimeout(resolve, 1000))
           const token = getTokenFromStorage()
@@ -165,6 +174,13 @@ export function AuthProvider({ children }) {
         }
         if (!session?.user) {
           setAuthState({ user: null, profile: null, loading: false })
+          return
+        }
+
+        // Si hay recovery flow activo, no cargar el perfil — mostrar reset password
+        if (isRecoveryFlow) {
+          console.log('[AuthContext] initAuth bloqueado — recovery flow activo')
+          setAuthState({ user: session.user, profile: null, loading: false })
           return
         }
 
@@ -344,6 +360,7 @@ export function AuthProvider({ children }) {
     profile:       authState.profile,
     loading:       authState.loading,
     sessionExpired,
+    isRecoveryFlow,
     isClient:      authState.profile?.role === 'cliente',
     isOperator:    authState.profile?.role === 'operador',
     isAdmin:       authState.profile?.role === 'admin',

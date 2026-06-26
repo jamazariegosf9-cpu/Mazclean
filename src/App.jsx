@@ -533,10 +533,10 @@ function StatusScreen({ icon, title, message, extra, onSignOut }) {
 }
 
 function AppInner() {
-  const { loading, user, profile, signOut, loadProfile: refreshProfile } = useAuth()
+  const { loading, user, profile, signOut, loadProfile: refreshProfile, isRecoveryFlow } = useAuth()
   const [view, setView]           = useState('home')
   const [authModal, setAuthModal] = useState(null)
-  // Detectar reset password ANTES de que AuthContext cargue la sesión
+  // Detectar reset password — desde AuthContext (PASSWORD_RECOVERY event) o parámetro URL como fallback
   const [showResetPassword, setShowResetPassword] = useState(() => {
     const params = new URLSearchParams(window.location.search)
     const hash   = window.location.hash
@@ -561,6 +561,11 @@ function AppInner() {
     })
     return () => subscription.unsubscribe()
   }, [])
+
+  // Sincronizar con isRecoveryFlow del AuthContext
+  useEffect(() => {
+    if (isRecoveryFlow) setShowResetPassword(true)
+  }, [isRecoveryFlow])
 
   const navigateTo = (newView) => {
     if (newView === view) return
