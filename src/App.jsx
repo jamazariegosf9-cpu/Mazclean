@@ -377,22 +377,8 @@ function HomeView({ setView, onShowAuth }) {
 }
 
 function BookingViewProtected({ onNavigate, onShowAuth }) {
-  const { user } = useAuth()
-  if (!user) {
-    return (
-      <div style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24 }}>
-        <div style={{ background: 'rgba(0,200,255,0.08)', border: '1.5px solid rgba(0,200,255,0.25)', borderRadius: 20, padding: '40px 32px', maxWidth: 440, width: '100%' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F0F6FF', marginBottom: 10 }}>Necesitas una cuenta</h2>
-          <p style={{ color: '#8CA0BF', fontSize: 15, marginBottom: 32, lineHeight: 1.6 }}>Para reservar un servicio debes iniciar sesion o crear una cuenta.</p>
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button onClick={() => onShowAuth('login')} style={{ padding: '12px 32px', fontSize: 15, borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: 'none', color: '#F0F6FF', fontWeight: 600, flex: 1, minHeight: 48 }}>Iniciar Sesion</button>
-            <button onClick={() => onShowAuth('register')} style={{ padding: '12px 32px', fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#00C8FF,#00E5C8)', color: '#050A14', fontWeight: 700, flex: 1, minHeight: 48 }}>Registrarse</button>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // Guest checkout habilitado — BookingView maneja internamente
+  // la creación de cuenta cuando no hay sesión activa
   return <BookingView onNavigate={onNavigate} />
 }
 
@@ -499,8 +485,10 @@ function AppInner() {
   }, [])
 
   useEffect(() => {
-    if (!loading && !user) setView('home')
-  }, [loading, user])
+    // No redirigir al home si el usuario está en la vista de booking
+    // BookingView maneja internamente el guest checkout sin sesión
+    if (!loading && !user && view !== 'booking') setView('home')
+  }, [loading, user, view])
 
   // ── INTERCEPCIÓN PRIORITARIA DEL FLUJO DE RECUPERACIÓN ───────────────────
   if (showResetPassword) {
@@ -610,7 +598,7 @@ function AppInner() {
       <div style={{ minHeight: '100vh', background: '#061135' }}>
         <RoleSelector
           onOperator={() => setAuthModal('operator_landing')}
-          onClient={() => setAuthModal('client')}
+          onClient={() => navigateTo('booking')}
         />
         <MaxFAB visible={!authModal} />
         {authModal && <AuthModal defaultTab={authModal} onClose={() => setAuthModal(null)} />}
