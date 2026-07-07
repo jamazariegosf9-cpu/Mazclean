@@ -95,7 +95,8 @@ function useIsMobile() {
 // ── Genera un email temporal para guests ──────────────────────────────────────
 function generateGuestEmail(phone) {
   const clean = phone.replace(/\D/g, '').slice(-10)
-  return `guest_${clean}_${Date.now()}@mazclean.app`
+  const rand = Math.random().toString(36).substring(2, 7)
+  return `guest${clean}${rand}${Date.now()}@guestmazclean.com`
 }
 
 // ── Genera una contraseña aleatoria segura para guests ───────────────────────
@@ -586,23 +587,29 @@ export default function BookingView({ onNavigate }) {
   }
 
   const updateGuestProfile = async (userId, fullName, phoneClean) => {
-    try {
-      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
-        method: 'PATCH',
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal',
-        },
-        body: JSON.stringify({
-          full_name:  fullName,
-          phone:      `+52${phoneClean}`,
-          role:       'cliente',
-          updated_at: new Date().toISOString(),
-        }),
-      })
-    } catch (e) { console.warn('updateGuestProfile:', e.message) }
+    // Esperar 1.5s para que Supabase cree el trigger del perfil
+    await new Promise(resolve => setTimeout(resolve, 1500))
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify({
+            full_name:  fullName,
+            phone:      `+52${phoneClean}`,
+            role:       'cliente',
+            updated_at: new Date().toISOString(),
+          }),
+        })
+        if (res.ok || res.status === 406) break
+        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 800))
+      } catch (e) { console.warn('updateGuestProfile intento', attempt, e.message) }
+    }
   }
 
   const canGoNext = () => {
