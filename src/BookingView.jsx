@@ -1,3 +1,4 @@
+// src/BookingView.jsx
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Analytics from './lib/analytics'
 import { supabase } from './lib/supabase'
@@ -8,9 +9,6 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY   = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-// Servicios se cargan desde la DB — ver fetchServices() en el componente
-// Formato normalizado desde DB:
-// { id, name, description, icon, color, durationMin, duration, prices: { sedan, suv, pickup, van } }
 function formatDuration(min) {
   if (!min) return '—'
   if (min < 60) return `${min} min`
@@ -94,21 +92,42 @@ function useIsMobile() {
   return isMobile
 }
 
+// ── Genera un email temporal para guests ──────────────────────────────────────
+function generateGuestEmail(phone) {
+  const clean = phone.replace(/\D/g, '').slice(-10)
+  return `guest_${clean}_${Date.now()}@mazclean.app`
+}
+
+// ── Genera una contraseña aleatoria segura para guests ───────────────────────
+function generateGuestPassword() {
+  return 'MC_' + Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 6).toUpperCase()
+}
+
 export default function BookingView({ onNavigate }) {
   useEffect(() => { Analytics.bookingStarted() }, [])
   const { user } = useAuth()
   const isMobile = useIsMobile()
   const [step, setStep]       = useState(1)
   const [loading, setLoading] = useState(false)
-  // Servicios desde DB
-  const [services, setServices]           = useState([])
+  const [services, setServices]               = useState([])
   const [loadingServices, setLoadingServices] = useState(true)
   const [success, setSuccess] = useState(false)
   const [error, setError]     = useState('')
   const [scheduledDispatch, setScheduledDispatch] = useState(null)
   const [mapsLoaded, setMapsLoaded] = useState(false)
-  // Direcciones recientes del cliente
   const [recentAddresses, setRecentAddresses] = useState([])
+
+  // ── Estado Guest Checkout ────────────────────────────────────────────────────
+  // guestUser: usuario creado silenciosamente si no hay sesión activa
+  const [guestUser, setGuestUser]         = useState(null)
+  const [guestName, setGuestName]         = useState('')
+  const [guestPhone, setGuestPhone]       = useState('')
+  const [guestEmail, setGuestEmail]       = useState('')
+  const [guestErrors, setGuestErrors]     = useState({})
+  const [creatingGuest, setCreatingGuest] = useState(false)
+
+  // Usuario efectivo: sesión real o guest creado
+  const effectiveUser = user || guestUser
 
   // ── Cargar servicios desde DB ──────────────────────────────────────────────
   useEffect(() => {
@@ -122,7 +141,6 @@ export default function BookingView({ onNavigate }) {
           const data = await res.json()
           const normalized = data.map(normalizeService)
           setServices(normalized)
-          // Si solo hay 1 servicio activo, seleccionarlo automáticamente
           if (normalized.length === 1) setSelectedService(normalized[0].id)
         }
       } catch (err) {
@@ -134,7 +152,7 @@ export default function BookingView({ onNavigate }) {
     fetchServices()
   }, [])
 
-  // ── Direcciones recientes ────────────────────────────────────────────────────
+  // ── Direcciones recientes (solo si hay sesión real) ──────────────────────────
   useEffect(() => {
     if (!user?.id) return
     const fetchRecentAddresses = async () => {
@@ -161,7 +179,6 @@ export default function BookingView({ onNavigate }) {
       const stored = localStorage.getItem('mazclean-auth')
       let token = SUPABASE_ANON_KEY
       try { if (stored) { const p = JSON.parse(stored); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY } } catch {}
-      // Agregar al inicio, eliminar duplicados, mantener solo las últimas 3
       const newAddr = { formatted: addressDetail.formatted, lat: addressDetail.lat, lng: addressDetail.lng }
       const updated = [newAddr, ...recentAddresses.filter(a => a.formatted !== newAddr.formatted)].slice(0, 3)
       setRecentAddresses(updated)
@@ -180,7 +197,6 @@ export default function BookingView({ onNavigate }) {
       try { if (stored) { const p = JSON.parse(stored); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY } } catch {}
       const updated = recentAddresses.filter((_, i) => i !== indexToRemove)
       setRecentAddresses(updated)
-      // Si la dirección eliminada era la seleccionada, limpiar selección
       if (addressDetails?.formatted === recentAddresses[indexToRemove]?.formatted) {
         setAddressDetails(null)
         setAddress('')
@@ -222,7 +238,6 @@ export default function BookingView({ onNavigate }) {
   const [notes, setNotes]       = useState('')
   const [rangeError, setRangeError] = useState('')
 
-  // mapKey se incrementa cada vez que se resetea el form, forzando remontaje del mapa
   const [mapKey, setMapKey] = useState(0)
   const [availableSlots, setAvailableSlots]     = useState([])
   const [loadingSlots, setLoadingSlots]         = useState(false)
@@ -251,13 +266,11 @@ export default function BookingView({ onNavigate }) {
 
   useEffect(() => { setNoCoverage(false) }, [addressDetails])
 
-  // Cargar slots disponibles cuando cambia fecha
   useEffect(() => {
     if (!date || !addressDetails || !selectedService || !vehicleType) return
     loadAvailableSlots()
   }, [date, addressDetails, selectedService, vehicleType])
 
-  // Validar rango
   useEffect(() => {
     if (!timeFrom || !timeTo) { setRangeError(''); return }
     const svc = getService()
@@ -273,7 +286,6 @@ export default function BookingView({ onNavigate }) {
     setRangeError('')
   }, [timeFrom, timeTo, selectedService])
 
-  // Auto-calcular timeTo mínimo
   useEffect(() => {
     if (!timeFrom) return
     const svc = getService()
@@ -285,7 +297,6 @@ export default function BookingView({ onNavigate }) {
     if (!timeTo || timeToMin(timeTo) < minToMin) setTimeTo(minTo)
   }, [timeFrom])
 
-  // Consultar slots disponibles via Edge Function
   const loadAvailableSlots = async () => {
     setLoadingSlots(true)
     setNoSlotsAvailable(false)
@@ -320,13 +331,11 @@ export default function BookingView({ onNavigate }) {
     }
   }
 
-  // Generar opciones de timeTo válidas basadas en slots disponibles y timeFrom
   const getValidTimeTo = () => {
     if (!timeFrom || !selectedService) return []
     const svc = getService()
     if (!svc) return []
     const minEnd = timeToMin(timeFrom) + svc.durationMin
-    // Generar opciones cada 30 min desde minEnd hasta 19:00
     const options = []
     for (let m = minEnd; m <= 19 * 60; m += 30) {
       const h = String(Math.floor(m / 60)).padStart(2, '0')
@@ -370,7 +379,7 @@ export default function BookingView({ onNavigate }) {
           await fetch(`${supabaseUrl}/rest/v1/coverage_requests`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseKey, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-            body: JSON.stringify({ client_id: user?.id || null, address: addressDetails.formatted, lat: addressDetails.lat, lng: addressDetails.lng }),
+            body: JSON.stringify({ client_id: effectiveUser?.id || null, address: addressDetails.formatted, lat: addressDetails.lat, lng: addressDetails.lng }),
           })
         } catch (e) { console.warn('coverage_request:', e.message) }
       }
@@ -384,7 +393,6 @@ export default function BookingView({ onNavigate }) {
 
   const initMap = useCallback(() => {
     if (!mapRef.current || mapInstanceRef.current) return
-    // Si ya hay una dirección seleccionada, centrar ahí; si no, usar CDMX como default
     const savedDetails = addressDetailsRef.current
     const center = savedDetails
       ? { lat: savedDetails.lat, lng: savedDetails.lng }
@@ -400,35 +408,28 @@ export default function BookingView({ onNavigate }) {
 
   const initAutocomplete = useCallback(() => {
     if (!inputRef.current || autocompleteRef.current) return
-
-    // Construir autocomplete — sin bounds iniciales, se actualiza con ubicación del usuario
     const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
       componentRestrictions: { country: 'mx' },
       fields:                ['geometry', 'formatted_address'],
       strictBounds:          false,
     })
     autocompleteRef.current = ac
-
-    // Intentar obtener ubicación real del usuario para los bounds del autocomplete
-    // Si el GPS no es preciso (por IP), no establecer bounds — mejor sin bounds que con bounds incorrectos
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const lat = pos.coords.latitude
           const lng = pos.coords.longitude
           const accuracy = pos.coords.accuracy
-          // Solo usar si la precisión es buena Y las coordenadas están dentro de México
           const inMexico = lat >= 14.5 && lat <= 32.7 && lng >= -118.4 && lng <= -86.7
           if (accuracy <= 5000 && inMexico) {
-            const delta = 0.3 // ~33km alrededor del usuario
+            const delta = 0.3
             ac.setBounds(new window.google.maps.LatLngBounds(
               new window.google.maps.LatLng(lat - delta, lng - delta),
               new window.google.maps.LatLng(lat + delta, lng + delta)
             ))
           }
-          // Si precisión > 5000m o fuera de México → no establecer bounds
         },
-        () => {}, // Sin permiso o error → no establecer bounds
+        () => {},
         { timeout: 5000, maximumAge: 300000, enableHighAccuracy: true }
       )
     }
@@ -441,13 +442,11 @@ export default function BookingView({ onNavigate }) {
         mapInstanceRef.current.setCenter({ lat, lng }); mapInstanceRef.current.setZoom(16); markerRef.current.setPosition({ lat, lng })
       }
     })
-    // Fix: geocodificar cuando el cliente escribe manualmente y pierde el foco sin seleccionar del dropdown
     inputRef.current.addEventListener('blur', async () => {
       const val = inputRef.current?.value?.trim()
       if (!val) return
-      // Esperar 150ms para que place_changed (si se disparó) actualice addressDetailsRef
       await new Promise(resolve => setTimeout(resolve, 150))
-      if (addressDetailsRef.current) return // ya tiene dirección válida desde place_changed
+      if (addressDetailsRef.current) return
       try {
         const result = await new window.google.maps.Geocoder().geocode({
           address: val,
@@ -487,29 +486,20 @@ export default function BookingView({ onNavigate }) {
       const lat = pos.coords.latitude
       const lng = pos.coords.longitude
       const accuracy = pos.coords.accuracy
-
-      // Si la precisión es mala (GPS por IP) → no usar
       if (accuracy > 5000) {
         setMapError('No pudimos detectar tu ubicación con precisión. Por favor escribe tu dirección manualmente.')
         return
       }
-
-      // Validar que las coordenadas estén dentro de México
-      // Bounding box de México: lat 14.5–32.7, lng -118.4 a -86.7
       const inMexico = lat >= 14.5 && lat <= 32.7 && lng >= -118.4 && lng <= -86.7
       if (!inMexico) {
         setMapError('No pudimos detectar tu ubicación correctamente. Por favor escribe tu dirección manualmente.')
         return
       }
-
-      // Actualizar mapa y marker
       if (mapInstanceRef.current && markerRef.current) {
         mapInstanceRef.current.setCenter({ lat, lng })
         mapInstanceRef.current.setZoom(16)
         markerRef.current.setPosition({ lat, lng })
       }
-
-      // Actualizar bounds del autocomplete a la ubicación real
       if (autocompleteRef.current && window.google?.maps) {
         const delta = 0.1
         autocompleteRef.current.setBounds(new window.google.maps.LatLngBounds(
@@ -517,12 +507,102 @@ export default function BookingView({ onNavigate }) {
           new window.google.maps.LatLng(lat + delta, lng + delta)
         ))
       }
-
       await reverseGeocode(lat, lng)
     }, (err) => {
       if (err.code === 1) setMapError('Permiso de ubicación denegado. Por favor escribe tu dirección manualmente.')
       else setMapError('No se pudo obtener tu ubicación. Por favor escribe tu dirección manualmente.')
     }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 })
+  }
+
+  // ── Validación de datos guest ────────────────────────────────────────────────
+  const validateGuestData = () => {
+    const errs = {}
+    if (!guestName.trim() || guestName.trim().length < 2) errs.name = 'Ingresa tu nombre completo'
+    const phoneClean = guestPhone.replace(/\D/g, '')
+    if (phoneClean.length < 10) errs.phone = 'Ingresa un número de 10 dígitos'
+    if (guestEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) errs.email = 'Correo no válido'
+    setGuestErrors(errs)
+    return Object.keys(errs).length === 0
+  }
+
+  // ── Crear cuenta guest en Supabase silenciosamente ───────────────────────────
+  const createGuestAccount = async () => {
+    if (!validateGuestData()) return null
+    setCreatingGuest(true)
+    try {
+      const phoneClean = guestPhone.replace(/\D/g, '').slice(-10)
+      const email    = guestEmail.trim() || generateGuestEmail(phoneClean)
+      const password = generateGuestPassword()
+      const fullName = guestName.trim()
+
+      // 1. Crear usuario en Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            phone:     `+52${phoneClean}`,
+            role:      'cliente',
+            is_guest:  true,
+          }
+        }
+      })
+
+      if (authError) {
+        // Si el email ya existe (guest previo), intentar con email único
+        if (authError.message?.includes('already registered')) {
+          const uniqueEmail = generateGuestEmail(phoneClean)
+          const { data: retryData, error: retryError } = await supabase.auth.signUp({
+            email: uniqueEmail,
+            password,
+            options: { data: { full_name: fullName, phone: `+52${phoneClean}`, role: 'cliente', is_guest: true } }
+          })
+          if (retryError) throw retryError
+          const newUser = retryData?.user
+          if (!newUser) throw new Error('No se pudo crear la cuenta')
+          await updateGuestProfile(newUser.id, fullName, phoneClean)
+          setGuestUser(newUser)
+          return newUser
+        }
+        throw authError
+      }
+
+      const newUser = authData?.user
+      if (!newUser) throw new Error('No se pudo crear la cuenta')
+
+      // 2. Actualizar perfil con nombre y teléfono
+      await updateGuestProfile(newUser.id, fullName, phoneClean)
+      setGuestUser(newUser)
+      return newUser
+
+    } catch (err) {
+      console.error('createGuestAccount:', err)
+      setError('No pudimos procesar tu reservación. Verifica tu conexión e intenta de nuevo.')
+      return null
+    } finally {
+      setCreatingGuest(false)
+    }
+  }
+
+  const updateGuestProfile = async (userId, fullName, phoneClean) => {
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({
+          full_name:  fullName,
+          phone:      `+52${phoneClean}`,
+          role:       'cliente',
+          updated_at: new Date().toISOString(),
+        }),
+      })
+    } catch (e) { console.warn('updateGuestProfile:', e.message) }
   }
 
   const canGoNext = () => {
@@ -543,9 +623,16 @@ export default function BookingView({ onNavigate }) {
     }
   }
 
+  // ── Submit principal — soporta usuario con sesión Y guest ────────────────────
   const handleSubmit = async () => {
-    if (!user) return
     setLoading(true); setError('')
+
+    // Si no hay usuario autenticado, crear cuenta guest primero
+    let activeUser = effectiveUser
+    if (!activeUser) {
+      activeUser = await createGuestAccount()
+      if (!activeUser) { setLoading(false); return }
+    }
 
     const timeoutId = setTimeout(() => {
       setLoading(false)
@@ -557,7 +644,6 @@ export default function BookingView({ onNavigate }) {
       const price      = getPrice()
       const bookingRef = generateRef()
 
-      // Usar fetch directo para evitar el lock de Supabase en móvil
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
       let token = supabaseKey
       try {
@@ -578,7 +664,7 @@ export default function BookingView({ onNavigate }) {
         },
         body: JSON.stringify({
           booking_ref:         bookingRef,
-          client_id:           user.id,
+          client_id:           activeUser.id,
           service_id:          service.id,
           address_line:        addressDetails.formatted,
           address_lat:         addressDetails.lat,
@@ -612,25 +698,16 @@ export default function BookingView({ onNavigate }) {
       const newBooking = Array.isArray(insertData) ? insertData[0] : insertData
       if (!newBooking?.id) throw new Error('No se obtuvo ID del booking')
 
-      // Track reserva completada
       Analytics.bookingCompleted(service?.name || 'lavado')
-
       clearTimeout(timeoutId)
 
-      // Guardar dirección en historial del cliente
-      if (addressDetails) await saveRecentAddress(addressDetails)
+      if (addressDetails && user?.id) await saveRecentAddress(addressDetails)
 
-      // ── Lógica de disparo inmediato vs diferido ──────────────────────────
-      // Rango inmediato: 05:45:00 — 21:00:59 hora LOCAL del dispositivo
-      // Fuera de rango: guardar reserva y disparar MAX(05:45, scheduled_time - 60min)
       const now        = new Date()
       const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60
-
-      // 05:45:00 = 345 min | 21:00:59 = 1260.98 min
       const isInmediato = nowMinutes >= 345 && nowMinutes < 1261
 
       if (isInmediato) {
-        // Disparo inmediato
         try {
           await fetch(`${SUPABASE_URL}/functions/v1/process-booking-request`, {
             method:  'POST',
@@ -645,15 +722,12 @@ export default function BookingView({ onNavigate }) {
           console.warn('Error lanzando proceso de asignación:', e.message)
         }
       } else {
-        // Disparo diferido — calcular hora de disparo: MAX(05:45, scheduled_time - 60min)
         const [svcH, svcM] = timeFrom.split(':').map(Number)
         const svcMinutes   = svcH * 60 + svcM
-        const dispatchMin  = Math.max(345, svcMinutes - 60) // 345 = 05:45
+        const dispatchMin  = Math.max(345, svcMinutes - 60)
         const dispatchH    = Math.floor(dispatchMin / 60)
         const dispatchM    = dispatchMin % 60
         const dispatchStr  = `${String(dispatchH).padStart(2,'0')}:${String(dispatchM).padStart(2,'0')}`
-
-        // Guardar hora de disparo en el booking para que el cron la detecte
         try {
           await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${newBooking.id}`, {
             method: 'PATCH',
@@ -668,8 +742,6 @@ export default function BookingView({ onNavigate }) {
         } catch (e) {
           console.warn('Error guardando dispatch_at:', e.message)
         }
-
-        // Mostrar hora de disparo al cliente en el mensaje de éxito
         setScheduledDispatch(dispatchStr)
       }
 
@@ -690,15 +762,15 @@ export default function BookingView({ onNavigate }) {
     setAddress(''); setAddressDetails(null)
     setDate(''); setTimeFrom(''); setTimeTo(''); setNotes(''); setRangeError('')
     setNoCoverage(false); setAvailableSlots([]); setNoSlotsAvailable(false)
+    setGuestName(''); setGuestPhone(''); setGuestEmail(''); setGuestErrors({})
     mapInstanceRef.current = null; markerRef.current = null; autocompleteRef.current = null
     if (inputRef.current) inputRef.current.value = ''
-    setMapKey(k => k + 1) // Fuerza remontaje completo del mapa
+    setMapKey(k => k + 1)
   }
 
-  // ── Draft en sessionStorage — persiste si el usuario pierde conexión ────────
-  // Guardar draft cada vez que cambian los datos del formulario
+  // ── Draft en sessionStorage ──────────────────────────────────────────────────
   useEffect(() => {
-    if (step === 1 && !selectedService) return // no guardar si no empezó
+    if (step === 1 && !selectedService) return
     try {
       sessionStorage.setItem('booking-draft', JSON.stringify({
         step, selectedService, vehicleType, vehicleBrand, vehicleColor,
@@ -707,7 +779,6 @@ export default function BookingView({ onNavigate }) {
     } catch {}
   }, [step, selectedService, vehicleType, vehicleBrand, vehicleColor, address, date, timeFrom, timeTo, notes])
 
-  // Restaurar draft al montar — solo si el usuario tiene sesión activa
   useEffect(() => {
     if (!user) return
     try {
@@ -715,7 +786,6 @@ export default function BookingView({ onNavigate }) {
       if (!draft) return
       const d = JSON.parse(draft)
       if (!d?.selectedService) return
-      // Solo restaurar paso 1 — los pasos con mapa/slots requieren reinicio
       if (d.step === 1) {
         setSelectedService(d.selectedService)
         setVehicleType(d.vehicleType || '')
@@ -729,6 +799,7 @@ export default function BookingView({ onNavigate }) {
   const service = getService()
   const vehicle = VEHICLE_TYPES.find(v => v.id === vehicleType)
 
+  // ── Pantalla de éxito ────────────────────────────────────────────────────────
   if (success) {
     return (
       <div style={{ minHeight: '100vh', background: '#f3f4f6', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: isMobile ? '16px 12px' : '24px 16px' }}>
@@ -780,7 +851,6 @@ export default function BookingView({ onNavigate }) {
         {/* STEP 1 */}
         {step === 1 && (
           <div style={{ padding: isMobile ? '16px 12px' : 24 }}>
-            {/* Título solo si hay más de 1 servicio */}
             {services.length !== 1 && (
               <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Qué servicio necesitas?</h3>
             )}
@@ -794,12 +864,10 @@ export default function BookingView({ onNavigate }) {
                 return (
                   <div key={s.id} onClick={() => { if (!isSingle) setSelectedService(s.id) }}
                     style={{ padding: isMobile ? 10 : 12, borderRadius: 10, cursor: isSingle ? 'default' : 'pointer', transition: 'all 0.2s', border: isSingle ? '2px solid #3b82f6' : selectedService===s.id ? '2px solid #3b82f6' : '2px solid #e5e7eb', background: isSingle ? '#eff6ff' : selectedService===s.id ? '#eff6ff' : '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                    {/* Bloque superior: ícono + nombre */}
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 10 }}>
                       <span style={{ fontSize: isMobile ? 18 : 20, flexShrink: 0, marginTop: 1 }}>{s.icon}</span>
                       <span style={{ fontWeight: 600, fontSize: 13, color: '#1f2937', lineHeight: 1.4 }}>{s.name}</span>
                     </div>
-                    {/* Bloque inferior: precio + botón — siempre al fondo de la tarjeta */}
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                         <span style={{ fontWeight: 700, color: '#3b82f6', fontSize: 14 }}>${p}</span>
@@ -851,59 +919,58 @@ export default function BookingView({ onNavigate }) {
 
         {/* STEP 2 — siempre montado para preservar el mapa de Google */}
         <div style={{ display: step === 2 ? 'block' : 'none', padding: isMobile ? '16px 12px' : 24 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Dónde está tu vehículo?</h3>
+          <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>¿Dónde está tu vehículo?</h3>
 
-            {/* Direcciones recientes */}
-            {recentAddresses.length > 0 && (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>📍 Direcciones recientes:</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {recentAddresses.map((addr, i) => (
-                    <button key={i} onClick={() => {
-                      setAddress(addr.formatted)
-                      setAddressDetails({ lat: addr.lat, lng: addr.lng, formatted: addr.formatted })
-                      setMapError('')
-                      if (inputRef.current) inputRef.current.value = addr.formatted
-                      if (mapInstanceRef.current && markerRef.current) {
-                        mapInstanceRef.current.setCenter({ lat: addr.lat, lng: addr.lng })
-                        mapInstanceRef.current.setZoom(16)
-                        markerRef.current.setPosition({ lat: addr.lat, lng: addr.lng })
-                      }
-                    }}
-                      style={{ textAlign: 'left', padding: '10px 14px', borderRadius: 8, border: `1.5px solid ${addressDetails?.formatted === addr.formatted ? '#3b82f6' : '#e5e7eb'}`, background: addressDetails?.formatted === addr.formatted ? '#eff6ff' : '#f9fafb', cursor: 'pointer', fontSize: 13, color: '#374151', fontWeight: addressDetails?.formatted === addr.formatted ? 700 : 400, display: 'flex', alignItems: 'center', gap: 8, minHeight: 42, width: '100%' }}>
-                      <span style={{ flexShrink: 0 }}>🏠</span>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{addr.formatted}</span>
-                      <span onClick={e => { e.stopPropagation(); deleteRecentAddress(i) }}
-                        style={{ flexShrink: 0, fontSize: 16, color: '#9ca3af', padding: '2px 4px', borderRadius: 4, cursor: 'pointer', lineHeight: 1 }}
-                        title="Eliminar dirección">✕</span>
-                    </button>
-                  ))}
-                </div>
-                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>O busca una nueva dirección:</div>
+          {recentAddresses.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>📍 Direcciones recientes:</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {recentAddresses.map((addr, i) => (
+                  <button key={i} onClick={() => {
+                    setAddress(addr.formatted)
+                    setAddressDetails({ lat: addr.lat, lng: addr.lng, formatted: addr.formatted })
+                    setMapError('')
+                    if (inputRef.current) inputRef.current.value = addr.formatted
+                    if (mapInstanceRef.current && markerRef.current) {
+                      mapInstanceRef.current.setCenter({ lat: addr.lat, lng: addr.lng })
+                      mapInstanceRef.current.setZoom(16)
+                      markerRef.current.setPosition({ lat: addr.lat, lng: addr.lng })
+                    }
+                  }}
+                    style={{ textAlign: 'left', padding: '10px 14px', borderRadius: 8, border: `1.5px solid ${addressDetails?.formatted === addr.formatted ? '#3b82f6' : '#e5e7eb'}`, background: addressDetails?.formatted === addr.formatted ? '#eff6ff' : '#f9fafb', cursor: 'pointer', fontSize: 13, color: '#374151', fontWeight: addressDetails?.formatted === addr.formatted ? 700 : 400, display: 'flex', alignItems: 'center', gap: 8, minHeight: 42, width: '100%' }}>
+                    <span style={{ flexShrink: 0 }}>🏠</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{addr.formatted}</span>
+                    <span onClick={e => { e.stopPropagation(); deleteRecentAddress(i) }}
+                      style={{ flexShrink: 0, fontSize: 16, color: '#9ca3af', padding: '2px 4px', borderRadius: 4, cursor: 'pointer', lineHeight: 1 }}
+                      title="Eliminar dirección">✕</span>
+                  </button>
+                ))}
               </div>
-            )}
-
-            <div style={{ position: 'relative', marginBottom: 12 }}>
-              <input ref={inputRef} style={{ padding: '12px 12px 12px 40px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 }} placeholder="Busca tu dirección..." defaultValue={address} onChange={e => { if (!e.target.value) { setAddress(''); setAddressDetails(null) } }} />
-              <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 16 }}>🔍</span>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>O busca una nueva dirección:</div>
             </div>
-            <button onClick={handleUseMyLocation} style={{ background: '#f0f9ff', border: '1.5px solid #bae6fd', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', fontSize: 14, color: '#0369a1', fontWeight: 500, marginBottom: 12, width: '100%', minHeight: 48 }}>📍 Usar mi ubicación actual</button>
-            {mapError && <p style={{ color: '#dc2626', fontSize: 14, marginBottom: 8 }}>{mapError}</p>}
-            {!mapsLoaded
-              ? <div style={{ width: '100%', height: isMobile ? 220 : 280, borderRadius: 12, background: '#f9fafb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 14, border: '1.5px solid #e5e7eb', marginBottom: 12 }}>Cargando mapa...</div>
-              : <div ref={mapRef} style={{ width: '100%', height: isMobile ? 220 : 280, borderRadius: 12, border: '1.5px solid #e5e7eb', overflow: 'hidden', marginBottom: 12 }} />
-            }
-            {addressDetails && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#166534', marginBottom: 8 }}>✅ <strong>Dirección:</strong> {addressDetails.formatted}</div>}
-            <p style={{ fontSize: 12, color: '#9ca3af', margin: '4px 0 0' }}>💡 Arrastra el pin o haz clic en el mapa para ajustar la ubicación exacta.</p>
-            {noCoverage && (
-              <div style={{ marginTop: 16, background: '#faf5ff', border: '1.5px solid #d8b4fe', borderRadius: 12, padding: '20px 18px', textAlign: 'center' }}>
-                <div style={{ fontSize: 36, marginBottom: 10 }}>🗺️</div>
-                <p style={{ fontSize: 15, fontWeight: 700, color: '#6d28d9', margin: '0 0 8px' }}>Aún no llegamos a tu zona</p>
-                <p style={{ fontSize: 14, color: '#7c3aed', margin: '0 0 12px', lineHeight: 1.6 }}>Por el momento no contamos con operadores disponibles en tu área, pero estamos creciendo rápidamente.</p>
-                <p style={{ fontSize: 12, color: '#a78bfa', margin: 0 }}>✅ Registramos tu ubicación para priorizar la expansión hacia tu zona.</p>
-              </div>
-            )}
+          )}
+
+          <div style={{ position: 'relative', marginBottom: 12 }}>
+            <input ref={inputRef} style={{ padding: '12px 12px 12px 40px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 }} placeholder="Busca tu dirección..." defaultValue={address} onChange={e => { if (!e.target.value) { setAddress(''); setAddressDetails(null) } }} />
+            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 16 }}>🔍</span>
           </div>
+          <button onClick={handleUseMyLocation} style={{ background: '#f0f9ff', border: '1.5px solid #bae6fd', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', fontSize: 14, color: '#0369a1', fontWeight: 500, marginBottom: 12, width: '100%', minHeight: 48 }}>📍 Usar mi ubicación actual</button>
+          {mapError && <p style={{ color: '#dc2626', fontSize: 14, marginBottom: 8 }}>{mapError}</p>}
+          {!mapsLoaded
+            ? <div style={{ width: '100%', height: isMobile ? 220 : 280, borderRadius: 12, background: '#f9fafb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 14, border: '1.5px solid #e5e7eb', marginBottom: 12 }}>Cargando mapa...</div>
+            : <div ref={mapRef} style={{ width: '100%', height: isMobile ? 220 : 280, borderRadius: 12, border: '1.5px solid #e5e7eb', overflow: 'hidden', marginBottom: 12 }} />
+          }
+          {addressDetails && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#166534', marginBottom: 8 }}>✅ <strong>Dirección:</strong> {addressDetails.formatted}</div>}
+          <p style={{ fontSize: 12, color: '#9ca3af', margin: '4px 0 0' }}>💡 Arrastra el pin o haz clic en el mapa para ajustar la ubicación exacta.</p>
+          {noCoverage && (
+            <div style={{ marginTop: 16, background: '#faf5ff', border: '1.5px solid #d8b4fe', borderRadius: 12, padding: '20px 18px', textAlign: 'center' }}>
+              <div style={{ fontSize: 36, marginBottom: 10 }}>🗺️</div>
+              <p style={{ fontSize: 15, fontWeight: 700, color: '#6d28d9', margin: '0 0 8px' }}>Aún no llegamos a tu zona</p>
+              <p style={{ fontSize: 14, color: '#7c3aed', margin: '0 0 12px', lineHeight: 1.6 }}>Por el momento no contamos con operadores disponibles en tu área, pero estamos creciendo rápidamente.</p>
+              <p style={{ fontSize: 12, color: '#a78bfa', margin: 0 }}>✅ Registramos tu ubicación para priorizar la expansión hacia tu zona.</p>
+            </div>
+          )}
+        </div>
 
         {/* STEP 3 */}
         {step === 3 && (
@@ -911,7 +978,6 @@ export default function BookingView({ onNavigate }) {
             <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 4, marginTop: 0 }}>¿Cuándo lo necesitas?</h3>
             <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Selecciona la fecha y te mostraremos los horarios disponibles.</p>
 
-            {/* Fecha */}
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 14, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>📅 Fecha *</label>
               <input type="date"
@@ -921,7 +987,6 @@ export default function BookingView({ onNavigate }) {
                 onChange={e => { setDate(e.target.value); setTimeFrom(''); setTimeTo(''); setAvailableSlots([]); setNoSlotsAvailable(false) }} />
             </div>
 
-            {/* Slots disponibles */}
             {date && (
               <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 14, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
@@ -929,7 +994,6 @@ export default function BookingView({ onNavigate }) {
                   {service && <span style={{ fontSize: 12, fontWeight: 400, color: '#6b7280', marginLeft: 6 }}>(servicio: {service.duration})</span>}
                 </label>
 
-                {/* Cargando slots */}
                 {loadingSlots && (
                   <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '16px', textAlign: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
@@ -939,7 +1003,6 @@ export default function BookingView({ onNavigate }) {
                   </div>
                 )}
 
-                {/* Sin horarios disponibles */}
                 {!loadingSlots && noSlotsAvailable && (
                   <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, padding: '20px 18px', textAlign: 'center' }}>
                     <div style={{ fontSize: 36, marginBottom: 10 }}>😔</div>
@@ -954,7 +1017,6 @@ export default function BookingView({ onNavigate }) {
                   </div>
                 )}
 
-                {/* Horarios disponibles */}
                 {!loadingSlots && !noSlotsAvailable && availableSlots.length > 0 && (
                   <div>
                     <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
@@ -962,7 +1024,6 @@ export default function BookingView({ onNavigate }) {
                         ✅ <strong>{availableSlots.length} horario{availableSlots.length > 1 ? 's' : ''} disponible{availableSlots.length > 1 ? 's' : ''}</strong> para esta fecha. Selecciona tu ventana preferida.
                       </p>
                     </div>
-
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                       <div>
                         <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Desde *</label>
@@ -990,13 +1051,11 @@ export default function BookingView({ onNavigate }) {
                         </select>
                       </div>
                     </div>
-
                     {rangeError && (
                       <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 12px', marginTop: 10, fontSize: 13, color: '#dc2626' }}>
                         ⚠️ {rangeError}
                       </div>
                     )}
-
                     {timeFrom && timeTo && !rangeError && (
                       <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px', marginTop: 10, fontSize: 13, color: '#166534', display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span>✅</span>
@@ -1008,7 +1067,6 @@ export default function BookingView({ onNavigate }) {
               </div>
             )}
 
-            {/* Notas */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
               <label style={{ fontSize: 14, fontWeight: 500, color: '#374151' }}>Notas adicionales (opcional)</label>
               <textarea style={{ padding: '12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', height: 80, resize: 'vertical' }}
@@ -1018,7 +1076,7 @@ export default function BookingView({ onNavigate }) {
           </div>
         )}
 
-        {/* STEP 4 */}
+        {/* STEP 4 — Resumen + datos de contacto si es guest */}
         {step === 4 && (
           <div style={{ padding: isMobile ? '16px 12px' : 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937', marginBottom: 12, marginTop: 0 }}>Resumen de tu reservación</h3>
@@ -1034,6 +1092,63 @@ export default function BookingView({ onNavigate }) {
                 <span style={{ fontSize: 20, fontWeight: 700, color: '#1d4ed8' }}>${price} MXN</span>
               </div>
             </div>
+
+            {/* Pago en lugar — recordatorio */}
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px', marginTop: 12 }}>
+              <p style={{ fontSize: 13, color: '#166534', margin: 0, lineHeight: 1.5 }}>
+                💳 <strong>Sin pago anticipado</strong> — pagas en efectivo o transferencia el día del servicio.
+              </p>
+            </div>
+
+            {/* ── Datos de contacto para guest (solo si no hay sesión activa) ── */}
+            {!user && (
+              <div style={{ marginTop: 16, background: '#f8faff', border: '1.5px solid #bfdbfe', borderRadius: 12, padding: isMobile ? '16px 12px' : '20px' }}>
+                <h4 style={{ fontSize: 15, fontWeight: 700, color: '#1e40af', margin: '0 0 4px' }}>📋 Datos para tu reservación</h4>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Solo necesitamos esto para coordinarnos contigo. Sin contraseñas ni registro complicado.</p>
+
+                {/* Nombre */}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 14, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Nombre completo *</label>
+                  <input
+                    value={guestName}
+                    onChange={e => { setGuestName(e.target.value); setGuestErrors(p => ({ ...p, name: '' })) }}
+                    placeholder="Ej: Carlos Rodríguez"
+                    style={{ padding: '12px', borderRadius: 8, border: `1.5px solid ${guestErrors.name ? '#fca5a5' : '#e5e7eb'}`, fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 }}
+                  />
+                  {guestErrors.name && <p style={{ fontSize: 12, color: '#dc2626', margin: '4px 0 0' }}>{guestErrors.name}</p>}
+                </div>
+
+                {/* Teléfono */}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 14, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Teléfono WhatsApp *</label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: '#6b7280', fontWeight: 500 }}>+52</span>
+                    <input
+                      type="tel"
+                      value={guestPhone}
+                      onChange={e => { setGuestPhone(e.target.value.replace(/\D/g, '').slice(0, 10)); setGuestErrors(p => ({ ...p, phone: '' })) }}
+                      placeholder="55 1234 5678"
+                      style={{ padding: '12px 12px 12px 46px', borderRadius: 8, border: `1.5px solid ${guestErrors.phone ? '#fca5a5' : '#e5e7eb'}`, fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 }}
+                    />
+                  </div>
+                  {guestErrors.phone && <p style={{ fontSize: 12, color: '#dc2626', margin: '4px 0 0' }}>{guestErrors.phone}</p>}
+                  <p style={{ fontSize: 11, color: '#9ca3af', margin: '4px 0 0' }}>Te notificaremos cuando el operador acepte el servicio.</p>
+                </div>
+
+                {/* Correo (opcional) */}
+                <div style={{ marginBottom: 4 }}>
+                  <label style={{ fontSize: 14, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Correo electrónico <span style={{ fontWeight: 400, color: '#9ca3af' }}>(opcional)</span></label>
+                  <input
+                    type="email"
+                    value={guestEmail}
+                    onChange={e => { setGuestEmail(e.target.value); setGuestErrors(p => ({ ...p, email: '' })) }}
+                    placeholder="tu@correo.com"
+                    style={{ padding: '12px', borderRadius: 8, border: `1.5px solid ${guestErrors.email ? '#fca5a5' : '#e5e7eb'}`, fontSize: 16, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', color: '#1f2937', minHeight: 48 }}
+                  />
+                  {guestErrors.email && <p style={{ fontSize: 12, color: '#dc2626', margin: '4px 0 0' }}>{guestErrors.email}</p>}
+                </div>
+              </div>
+            )}
 
             <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginTop: 12 }}>
               <p style={{ fontSize: 13, color: '#92400e', margin: 0, lineHeight: 1.5 }}>
@@ -1071,9 +1186,9 @@ export default function BookingView({ onNavigate }) {
               </button>
             )
           ) : (
-            <button onClick={handleSubmit} disabled={loading}
-              style={{ background: loading ? '#9ca3af' : '#10b981', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 15, fontWeight: 600, flex: 1, minHeight: 52 }}>
-              {loading ? '⏳ Buscando operador...' : '✅ Confirmar reservación'}
+            <button onClick={handleSubmit} disabled={loading || creatingGuest}
+              style={{ background: loading || creatingGuest ? '#9ca3af' : '#10b981', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', cursor: 'pointer', fontSize: 15, fontWeight: 600, flex: 1, minHeight: 52 }}>
+              {creatingGuest ? '⏳ Procesando...' : loading ? '⏳ Buscando operador...' : '✅ Confirmar reservación'}
             </button>
           )}
         </div>
