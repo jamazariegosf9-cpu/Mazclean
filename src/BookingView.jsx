@@ -587,16 +587,72 @@ export default function BookingView({ onNavigate }) {
   }
 
   const updateGuestProfile = async (userId, fullName, phoneClean) => {
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    const profileData = {
-      id:         userId,
+    // Esperar 1.5s para que el trigger de Supabase cree el registro en profiles
+    await new Promise(resolve => setTimeout(resolve, 1500))
+
+    // Campos mínimos según schema real — sin is_guest (columna no existe)
+    const patchData = {
       full_name:  fullName,
       phone:      `+52${phoneClean}`,
       role:       'cliente',
-      is_guest:   true,
+      status:     'activo',
       updated_at: new Date().toISOString(),
     }
+
+    // Intentar PATCH primero (el trigger ya creó el perfil)
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey':        SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type':  'application/json',
+            'Prefer':        'return=minimal',
+          },
+          body: JSON.stringify(patchData),
+        })
+        if (res.ok) {
+          console.log('[Guest] PATCH perfil OK en intento', attempt + 1)
+          return
+        }
+        console.warn('[Guest] PATCH perfil status:', res.status, '(intento', attempt + 1, ')')
+        if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 800))
+      } catch (e) {
+        console.warn('[Guest] PATCH perfil error intento', attempt + 1, e.message)
+        if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 800))
+      }
+    }
+
+    // Fallback: INSERT con upsert si el trigger no creó el perfil
+    // Solo columnas NOT NULL o con defaults según schema
     try {
+      const insertData = {
+        id:               userId,
+        role:             'cliente',
+        full_name:        fullName,
+        phone:            `+52${phoneClean}`,
+        is_active:        true,
+        status:           'activo',
+        points:           0,
+        referral_code:    Math.random().toString(36).substring(2, 10).toUpperCase(),
+        commission_pct:   '15',
+        onboarding_step:  1,
+        onboarding_done:  false,
+        coverage_radius:  2,
+        requires_transport_verification: false,
+        assignment_mode:  'autonomo',
+        background_check_consent: false,
+        experience_years: 0,
+        membership_status: 'ninguna',
+        is_certified:     false,
+        total_ratings:    0,
+        operator_level:   'operador',
+        recent_addresses: '[]',
+        rejected_documents: '[]',
+        created_at:       new Date().toISOString(),
+        updated_at:       new Date().toISOString(),
+      }
       const resInsert = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
         method: 'POST',
         headers: {
@@ -605,25 +661,12 @@ export default function BookingView({ onNavigate }) {
           'Content-Type':  'application/json',
           'Prefer':        'resolution=merge-duplicates,return=minimal',
         },
-        body: JSON.stringify(profileData),
+        body: JSON.stringify(insertData),
       })
-      if (resInsert.ok || resInsert.status === 201 || resInsert.status === 409) {
-        console.log('[Guest] Perfil upserted OK')
-        return
-      }
-    } catch (e) { console.warn('[Guest] INSERT perfil error:', e.message) }
-    try {
-      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
-        method: 'PATCH',
-        headers: {
-          'apikey':        SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-          'Content-Type':  'application/json',
-          'Prefer':        'return=minimal',
-        },
-        body: JSON.stringify({ full_name: fullName, phone: `+52${phoneClean}`, role: 'cliente', updated_at: new Date().toISOString() }),
-      })
-    } catch (e) { console.warn('[Guest] PATCH perfil fallback error:', e.message) }
+      console.log('[Guest] INSERT fallback status:', resInsert.status)
+    } catch (e) {
+      console.warn('[Guest] INSERT fallback error:', e.message)
+    }
   }
 
   const canGoNext = () => {
