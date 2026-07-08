@@ -421,11 +421,14 @@ function AppInner() {
       try {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session?.user) return
-        const isGuest = session.user.email?.includes('@guestmazclean.com') ||
-                        session.user.email?.includes('@guest.mazclean') ||
-                        session.user.user_metadata?.is_guest === true
+        const u = session.user
+        const isGuest = u.is_anonymous === true ||
+                        u.email?.includes('@guestmazclean.com') ||
+                        u.email?.includes('@guest.mazclean') ||
+                        u.user_metadata?.is_guest === true ||
+                        u.app_metadata?.provider === 'anonymous'
         if (isGuest) {
-          console.log('[App] Sesión guest detectada al iniciar — limpiando')
+          console.log('[App] Sesión anónima/guest detectada al iniciar — limpiando')
           await supabase.auth.signOut({ scope: 'local' })
           localStorage.removeItem('mazclean-auth')
         }
@@ -534,9 +537,11 @@ function AppInner() {
   // Si hay usuario sin perfil, verificar si es guest (email temporal)
   // Los guests no tienen perfil en la tabla profiles y no deben bloquear la app
   const isGuestUser = user && !profile && (
+    user.is_anonymous === true ||
     user.email?.includes('@guestmazclean.com') ||
     user.email?.includes('@guest.mazclean') ||
-    user.user_metadata?.is_guest === true
+    user.user_metadata?.is_guest === true ||
+    user.app_metadata?.provider === 'anonymous'
   )
   if (loading) {
     return <div style={{ minHeight: '100vh', background: '#050A14' }} />
