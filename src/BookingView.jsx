@@ -587,7 +587,6 @@ export default function BookingView({ onNavigate }) {
   }
 
   const updateGuestProfile = async (userId, fullName, phoneClean) => {
-    // Esperar 1s para que Supabase procese el signup
     await new Promise(resolve => setTimeout(resolve, 1000))
     const profileData = {
       id:         userId,
@@ -597,7 +596,6 @@ export default function BookingView({ onNavigate }) {
       is_guest:   true,
       updated_at: new Date().toISOString(),
     }
-    // Intentar INSERT primero (upsert) — si el trigger no creó el perfil, lo creamos nosotros
     try {
       const resInsert = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
         method: 'POST',
@@ -613,9 +611,7 @@ export default function BookingView({ onNavigate }) {
         console.log('[Guest] Perfil upserted OK')
         return
       }
-      console.warn('[Guest] INSERT perfil status:', resInsert.status)
     } catch (e) { console.warn('[Guest] INSERT perfil error:', e.message) }
-    // Fallback: PATCH si el trigger ya lo creó
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
         method: 'PATCH',

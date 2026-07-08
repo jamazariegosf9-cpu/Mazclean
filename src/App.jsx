@@ -415,6 +415,25 @@ function AppInner() {
 
   useEffect(() => { Analytics.sessionStart() }, [])
 
+  // Limpiar sesión guest al iniciar — evita pantalla negra por guests previos
+  useEffect(() => {
+    const cleanGuestSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.user) return
+        const isGuest = session.user.email?.includes('@guestmazclean.com') ||
+                        session.user.email?.includes('@guest.mazclean') ||
+                        session.user.user_metadata?.is_guest === true
+        if (isGuest) {
+          console.log('[App] Sesión guest detectada al iniciar — limpiando')
+          await supabase.auth.signOut({ scope: 'local' })
+          localStorage.removeItem('mazclean-auth')
+        }
+      } catch (e) { console.warn('[App] cleanGuestSession:', e.message) }
+    }
+    cleanGuestSession()
+  }, [])
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
@@ -512,9 +531,18 @@ function AppInner() {
     )
   }
 
-  // Guest checkout: si hay usuario sin perfil y está en booking, no bloquear
-  const isGuestInBooking = user && !profile && view === 'booking'
-  if (loading || (user && !profile && !isGuestInBooking)) {
+  // Si hay usuario sin perfil, verificar si es guest (email temporal)
+  // Los guests no tienen perfil en la tabla profiles y no deben bloquear la app
+  const isGuestUser = user && !profile && (
+    user.email?.includes('@guestmazclean.com') ||
+    user.email?.includes('@guest.mazclean') ||
+    user.user_metadata?.is_guest === true
+  )
+  if (loading) {
+    return <div style={{ minHeight: '100vh', background: '#050A14' }} />
+  }
+  // Guest sin perfil: limpiar sesión y mostrar home limpio
+  if (user && !profile && !isGuestUser) {
     return <div style={{ minHeight: '100vh', background: '#050A14' }} />
   }
 
