@@ -340,7 +340,20 @@ function RoleSelector({ onOperator, onClient }) {
         </button>
       </div>
 
-      <p style={{ fontSize: 12, color: '#4a5568', margin: '12px 0 0', textAlign: 'center', flexShrink: 0 }}>
+      {/* Señales de confianza */}
+      <div style={{ display: 'flex', gap: 16, marginTop: 14, flexShrink: 0, justifyContent: 'center', flexWrap: 'wrap' }}>
+        {[
+          { icon: '💳', text: 'Sin pago anticipado' },
+          { icon: '✅', text: 'Operadores verificados' },
+          { icon: '⭐', text: 'Califica antes de pagar' },
+        ].map(({ icon, text }) => (
+          <div key={text} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#8CA0BF' }}>
+            <span>{icon}</span><span>{text}</span>
+          </div>
+        ))}
+      </div>
+
+      <p style={{ fontSize: 12, color: '#4a5568', margin: '10px 0 0', textAlign: 'center', flexShrink: 0 }}>
         ¿Ya tienes cuenta?{' '}
         <button onClick={onClient} style={{ background: 'none', border: 'none', color: '#00C8FF', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: 0, fontFamily: 'inherit' }}>
           Iniciar sesión

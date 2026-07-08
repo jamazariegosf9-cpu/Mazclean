@@ -130,6 +130,9 @@ export default function BookingView({ onNavigate }) {
   // Usuario efectivo: sesión real o guest creado
   const effectiveUser = user || guestUser
 
+  // ── Descuento 20% primer lavado ──────────────────────────────────────────────
+  const [isFirstBooking, setIsFirstBooking] = useState(null) // null=cargando, true/false
+
   // ── Cargar servicios desde DB ──────────────────────────────────────────────
   useEffect(() => {
     const fetchServices = async () => {
@@ -252,6 +255,12 @@ export default function BookingView({ onNavigate }) {
   }, [selectedService, vehicleType])
 
   const getService = () => services.find(s => s.id === selectedService)
+
+  const getDiscountedPrice = useCallback(() => {
+    const base = getPrice()
+    if (!base || !isFirstBooking) return null
+    return Math.round(base * 0.80)
+  }, [getPrice, isFirstBooking])
 
   useEffect(() => {
     loadGoogleMapsScript(GOOGLE_MAPS_API_KEY)
@@ -735,14 +744,14 @@ export default function BookingView({ onNavigate }) {
           scheduled_time_from: timeFrom,
           scheduled_time_to:   timeTo,
           base_price:          price,
-          discount_amount:     0,
-          total_price:         price,
+          discount_amount:     isFirstBooking ? Math.round(price * 0.20) : 0,
+          total_price:         isFirstBooking ? Math.round(price * 0.80) : price,
           payment_method:      'efectivo',
           payment_status:      'pendiente',
           status:              'pendiente',
           has_incident:        false,
           service_name:        service.name,
-          service_price:       price,
+          service_price:       isFirstBooking ? Math.round(price * 0.80) : price,
           vehicle_type:        vehicleType,
           vehicle_brand:       vehicleBrand,
           vehicle_color:       vehicleColor,
@@ -827,6 +836,37 @@ export default function BookingView({ onNavigate }) {
     if (inputRef.current) inputRef.current.value = ''
     setMapKey(k => k + 1)
   }
+
+  // ── Detectar si es el primer booking del usuario ────────────────────────────
+  useEffect(() => {
+    if (step !== 4) return
+    const checkFirstBooking = async () => {
+      try {
+        const uid = effectiveUser?.id
+        if (!uid) { setIsFirstBooking(true); return } // guest nuevo = primer booking
+        let token = SUPABASE_ANON_KEY
+        try {
+          const stored = localStorage.getItem('mazclean-auth')
+          if (stored) { const p = JSON.parse(stored); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY }
+          if (token === SUPABASE_ANON_KEY) {
+            const { data: sd } = await supabase.auth.getSession()
+            if (sd?.session?.access_token) token = sd.session.access_token
+          }
+        } catch {}
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/bookings?client_id=eq.${uid}&status=not.in.(cancelado)&select=id&limit=1`,
+          { headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY } }
+        )
+        if (res.ok) {
+          const rows = await res.json()
+          setIsFirstBooking(rows.length === 0)
+        } else {
+          setIsFirstBooking(false)
+        }
+      } catch { setIsFirstBooking(false) }
+    }
+    checkFirstBooking()
+  }, [step, effectiveUser?.id])
 
   // ── Draft en sessionStorage ──────────────────────────────────────────────────
   useEffect(() => {
@@ -1147,9 +1187,19 @@ export default function BookingView({ onNavigate }) {
               <SummaryRow icon="📅"                  label="Fecha"     value={date} />
               <SummaryRow icon="🕐"                  label="Horario solicitado" value={`${timeFrom} — ${timeTo} hrs`} sub="El operador confirmará la hora exacta" />
               {notes && <SummaryRow icon="📝"        label="Notas"     value={notes} />}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#eff6ff', fontWeight: 600, fontSize: 15, color: '#1e40af' }}>
-                <span>Total a pagar</span>
-                <span style={{ fontSize: 20, fontWeight: 700, color: '#1d4ed8' }}>${price} MXN</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: isFirstBooking ? '#f0fdf4' : '#eff6ff', fontWeight: 600, fontSize: 15, color: isFirstBooking ? '#065f46' : '#1e40af' }}>
+                <div>
+                  <div>{isFirstBooking ? '🎉 Primer lavado' : 'Total a pagar'}</div>
+                  {isFirstBooking && <div style={{ fontSize: 11, fontWeight: 400, color: '#059669', marginTop: 2 }}>20% de descuento aplicado</div>}
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  {isFirstBooking && (
+                    <div style={{ fontSize: 13, color: '#9ca3af', textDecoration: 'line-through', marginBottom: 2 }}>${price} MXN</div>
+                  )}
+                  <span style={{ fontSize: 20, fontWeight: 700, color: isFirstBooking ? '#059669' : '#1d4ed8' }}>
+                    ${isFirstBooking ? getDiscountedPrice() : price} MXN
+                  </span>
+                </div>
               </div>
             </div>
 

@@ -519,13 +519,18 @@ export default function ClientView() {
     try {
       // fetch directo — evita lock de supabase client en móvil
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/bookings?client_id=eq.${user.id}&order=created_at.desc&select=*`,
+        `${SUPABASE_URL}/rest/v1/bookings?client_id=eq.${user.id}&order=created_at.desc&select=*,operator:operator_id(full_name,selfie_with_id_url)`,
         { headers: { 'Authorization': `Bearer ${getToken()}`, 'apikey': SUPABASE_ANON_KEY } }
       )
       clearTimeout(timeoutId)
       if (timedOut) return
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const result = await res.json()
+      const raw = await res.json()
+      const result = raw.map(b => ({
+        ...b,
+        operator_name:  b.operator?.full_name         || null,
+        operator_photo: b.operator?.selfie_with_id_url || null,
+      }))
       bookingsCache.current = result
       setBookings(result)
       const active = result.find(b =>
@@ -875,6 +880,21 @@ export default function ClientView() {
             )}
           </>
         )}
+
+        {/* ── GARANTÍA MAZ CLEAN ── */}
+        <div style={{ marginBottom: 16, marginTop: 8, background: 'linear-gradient(135deg,#f0fdf4,#dcfce7)', border: '1.5px solid #bbf7d0', borderRadius: 12, padding: '14px 16px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#065f46', marginBottom: 8 }}>🛡️ Tu garantía MAZ CLEAN</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {[
+              '✅ No pagas hasta ver el trabajo terminado',
+              '⭐ Califica el servicio antes de pagar',
+              '🔍 Operadores verificados con INE y certificación',
+              '💬 Soporte vía WhatsApp si algo no está bien',
+            ].map(item => (
+              <div key={item} style={{ fontSize: 12, color: '#166534' }}>{item}</div>
+            ))}
+          </div>
+        </div>
 
         {/* ── SEGURIDAD DE CUENTA ── */}
         <div style={{ marginTop: 16, borderTop: '1.5px solid #f3f4f6', paddingTop: 16 }}>
@@ -1363,6 +1383,21 @@ function BookingCard({ booking, onRate, onChat, chatUnread }) {
         <span>📅 {booking.scheduled_date} · {booking.scheduled_time_from?.slice(0,5) ?? booking.scheduled_time} hrs</span>
         <span>💰 ${booking.total_price || booking.service_price} MXN</span>
       </div>
+      {/* Operador asignado — foto y nombre */}
+      {booking.operator_id && booking.operator_name && (
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, background: '#f0fdf4', borderRadius: 10, padding: '10px 12px', border: '1px solid #bbf7d0' }}>
+          {booking.operator_photo ? (
+            <img src={booking.operator_photo} alt={booking.operator_name}
+              style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', border: '2px solid #10b981', flexShrink: 0 }} />
+          ) : (
+            <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#10b981,#059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>🧑‍🔧</div>
+          )}
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#065f46' }}>Tu operador: {booking.operator_name}</div>
+            <div style={{ fontSize: 11, color: '#059669', marginTop: 1 }}>✅ Verificado · Certificado MAZ CLEAN</div>
+          </div>
+        </div>
+      )}
       {hasRated && (
         <div style={{ marginTop: 10, padding: '8px 12px', background: '#fefce8', borderRadius: 8, border: '1px solid #fde68a', display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 14 }}>{'⭐'.repeat(booking.client_rating)}</span>
