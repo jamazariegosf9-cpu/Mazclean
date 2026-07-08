@@ -512,7 +512,9 @@ function AppInner() {
     )
   }
 
-  if (loading || (user && !profile)) {
+  // Guest checkout: si hay usuario sin perfil y está en booking, no bloquear
+  const isGuestInBooking = user && !profile && view === 'booking'
+  if (loading || (user && !profile && !isGuestInBooking)) {
     return <div style={{ minHeight: '100vh', background: '#050A14' }} />
   }
 

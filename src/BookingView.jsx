@@ -587,29 +587,47 @@ export default function BookingView({ onNavigate }) {
   }
 
   const updateGuestProfile = async (userId, fullName, phoneClean) => {
-    // Esperar 1.5s para que Supabase cree el trigger del perfil
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
-          method: 'PATCH',
-          headers: {
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=minimal',
-          },
-          body: JSON.stringify({
-            full_name:  fullName,
-            phone:      `+52${phoneClean}`,
-            role:       'cliente',
-            updated_at: new Date().toISOString(),
-          }),
-        })
-        if (res.ok || res.status === 406) break
-        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 800))
-      } catch (e) { console.warn('updateGuestProfile intento', attempt, e.message) }
+    // Esperar 1s para que Supabase procese el signup
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    const profileData = {
+      id:         userId,
+      full_name:  fullName,
+      phone:      `+52${phoneClean}`,
+      role:       'cliente',
+      is_guest:   true,
+      updated_at: new Date().toISOString(),
     }
+    // Intentar INSERT primero (upsert) — si el trigger no creó el perfil, lo creamos nosotros
+    try {
+      const resInsert = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
+        method: 'POST',
+        headers: {
+          'apikey':        SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type':  'application/json',
+          'Prefer':        'resolution=merge-duplicates,return=minimal',
+        },
+        body: JSON.stringify(profileData),
+      })
+      if (resInsert.ok || resInsert.status === 201 || resInsert.status === 409) {
+        console.log('[Guest] Perfil upserted OK')
+        return
+      }
+      console.warn('[Guest] INSERT perfil status:', resInsert.status)
+    } catch (e) { console.warn('[Guest] INSERT perfil error:', e.message) }
+    // Fallback: PATCH si el trigger ya lo creó
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey':        SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type':  'application/json',
+          'Prefer':        'return=minimal',
+        },
+        body: JSON.stringify({ full_name: fullName, phone: `+52${phoneClean}`, role: 'cliente', updated_at: new Date().toISOString() }),
+      })
+    } catch (e) { console.warn('[Guest] PATCH perfil fallback error:', e.message) }
   }
 
   const canGoNext = () => {
