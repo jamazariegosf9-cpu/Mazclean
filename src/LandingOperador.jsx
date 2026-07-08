@@ -29,9 +29,9 @@ export default function LandingOperador({ onRegister }) {
   }, [])
 
   const benefits = [
-    '🧴 Kit completo de materiales financiado',
-    '📅 Membresía GRATIS mayo y junio',
-    '🚗 Mínimo 3 servicios/semana garantizados',
+    '🧴 Kit completo de materiales financiado sin anticipo',
+    '📅 Membresía GRATIS julio y agosto 2026',
+    '💰 Te quedas con el 90–93% de cada servicio',
   ]
 
   if (isMobile) {
@@ -65,7 +65,7 @@ export default function LandingOperador({ onRegister }) {
             fontSize: 11, fontWeight: 800,
             boxShadow: '0 2px 8px rgba(0,180,216,0.4)',
           }}>
-            ⚡ Solo primeros 15 — Kit financiado
+            ⚡ Solo primeros 15 — Kit financiado + Membresía GRATIS jul-ago
           </div>
         </div>
 
@@ -117,13 +117,13 @@ export default function LandingOperador({ onRegister }) {
           }}>
             <div>
               <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Por servicio</div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: '#60a5fa' }}>$150–$300</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#60a5fa' }}>$98–$185</div>
             </div>
             <div style={{ width: 1, height: 32, background: 'rgba(59,130,246,0.3)' }} />
             <div>
               <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Semanal estimado</div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: '#60a5fa' }}>$4,000–$8,000</div>
-              <div style={{ fontSize: 9, color: '#10b981', marginTop: 2 }}>Kit financiado sin anticipo ✓</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#60a5fa' }}>$1,500–$3,000</div>
+              <div style={{ fontSize: 9, color: '#10b981', marginTop: 2 }}>90–93% del servicio para ti ✓</div>
             </div>
           </div>
 
@@ -217,15 +217,15 @@ export default function LandingOperador({ onRegister }) {
           boxShadow: '0 4px 14px rgba(0,180,216,0.35)',
           gap: 8, alignItems: 'center',
         }}>
-          ⚡ Solo primeros 15 — Kit financiado + Membresía GRATIS mayo-junio
+          ⚡ Solo primeros 15 — Kit financiado + Membresía GRATIS jul-ago + Membresía GRATIS mayo-junio
         </div>
 
         {/* Beneficios */}
         <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {[
             'Kit completo de materiales financiado — sin anticipo inicial',
-            'Membresía GRATIS durante mayo y junio 2026',
-            'Mínimo 3 servicios por semana garantizados las primeras 4 semanas',
+            'Membresía GRATIS durante julio y agosto 2026',
+            'Te quedas con el 90–93% de cada servicio realizado',
             'Tú cobras directo al cliente — efectivo o transferencia',
             'Certificación profesional gratis desde tu celular',
           ].map((b, i) => (
@@ -250,13 +250,13 @@ export default function LandingOperador({ onRegister }) {
         }}>
           <div>
             <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', marginBottom: 2 }}>Por servicio</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: '#60a5fa' }}>$150–$300 MXN</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#60a5fa' }}>$98–$185 MXN</div>
           </div>
           <div style={{ width: 1, height: 40, background: 'rgba(59,130,246,0.3)' }} />
           <div>
-            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', marginBottom: 2 }}>Semanal (4–6 servicios/día)</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: '#60a5fa' }}>$4,000–$8,000 MXN</div>
-            <div style={{ fontSize: 11, color: '#10b981', marginTop: 2 }}>Kit financiado sin anticipo ✓</div>
+            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', marginBottom: 2 }}>Semanal estimado (3–4 servicios/día)</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#60a5fa' }}>$1,500–$3,000 MXN</div>
+            <div style={{ fontSize: 11, color: '#10b981', marginTop: 2 }}>90–93% del servicio para ti ✓</div>
           </div>
         </div>
 
