@@ -217,7 +217,7 @@ export default function LandingOperador({ onRegister }) {
           boxShadow: '0 4px 14px rgba(0,180,216,0.35)',
           gap: 8, alignItems: 'center',
         }}>
-          ⚡ Solo primeros 15 — Kit financiado + Membresía GRATIS jul-ago + Membresía GRATIS mayo-junio
+          ⚡ Solo primeros 15 — Kit financiado + Membresía GRATIS jul-ago
         </div>
 
         {/* Beneficios */}
