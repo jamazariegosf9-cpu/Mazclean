@@ -526,53 +526,24 @@ export default function BookingView({ onNavigate }) {
     return Object.keys(errs).length === 0
   }
 
-  // ── Crear cuenta guest en Supabase silenciosamente ───────────────────────────
+  // ── Crear sesión anónima para guest — sin email, sin rate limit ─────────────
   const createGuestAccount = async () => {
     if (!validateGuestData()) return null
     setCreatingGuest(true)
     try {
       const phoneClean = guestPhone.replace(/\D/g, '').slice(-10)
-      const email    = guestEmail.trim() || generateGuestEmail(phoneClean)
-      const password = generateGuestPassword()
-      const fullName = guestName.trim()
+      const fullName   = guestName.trim()
 
-      // 1. Crear usuario en Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-            phone:     `+52${phoneClean}`,
-            role:      'cliente',
-            is_guest:  true,
-          }
-        }
-      })
+      // Usar signInAnonymously — no envía emails, no tiene rate limit de 2/hora
+      const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously()
+      if (anonError) throw anonError
 
-      if (authError) {
-        // Si el email ya existe (guest previo), intentar con email único
-        if (authError.message?.includes('already registered')) {
-          const uniqueEmail = generateGuestEmail(phoneClean)
-          const { data: retryData, error: retryError } = await supabase.auth.signUp({
-            email: uniqueEmail,
-            password,
-            options: { data: { full_name: fullName, phone: `+52${phoneClean}`, role: 'cliente', is_guest: true } }
-          })
-          if (retryError) throw retryError
-          const newUser = retryData?.user
-          if (!newUser) throw new Error('No se pudo crear la cuenta')
-          await updateGuestProfile(newUser.id, fullName, phoneClean)
-          setGuestUser(newUser)
-          return newUser
-        }
-        throw authError
-      }
+      const newUser = anonData?.user
+      if (!newUser) throw new Error('No se pudo crear la sesión anónima')
 
-      const newUser = authData?.user
-      if (!newUser) throw new Error('No se pudo crear la cuenta')
+      console.log('[Guest] Sesión anónima creada:', newUser.id)
 
-      // 2. Actualizar perfil con nombre y teléfono
+      // Crear perfil con nombre y teléfono usando el token de la sesión anónima
       await updateGuestProfile(newUser.id, fullName, phoneClean)
       setGuestUser(newUser)
       return newUser
@@ -587,7 +558,13 @@ export default function BookingView({ onNavigate }) {
   }
 
   const updateGuestProfile = async (userId, fullName, phoneClean) => {
-    await new Promise(resolve => setTimeout(resolve, 1500))
+    // Obtener token de la sesión anónima activa
+    let anonToken = SUPABASE_ANON_KEY
+    try {
+      const { data: sd } = await supabase.auth.getSession()
+      if (sd?.session?.access_token) anonToken = sd.session.access_token
+    } catch (e) { console.warn('[Guest] getSession para perfil:', e.message) }
+
     const patchData = {
       full_name:  fullName,
       phone:      `+52${phoneClean}`,
@@ -601,7 +578,7 @@ export default function BookingView({ onNavigate }) {
           method: 'PATCH',
           headers: {
             'apikey':        SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Authorization': `Bearer ${anonToken}`,
             'Content-Type':  'application/json',
             'Prefer':        'return=minimal',
           },
