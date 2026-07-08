@@ -526,24 +526,53 @@ export default function BookingView({ onNavigate }) {
     return Object.keys(errs).length === 0
   }
 
-  // ── Crear sesión anónima para guest — sin email, sin rate limit ─────────────
+  // ── Crear cuenta guest en Supabase silenciosamente ───────────────────────────
   const createGuestAccount = async () => {
     if (!validateGuestData()) return null
     setCreatingGuest(true)
     try {
       const phoneClean = guestPhone.replace(/\D/g, '').slice(-10)
-      const fullName   = guestName.trim()
+      const email    = guestEmail.trim() || generateGuestEmail(phoneClean)
+      const password = generateGuestPassword()
+      const fullName = guestName.trim()
 
-      // Usar signInAnonymously — no envía emails, no tiene rate limit de 2/hora
-      const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously()
-      if (anonError) throw anonError
+      // 1. Crear usuario en Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            phone:     `+52${phoneClean}`,
+            role:      'cliente',
+            is_guest:  true,
+          }
+        }
+      })
 
-      const newUser = anonData?.user
-      if (!newUser) throw new Error('No se pudo crear la sesión anónima')
+      if (authError) {
+        // Si el email ya existe (guest previo), intentar con email único
+        if (authError.message?.includes('already registered')) {
+          const uniqueEmail = generateGuestEmail(phoneClean)
+          const { data: retryData, error: retryError } = await supabase.auth.signUp({
+            email: uniqueEmail,
+            password,
+            options: { data: { full_name: fullName, phone: `+52${phoneClean}`, role: 'cliente', is_guest: true } }
+          })
+          if (retryError) throw retryError
+          const newUser = retryData?.user
+          if (!newUser) throw new Error('No se pudo crear la cuenta')
+          await updateGuestProfile(newUser.id, fullName, phoneClean)
+          setGuestUser(newUser)
+          return newUser
+        }
+        throw authError
+      }
 
-      console.log('[Guest] Sesión anónima creada:', newUser.id)
+      const newUser = authData?.user
+      if (!newUser) throw new Error('No se pudo crear la cuenta')
 
-      // Crear perfil con nombre y teléfono usando el token de la sesión anónima
+      // 2. Actualizar perfil con nombre y teléfono
       await updateGuestProfile(newUser.id, fullName, phoneClean)
       setGuestUser(newUser)
       return newUser
@@ -558,81 +587,71 @@ export default function BookingView({ onNavigate }) {
   }
 
   const updateGuestProfile = async (userId, fullName, phoneClean) => {
-    // Obtener token de la sesión anónima activa
+    // Obtener token de la sesión anónima — es el único con permisos para escribir en profiles
     let anonToken = SUPABASE_ANON_KEY
     try {
       const { data: sd } = await supabase.auth.getSession()
-      if (sd?.session?.access_token) anonToken = sd.session.access_token
-    } catch (e) { console.warn('[Guest] getSession para perfil:', e.message) }
+      if (sd?.session?.access_token) {
+        anonToken = sd.session.access_token
+        console.log('[Guest] Token de sesión anónima obtenido para perfil')
+      }
+    } catch (e) { console.warn('[Guest] getSession:', e.message) }
 
-    const patchData = {
-      full_name:  fullName,
-      phone:      `+52${phoneClean}`,
-      role:       'cliente',
-      status:     'activo',
-      updated_at: new Date().toISOString(),
+    // INSERT con upsert — crea el perfil si no existe, lo actualiza si existe
+    // PATCH devuelve 200 aunque no haya filas — no es confiable para verificar creación
+    const insertData = {
+      id:               userId,
+      role:             'cliente',
+      full_name:        fullName,
+      phone:            `+52${phoneClean}`,
+      is_active:        true,
+      status:           'activo',
+      points:           0,
+      referral_code:    Math.random().toString(36).substring(2, 10).toUpperCase(),
+      commission_pct:   '15',
+      onboarding_step:  1,
+      onboarding_done:  false,
+      coverage_radius:  2,
+      requires_transport_verification: false,
+      assignment_mode:  'autonomo',
+      background_check_consent: false,
+      experience_years: 0,
+      membership_status: 'ninguna',
+      is_certified:     false,
+      total_ratings:    0,
+      operator_level:   'operador',
+      recent_addresses: '[]',
+      rejected_documents: '[]',
+      created_at:       new Date().toISOString(),
+      updated_at:       new Date().toISOString(),
     }
-    for (let attempt = 0; attempt < 4; attempt++) {
+
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
-          method: 'PATCH',
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
+          method: 'POST',
           headers: {
             'apikey':        SUPABASE_ANON_KEY,
             'Authorization': `Bearer ${anonToken}`,
             'Content-Type':  'application/json',
-            'Prefer':        'return=minimal',
+            'Prefer':        'resolution=merge-duplicates,return=minimal',
           },
-          body: JSON.stringify(patchData),
+          body: JSON.stringify(insertData),
         })
-        if (res.ok) {
-          console.log('[Guest] PATCH perfil OK en intento', attempt + 1)
+        const status = res.status
+        console.log('[Guest] INSERT perfil status:', status, '(intento', attempt + 1, ')')
+        if (res.ok || status === 201) {
+          console.log('[Guest] Perfil creado/actualizado OK')
           return
         }
-        if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 800))
+        const body = await res.text().catch(() => '')
+        console.warn('[Guest] INSERT perfil body:', body)
+        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 800))
       } catch (e) {
-        if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 800))
+        console.warn('[Guest] INSERT perfil error intento', attempt + 1, e.message)
+        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 800))
       }
     }
-    // Fallback INSERT con campos reales del schema
-    try {
-      const insertData = {
-        id:               userId,
-        role:             'cliente',
-        full_name:        fullName,
-        phone:            `+52${phoneClean}`,
-        is_active:        true,
-        status:           'activo',
-        points:           0,
-        referral_code:    Math.random().toString(36).substring(2, 10).toUpperCase(),
-        commission_pct:   '15',
-        onboarding_step:  1,
-        onboarding_done:  false,
-        coverage_radius:  2,
-        requires_transport_verification: false,
-        assignment_mode:  'autonomo',
-        background_check_consent: false,
-        experience_years: 0,
-        membership_status: 'ninguna',
-        is_certified:     false,
-        total_ratings:    0,
-        operator_level:   'operador',
-        recent_addresses: '[]',
-        rejected_documents: '[]',
-        created_at:       new Date().toISOString(),
-        updated_at:       new Date().toISOString(),
-      }
-      await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
-        method: 'POST',
-        headers: {
-          'apikey':        SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-          'Content-Type':  'application/json',
-          'Prefer':        'resolution=merge-duplicates,return=minimal',
-        },
-        body: JSON.stringify(insertData),
-      })
-      console.log('[Guest] INSERT fallback perfil OK')
-    } catch (e) { console.warn('[Guest] INSERT fallback error:', e.message) }
   }
 
   const canGoNext = () => {
