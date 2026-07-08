@@ -587,10 +587,7 @@ export default function BookingView({ onNavigate }) {
   }
 
   const updateGuestProfile = async (userId, fullName, phoneClean) => {
-    // Esperar 1.5s para que el trigger de Supabase cree el registro en profiles
     await new Promise(resolve => setTimeout(resolve, 1500))
-
-    // Campos mínimos según schema real — sin is_guest (columna no existe)
     const patchData = {
       full_name:  fullName,
       phone:      `+52${phoneClean}`,
@@ -598,8 +595,6 @@ export default function BookingView({ onNavigate }) {
       status:     'activo',
       updated_at: new Date().toISOString(),
     }
-
-    // Intentar PATCH primero (el trigger ya creó el perfil)
     for (let attempt = 0; attempt < 4; attempt++) {
       try {
         const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
@@ -616,16 +611,12 @@ export default function BookingView({ onNavigate }) {
           console.log('[Guest] PATCH perfil OK en intento', attempt + 1)
           return
         }
-        console.warn('[Guest] PATCH perfil status:', res.status, '(intento', attempt + 1, ')')
         if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 800))
       } catch (e) {
-        console.warn('[Guest] PATCH perfil error intento', attempt + 1, e.message)
         if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 800))
       }
     }
-
-    // Fallback: INSERT con upsert si el trigger no creó el perfil
-    // Solo columnas NOT NULL o con defaults según schema
+    // Fallback INSERT con campos reales del schema
     try {
       const insertData = {
         id:               userId,
@@ -653,7 +644,7 @@ export default function BookingView({ onNavigate }) {
         created_at:       new Date().toISOString(),
         updated_at:       new Date().toISOString(),
       }
-      const resInsert = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
+      await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
         method: 'POST',
         headers: {
           'apikey':        SUPABASE_ANON_KEY,
@@ -663,10 +654,8 @@ export default function BookingView({ onNavigate }) {
         },
         body: JSON.stringify(insertData),
       })
-      console.log('[Guest] INSERT fallback status:', resInsert.status)
-    } catch (e) {
-      console.warn('[Guest] INSERT fallback error:', e.message)
-    }
+      console.log('[Guest] INSERT fallback perfil OK')
+    } catch (e) { console.warn('[Guest] INSERT fallback error:', e.message) }
   }
 
   const canGoNext = () => {
@@ -709,6 +698,9 @@ export default function BookingView({ onNavigate }) {
       const bookingRef = generateRef()
 
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+      // Para guests: obtener token desde sesión activa de Supabase
+      // Para usuarios normales: leer desde localStorage('mazclean-auth')
       let token = supabaseKey
       try {
         const stored = localStorage.getItem('mazclean-auth')
@@ -716,7 +708,15 @@ export default function BookingView({ onNavigate }) {
           const parsed = JSON.parse(stored)
           token = parsed?.access_token || parsed?.session?.access_token || supabaseKey
         }
-      } catch {}
+        // Si sigue siendo el anon key (guest o sin localStorage), obtener de sesión activa
+        if (token === supabaseKey) {
+          const { data: sessionData } = await supabase.auth.getSession()
+          if (sessionData?.session?.access_token) {
+            token = sessionData.session.access_token
+            console.log('[Guest] Token obtenido desde sesión activa de Supabase')
+          }
+        }
+      } catch (e) { console.warn('[Token]', e.message) }
 
       const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/bookings`, {
         method: 'POST',
