@@ -783,12 +783,36 @@ const AdminViewB = ({
         updatePayload = { ...updatePayload, operator_status: 'rechazado', onboarding_done: false, onboarding_step: 1, rejected_documents: [], rejection_reason: rejectionReason.trim() };
       }
 
-      const { error } = await supabase
-        .from('profiles')
-        .update(updatePayload)
-        .eq('id', reviewingOp.id)
-        .abortSignal(abortController.signal);
-      if (error) throw error;
+      // Fetch directo con token de localStorage — el mismo patrón que ya usan
+      // fetchZoneRequests/handleZoneRequest en este archivo y que funciona de
+      // forma confiable. El cliente supabase-js (.from().update()) resuelve la
+      // sesión internamente antes de armar la petición, y es justo ahí donde
+      // se colgaba — sin generar ningún request de red visible (2026-07-13).
+      let token = SUPABASE_ANON_KEY;
+      try {
+        const stored = localStorage.getItem('mazclean-auth');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY;
+        }
+      } catch {}
+
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${reviewingOp.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'apikey': SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify(updatePayload),
+        signal: abortController.signal,
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody?.message || `Error HTTP ${res.status} al guardar la revisión`);
+      }
 
       const phone = reviewingOp?.phone;
       if (phone) {
