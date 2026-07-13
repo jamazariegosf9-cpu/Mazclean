@@ -852,36 +852,115 @@ const AdminViewB = ({
   const handleDeleteOperator = async () => {
     if (!deleteModal) return;
     setDeletingOp(true);
+
+    // Fetch directo con token de localStorage (mismo patrón ya probado en
+    // submitReview) + timeout de seguridad real, que esta función no tenía
+    // antes — si el cliente supabase-js se cuelga aquí, el admin se quedaba
+    // con "Eliminando..." congelado sin salida (2026-07-13).
+    let token = SUPABASE_ANON_KEY;
+    try {
+      const stored = localStorage.getItem('mazclean-auth');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY;
+      }
+    } catch {}
+    const headers = {
+      'Authorization': `Bearer ${token}`,
+      'apikey':        SUPABASE_ANON_KEY,
+      'Content-Type':  'application/json',
+      'Prefer':        'return=minimal',
+    };
+
+    const abortController = new AbortController();
+    const safetyTimer = setTimeout(() => {
+      abortController.abort();
+      setDeletingOp(false);
+      showToast('La operación tardó demasiado. Verifica tu conexión y vuelve a intentarlo.', 'error');
+    }, 15000);
+
     try {
       if (deleteMode === 'deactivate') {
-        const { error } = await supabase.from('profiles').update({ status: 'desactivado', operator_status: 'rechazado', updated_at: new Date().toISOString() }).eq('id', deleteModal.id);
-        if (error) throw error;
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${deleteModal.id}`, {
+          method: 'PATCH', headers, signal: abortController.signal,
+          body: JSON.stringify({ status: 'desactivado', operator_status: 'rechazado', updated_at: new Date().toISOString() }),
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody?.message || `Error HTTP ${res.status} al desactivar`);
+        }
         setOperators(prev => prev.map(o => o.id === deleteModal.id ? { ...o, status: 'desactivado', operator_status: 'rechazado' } : o));
         setPendingOperators(prev => prev.filter(o => o.id !== deleteModal.id));
       } else {
         // Eliminación permanente — primero eliminar de auth.users (cascadea profiles por FK)
-        const { error } = await supabase.rpc('delete_operator', { p_operator_id: deleteModal.id });
-        if (error) {
+        const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/delete_operator`, {
+          method: 'POST', headers, signal: abortController.signal,
+          body: JSON.stringify({ p_operator_id: deleteModal.id }),
+        });
+        if (!rpcRes.ok) {
           // Fallback: solo desactivar si no existe la función RPC
-          await supabase.from('profiles').update({ status: 'desactivado', operator_status: 'rechazado', updated_at: new Date().toISOString() }).eq('id', deleteModal.id);
+          await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${deleteModal.id}`, {
+            method: 'PATCH', headers, signal: abortController.signal,
+            body: JSON.stringify({ status: 'desactivado', operator_status: 'rechazado', updated_at: new Date().toISOString() }),
+          });
         }
         setOperators(prev => prev.filter(o => o.id !== deleteModal.id));
         setPendingOperators(prev => prev.filter(o => o.id !== deleteModal.id));
       }
       setDeleteModal(null);
-    } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
-    finally { setDeletingOp(false); }
+    } catch (err) {
+      if (abortController.signal.aborted) return;
+      showToast(`Error: ${err.message}`, 'error');
+    } finally {
+      clearTimeout(safetyTimer);
+      setDeletingOp(false);
+    }
   };
 
   // ── Otros handlers ────────────────────────────────────────────────────────
   const updateOperatorStatus = async (opId, newStatus) => {
     setUpdatingOpStatus(opId);
+
+    let token = SUPABASE_ANON_KEY;
     try {
-      const { error } = await supabase.from('profiles').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', opId);
-      if (error) throw error;
+      const stored = localStorage.getItem('mazclean-auth');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        token = parsed?.access_token || parsed?.session?.access_token || SUPABASE_ANON_KEY;
+      }
+    } catch {}
+
+    const abortController = new AbortController();
+    const safetyTimer = setTimeout(() => {
+      abortController.abort();
+      setUpdatingOpStatus(null);
+      showToast('La operación tardó demasiado. Verifica tu conexión y vuelve a intentarlo.', 'error');
+    }, 15000);
+
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${opId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'apikey':        SUPABASE_ANON_KEY,
+          'Content-Type':  'application/json',
+          'Prefer':        'return=minimal',
+        },
+        body: JSON.stringify({ status: newStatus, updated_at: new Date().toISOString() }),
+        signal: abortController.signal,
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody?.message || `Error HTTP ${res.status} al actualizar estado`);
+      }
       setOperators(prev => prev.map(o => o.id === opId ? { ...o, status: newStatus } : o));
-    } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
-    finally { setUpdatingOpStatus(null); }
+    } catch (err) {
+      if (abortController.signal.aborted) return;
+      showToast(`Error: ${err.message}`, 'error');
+    } finally {
+      clearTimeout(safetyTimer);
+      setUpdatingOpStatus(null);
+    }
   };
 
   const toggleAssignmentMode = async (op) => {
