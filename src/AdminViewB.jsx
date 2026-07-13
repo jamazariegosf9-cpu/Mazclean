@@ -10,6 +10,7 @@ import { AlertTriangle, Star } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { sendWhatsApp } from './lib/whatsapp';
 import { useToast } from './App';
+import { useAuth } from './context/AuthContext';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -294,6 +295,7 @@ const AdminViewB = ({
   fetchData,
 }) => {
   const { showToast } = useToast();
+  const { user: currentAdmin } = useAuth();
   const [incidentsHistory, setIncidentsHistory] = useState([]);
   const [operatorHistory, setOperatorHistory]   = useState(null);
   const [historyFilter, setHistoryFilter]       = useState({ from: '', to: '' });
@@ -755,21 +757,21 @@ const AdminViewB = ({
     if (reviewAction === 'reject' && !rejectionReason.trim()) { setReviewError('El motivo de rechazo es obligatorio.'); return; }
     setSavingReview(true); setReviewError('');
 
-    // Timeout de seguridad — libera el botón si algo cuelga más de 15 segundos
+    // AbortController real — si la operación tarda demasiado, cancelamos la petición de verdad.
+    // Antes el timeout solo reseteaba la UI mientras la petición seguía viva en segundo plano,
+    // lo que podía causar guardados duplicados si el admin reintentaba.
+    const abortController = new AbortController();
     const safetyTimer = setTimeout(() => {
+      abortController.abort();
       setSavingReview(false);
       setReviewError('La operación tardó demasiado. Verifica tu conexión y vuelve a intentarlo.');
     }, 15000);
 
     try {
-      // Obtener admin con timeout explícito
-      let adminUserId = null;
-      try {
-        const { data: { user: adminUser } } = await supabase.auth.getUser();
-        adminUserId = adminUser?.id || null;
-      } catch (authErr) {
-        console.warn('No se pudo obtener usuario admin:', authErr.message);
-      }
+      // Admin actual — ya disponible en AuthContext (en memoria, sin llamada de red).
+      // Antes se llamaba a supabase.auth.getUser() aquí, la cual podía colgarse
+      // indefinidamente sin generar ninguna petición de red visible (diagnóstico 2026-07-13).
+      const adminUserId = currentAdmin?.id || null;
 
       let updatePayload = { reviewed_at: new Date().toISOString(), reviewed_by: adminUserId };
       if (reviewAction === 'approve') {
@@ -781,7 +783,11 @@ const AdminViewB = ({
         updatePayload = { ...updatePayload, operator_status: 'rechazado', onboarding_done: false, onboarding_step: 1, rejected_documents: [], rejection_reason: rejectionReason.trim() };
       }
 
-      const { error } = await supabase.from('profiles').update(updatePayload).eq('id', reviewingOp.id);
+      const { error } = await supabase
+        .from('profiles')
+        .update(updatePayload)
+        .eq('id', reviewingOp.id)
+        .abortSignal(abortController.signal);
       if (error) throw error;
 
       const phone = reviewingOp?.phone;
@@ -808,6 +814,9 @@ const AdminViewB = ({
       setOperators(prev => prev.map(o => o.id === reviewingOp.id ? { ...o, operator_status: updatePayload.operator_status } : o));
       setReviewModal(false);
     } catch (err) {
+      // Si fue un aborto controlado por el timeout de seguridad, el mensaje
+      // ya se mostró — evitamos sobreescribirlo con el error genérico de AbortError.
+      if (abortController.signal.aborted) return;
       setReviewError(err.message || 'Error inesperado. Intenta de nuevo.');
     } finally {
       clearTimeout(safetyTimer);
