@@ -799,7 +799,7 @@ const AdminViewB = ({
               : 'operator_approved'
             await sendWhatsApp(waEvent, phone, { operator_name: reviewingOp.full_name }, { operatorId: reviewingOp.id })
           } else if (reviewAction === 'reject_docs') {
-            await sendWhatsApp('operator_docs_required', phone, { operator_name: reviewingOp.full_name, docs_list: rejectedDocs.map(d => `${d.icon} ${d.label}${d.reason ? `: ${d.reason}` : ''}`).join('\n') }, { operatorId: reviewingOp.id })
+            await sendWhatsApp('operator_docs_required', phone, { operator_name: reviewingOp.full_name, docs_list: rejectedDocs.map(d => `${d.icon} ${d.label}${d.reason ? `: ${d.reason}` : ''}`).join(' | ') }, { operatorId: reviewingOp.id })
           } else {
             await sendWhatsApp('operator_rejected', phone, { operator_name: reviewingOp.full_name, rejection_reason: rejectionReason }, { operatorId: reviewingOp.id })
           }
