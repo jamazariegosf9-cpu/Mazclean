@@ -327,6 +327,35 @@ const AdminViewB = ({
   const [loadingZoneReqs, setLoadingZoneReqs]   = useState(false);
   const [approvingZoneReq, setApprovingZoneReq] = useState(null);
 
+  // ── Mensaje rápido — coordinar INE alternativa / kit pendiente ────────────
+  const [quickMsgOpenFor, setQuickMsgOpenFor] = useState(null); // 'altId' | 'kit' | null
+  const [quickMsgText, setQuickMsgText]       = useState('');
+  const [sendingQuickMsg, setSendingQuickMsg] = useState(false);
+
+  const openQuickMsg = (key, defaultText) => {
+    setQuickMsgOpenFor(key);
+    setQuickMsgText(defaultText);
+  };
+
+  const sendQuickMsg = async () => {
+    if (!quickMsgText.trim() || !reviewingOp?.phone) { showToast('Falta teléfono o mensaje', 'error'); return; }
+    setSendingQuickMsg(true);
+    try {
+      let token = SUPABASE_ANON_KEY;
+      try { const s = localStorage.getItem('mazclean-auth'); if (s) { const p = JSON.parse(s); token = p?.access_token || p?.session?.access_token || SUPABASE_ANON_KEY } } catch {}
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'free_message', phone: reviewingOp.phone, booking: { operator_id: reviewingOp.id, free_text: quickMsgText } }),
+      });
+      const result = await res.json();
+      if (result?.results?.whatsapp?.ok || result?.results?.sms?.ok) {
+        showToast('✅ Mensaje enviado', 'success'); setQuickMsgOpenFor(null); setQuickMsgText('');
+      } else showToast('❌ Error: ' + (result?.error || 'desconocido'), 'error');
+    } catch (err) { showToast('Error: ' + err.message, 'error'); }
+    finally { setSendingQuickMsg(false); }
+  };
+
   // ── Delete modal ──────────────────────────────────────────────────────────
   const [deleteModal, setDeleteModal]       = useState(null); // op object
   const [deleteMode, setDeleteMode]         = useState('deactivate'); // 'deactivate' | 'permanent'
@@ -1799,6 +1828,24 @@ const AdminViewB = ({
                         </div>
                       </div>
                       {reviewingOp.id_alt_url && <DocImage url={reviewingOp.id_alt_url} label="Documento alternativo" rejected={false} />}
+
+                      <button onClick={() => openQuickMsg('altId', `Hola ${reviewingOp.full_name?.split(' ')[0] || ''}, vimos tu caso sobre la identificación. Cuéntanos más para poder ayudarte a avanzar con tu registro.`)}
+                        style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, border: '1.5px solid #ddd6fe', background: '#fff', color: '#6d28d9', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                        💬 Coordinar por WhatsApp
+                      </button>
+
+                      {quickMsgOpenFor === 'altId' && (
+                        <div style={{ background: '#fff', border: '1.5px solid #ddd6fe', borderRadius: 10, padding: 10, marginTop: 8 }}>
+                          <textarea value={quickMsgText} onChange={e => setQuickMsgText(e.target.value)} rows={3}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #ddd6fe', fontSize: 13, fontFamily: 'inherit', color: '#374151', boxSizing: 'border-box', resize: 'vertical' }} />
+                          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                            <button onClick={() => { setQuickMsgOpenFor(null); setQuickMsgText(''); }} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#f9fafb', color: '#6b7280', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Cancelar</button>
+                            <button onClick={sendQuickMsg} disabled={sendingQuickMsg} style={{ flex: 2, padding: '8px', borderRadius: 8, border: 'none', background: sendingQuickMsg ? '#9ca3af' : '#6d28d9', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                              {sendingQuickMsg ? '⏳...' : `📤 Enviar a ${reviewingOp.phone || '—'}`}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                   {[{ field: 'ine_front_url', label: '🪪 INE — Frente' }, { field: 'ine_back_url', label: '🪪 INE — Reverso' }, { field: 'selfie_with_id_url', label: '🤳 Selfie con identificación' }].map(({ field, label }) => (
@@ -1882,6 +1929,24 @@ const AdminViewB = ({
                           <div style={{ fontSize: 12, color: '#854d0e' }}>Le falta: {reviewingOp.kit_items_missing.join(', ')}</div>
                         ) : (
                           <div style={{ fontSize: 12, color: '#854d0e' }}>No subió foto del kit todavía.</div>
+                        )}
+
+                        <button onClick={() => openQuickMsg('kit', `Hola ${reviewingOp.full_name?.split(' ')[0] || ''}, vimos que te falta${Array.isArray(reviewingOp.kit_items_missing) && reviewingOp.kit_items_missing.length > 0 ? `: ${reviewingOp.kit_items_missing.join(', ')}` : ' completar tu kit'}. ¿Cómo vamos a ayudarte a completarlo antes de tu primer servicio?`)}
+                          style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, border: '1.5px solid #fde68a', background: '#fff', color: '#92400e', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                          💬 Coordinar por WhatsApp
+                        </button>
+
+                        {quickMsgOpenFor === 'kit' && (
+                          <div style={{ background: '#fff', border: '1.5px solid #fde68a', borderRadius: 10, padding: 10, marginTop: 8 }}>
+                            <textarea value={quickMsgText} onChange={e => setQuickMsgText(e.target.value)} rows={3}
+                              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #fde68a', fontSize: 13, fontFamily: 'inherit', color: '#374151', boxSizing: 'border-box', resize: 'vertical' }} />
+                            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                              <button onClick={() => { setQuickMsgOpenFor(null); setQuickMsgText(''); }} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#f9fafb', color: '#6b7280', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Cancelar</button>
+                              <button onClick={sendQuickMsg} disabled={sendingQuickMsg} style={{ flex: 2, padding: '8px', borderRadius: 8, border: 'none', background: sendingQuickMsg ? '#9ca3af' : '#d97706', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                                {sendingQuickMsg ? '⏳...' : `📤 Enviar a ${reviewingOp.phone || '—'}`}
+                              </button>
+                            </div>
+                          </div>
                         )}
                       </div>
                     )}
