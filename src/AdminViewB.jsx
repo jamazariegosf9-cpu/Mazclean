@@ -1989,6 +1989,28 @@ const AdminViewB = ({
 
               {reviewDocTab === 'decision' && (
                 <div style={{ display: 'grid', gap: 14 }}>
+
+                  {(reviewingOp.id_alt_requested || reviewingOp.kit_pending) && (
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {reviewingOp.id_alt_requested && (
+                        <div style={{ background: '#f5f3ff', border: '1.5px solid #ddd6fe', borderRadius: 10, padding: '10px 14px' }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: '#6d28d9' }}>🪪 Sin INE — pidió identificación alternativa</div>
+                          <div style={{ fontSize: 12, color: '#5b21b6', marginTop: 2 }}>{reviewingOp.id_alt_explanation}</div>
+                        </div>
+                      )}
+                      {reviewingOp.kit_pending && (
+                        <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 10, padding: '10px 14px' }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e' }}>🧴 Kit incompleto</div>
+                          <div style={{ fontSize: 12, color: '#854d0e', marginTop: 2 }}>
+                            {Array.isArray(reviewingOp.kit_items_missing) && reviewingOp.kit_items_missing.length > 0
+                              ? `Le falta: ${reviewingOp.kit_items_missing.join(', ')}`
+                              : 'No subió foto del kit todavía.'}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                     <button onClick={() => { setReviewAction('approve'); setRejectedDocs([]); }}
                       style={{ padding: '14px 8px', borderRadius: 12, border: reviewAction === 'approve' ? '2.5px solid #10b981' : '1.5px solid #e5e7eb', background: reviewAction === 'approve' ? '#f0fdf4' : '#fff', color: reviewAction === 'approve' ? '#065f46' : '#374151', fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 56 }}>
@@ -2051,7 +2073,11 @@ const AdminViewB = ({
                   )}
 
                   {reviewAction === 'approve' && (
-                    <div style={{ background: '#f0fdf4', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#065f46' }}>ℹ️ El operador recibirá WhatsApp de bienvenida y podrá recibir servicios de inmediato.</div>
+                    <div style={{ background: '#f0fdf4', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#065f46' }}>
+                      ℹ️ El operador recibirá WhatsApp de bienvenida y podrá recibir servicios de inmediato.
+                      {reviewingOp.kit_pending && ' Quedará pendiente completar su kit antes de su primer servicio.'}
+                      {reviewingOp.id_alt_requested && ' Estás aceptando su identificación alternativa como válida.'}
+                    </div>
                   )}
 
                   {reviewError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', color: '#dc2626', fontSize: 13 }}>⚠️ {reviewError}</div>}
