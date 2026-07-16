@@ -374,6 +374,12 @@ export default function OnboardingView({ onComplete }) {
   const [proofAddressUrl, setProofAddressUrl] = useState(profile?.proof_of_address_url || '')
   const [proofLifeUrl, setProofLifeUrl]   = useState(profile?.proof_of_life_video_url || '')
 
+  // Identificación alternativa — cuando el candidato no tiene su INE a la mano
+  const [useAltId, setUseAltId]           = useState(!!profile?.id_alt_requested)
+  const [altIdType, setAltIdType]         = useState(profile?.id_alt_type || '')
+  const [altIdExplanation, setAltIdExplanation] = useState(profile?.id_alt_explanation || '')
+  const [altIdUrl, setAltIdUrl]           = useState(profile?.id_alt_url || '')
+
   // Estado banco — conservado en state aunque no se muestra (campo DB intacto)
   const [clabe, setClabe]           = useState('')
   const [clabeHolder, setClabeHolder] = useState(profile?.clabe_holder || '')
@@ -547,16 +553,25 @@ export default function OnboardingView({ onComplete }) {
     await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,'') }, 2)
   }
 
-  // Paso 2: INE + Selfie + Comprobante + Video
+  // Paso 2: INE (o identificación alternativa) + Selfie + Comprobante + Video
   const handleStep2 = async () => {
-    if (!ineFrontUrl)     { setError('Sube el frente de tu INE.'); return }
-    if (!ineBackUrl)      { setError('Sube el reverso de tu INE.'); return }
-    if (!selfieIdUrl)     { setError('Sube tu selfie con el INE.'); return }
+    if (useAltId) {
+      if (!altIdType)              { setError('Selecciona qué documento puedes mostrar.'); return }
+      if (!altIdExplanation.trim()) { setError('Cuéntanos brevemente tu situación con la INE.'); return }
+    } else {
+      if (!ineFrontUrl) { setError('Sube el frente de tu INE.'); return }
+      if (!ineBackUrl)  { setError('Sube el reverso de tu INE.'); return }
+    }
+    if (!selfieIdUrl)     { setError('Sube tu selfie con tu identificación.'); return }
     if (!proofAddressUrl) { setError('Sube tu comprobante de domicilio.'); return }
     await saveStep({
-      ine_front_url: ineFrontUrl, ine_back_url: ineBackUrl,
+      ine_front_url: ineFrontUrl || null, ine_back_url: ineBackUrl || null,
       selfie_with_id_url: selfieIdUrl,
       proof_of_address_url: proofAddressUrl,
+      id_alt_requested: useAltId,
+      id_alt_type: useAltId ? altIdType : null,
+      id_alt_explanation: useAltId ? altIdExplanation.trim() : null,
+      id_alt_url: useAltId ? (altIdUrl || null) : null,
       // proof_of_life_video_url: pedido post-aprobación en OperatorAccount
     }, 3)
   }
@@ -581,8 +596,9 @@ export default function OnboardingView({ onComplete }) {
   }
 
   const handleStep4 = async () => {
-    if (!kitPhotoUrl) { setError('Sube la foto de tu kit de materiales.'); return }
-    await saveStep({ kit_photo_url: kitPhotoUrl }, 5)
+    // El kit ya no bloquea el registro — si falta, queda marcado como pendiente
+    // y se completa antes del primer servicio (aprobación condicional).
+    await saveStep({ kit_photo_url: kitPhotoUrl || null, kit_pending: !kitPhotoUrl }, 5)
   }
 
   const handleStep5 = async () => {
@@ -697,13 +713,12 @@ export default function OnboardingView({ onComplete }) {
             <div style={{ textAlign: 'center', marginBottom: 20 }}>
               <div style={{ fontSize: 48, marginBottom: 8 }}>📋</div>
               <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1f2937', margin: '0 0 8px' }}>Antes de comenzar</h2>
-              <p style={{ fontSize: 14, color: '#6b7280', margin: 0, lineHeight: 1.6 }}>Ten a la mano los siguientes documentos y materiales. El proceso toma aproximadamente <strong>~8 minutos</strong>.</p>
+              <p style={{ fontSize: 14, color: '#6b7280', margin: 0, lineHeight: 1.6 }}>Toma solo <strong>~8 minutos</strong>. ¿Te falta algo de la lista? No te preocupes — muchas cosas las resolvemos juntos en el camino.</p>
             </div>
 
             {/* Mensaje motivacional */}
             <div style={{ background: 'linear-gradient(135deg,#eff6ff,#f0fdf4)', border: '1.5px solid #bfdbfe', borderRadius: 12, padding: '14px 16px', marginBottom: 16, textAlign: 'center' }}>
-              <p style={{ fontSize: 14, fontWeight: 700, color: '#1e40af', margin: '0 0 4px' }}>🚀 ¡Estás a minutos de empezar a ganar!</p>
-              <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.5 }}>Únete a la comunidad MAZ CLEAN y genera ingresos en tu zona de trabajo.</p>
+              <p style={{ fontSize: 14, fontWeight: 700, color: '#1e40af', margin: 0 }}>🚀 Estás a minutos de empezar a generar ingresos con MAZ CLEAN.</p>
             </div>
 
             <div style={{ display: 'grid', gap: 10, marginBottom: 20 }}>
@@ -711,45 +726,40 @@ export default function OnboardingView({ onComplete }) {
                 {
                   icon: '🪪',
                   iconBg: '#eff6ff',
-                  iconColor: '#3b82f6',
                   title: 'Identificación oficial',
-                  desc: 'INE o licencia de conducir — frente y reverso',
+                  desc: 'INE, licencia o pasaporte.',
+                  extra: '¿No la tienes a la mano? Cuéntanos tu caso y buscamos una alternativa.',
                 },
                 {
                   icon: '📄',
                   iconBg: '#f0fdf4',
-                  iconColor: '#10b981',
                   title: 'Comprobante de domicilio',
-                  desc: 'Recibo de luz, agua o internet — máximo 3 meses de antigüedad',
+                  desc: 'Recibo de luz, agua o internet — máximo 3 meses.',
                 },
                 {
                   icon: '🧴',
                   iconBg: '#faf5ff',
-                  iconColor: '#7c3aed',
                   title: 'Kit de materiales',
-                  desc: 'Shampoo pH neutro, waterless + atomizador, microfibras por color, brocha de detailing, cubeta doble balde, aspiradora portátil, antibacterial y limpiador de cristales.',
-                  extra: '💰 Inversión estimada: $400–$800 MXN — muy probablemente ya tienes varios artículos en casa, por lo que tu inversión real puede ser mucho menor.',
+                  desc: 'Shampoo, microfibras, cubeta, atomizador y más (~$400–$800 MXN).',
+                  extra: 'No es necesario tenerlo completo hoy — puedes completarlo después de registrarte.',
                 },
                 {
-                  icon: '🚗🏍️🚲',
+                  icon: '🚗',
                   iconBg: '#fffbeb',
-                  iconColor: '#d97706',
-                  title: 'Datos de tu vehículo',
-                  desc: '🚗 Vehículo propio — Solamente aplica si tu zona supera 2 km de radio. Puede ser bicicleta, moto o auto según tus distancias.',
-                  highlight: true,
+                  title: 'Vehículo (si aplica)',
+                  desc: 'Solo si tu zona supera 2 km — bici, moto o auto.',
                 },
               ].map((item, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: '#f9fafb', borderRadius: 12, padding: '12px 14px', border: `1px solid ${item.highlight ? '#fde68a' : '#e5e7eb'}` }}>
-                  {/* Ícono con fondo de color */}
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: item.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: item.icon.length > 2 ? 13 : 20, flexShrink: 0 }}>
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: '#f9fafb', borderRadius: 12, padding: '12px 14px', border: '1px solid #e5e7eb' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: item.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, flexShrink: 0 }}>
                     {item.icon}
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: '#1f2937', marginBottom: 2 }}>{item.title}</div>
                     <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>{item.desc}</div>
                     {item.extra && (
-                      <div style={{ fontSize: 12, color: '#065f46', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '6px 10px', marginTop: 6, lineHeight: 1.5 }}>
-                        {item.extra}
+                      <div style={{ fontSize: 12, color: '#065f46', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '5px 10px', marginTop: 6, lineHeight: 1.5 }}>
+                        💡 {item.extra}
                       </div>
                     )}
                   </div>
@@ -758,7 +768,7 @@ export default function OnboardingView({ onComplete }) {
             </div>
 
             <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginBottom: 20 }}>
-              <p style={{ fontSize: 13, color: '#1e40af', margin: 0, lineHeight: 1.5 }}>💡 <strong>Consejo:</strong> Prepara todos los documentos antes de iniciar para completar el registro sin interrupciones.</p>
+              <p style={{ fontSize: 13, color: '#1e40af', margin: 0, lineHeight: 1.5 }}>🤝 Si algo no aplica a tu caso, avísanos durante el registro — buscamos la forma de que puedas empezar.</p>
             </div>
 
             {profile?.operator_status === 'aprobado' ? (
@@ -767,7 +777,7 @@ export default function OnboardingView({ onComplete }) {
               </button>
             ) : (
               <button onClick={() => setStep(1)} style={{ width: '100%', padding: '15px 0', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
-                ✅ Estoy listo — Comenzar registro
+                ✅ Comenzar registro
               </button>
             )}
           </div>
@@ -801,25 +811,73 @@ export default function OnboardingView({ onComplete }) {
         {step === 2 && (
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
 
-            {/* Sub 1: INE Frente */}
+            {/* Sub 1: INE Frente (o identificación alternativa) */}
             {subStep === 1 && (
               <>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🪪 INE — Frente</h2>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🪪 Identificación — Frente</h2>
                 <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Foto clara del frente de tu INE o licencia de conducir.</p>
                 <div style={{ background: 'linear-gradient(135deg,#eff6ff,#f0fdf4)', border: '1.5px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
                   <p style={{ fontSize: 13, fontWeight: 700, color: '#1e40af', margin: '0 0 3px' }}>🔒 Tu información está protegida</p>
                   <p style={{ fontSize: 12, color: '#374151', margin: 0, lineHeight: 1.5 }}>Solo se usa para validar tu identidad como operador MAZ CLEAN y nunca se comparte con terceros. Estás a un paso de empezar a generar ingresos 🚀</p>
                 </div>
-                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
-                  {['Foto legible sin reflejos ni sombras','Todos los datos visibles','No recortada ni doblada'].map(r => <div key={r} style={{ fontSize: 12, color: '#1e40af', marginBottom: 3 }}>• {r}</div>)}
-                </div>
-                <PhotoUpload label="INE Frente" icon="🪪" value={ineFrontUrl} onChange={setIneFrontUrl} capture="environment" disabled={!canEdit('ine_front_url')} />
+
+                {!useAltId && (
+                  <>
+                    <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
+                      {['Foto legible sin reflejos ni sombras','Todos los datos visibles','No recortada ni doblada'].map(r => <div key={r} style={{ fontSize: 12, color: '#1e40af', marginBottom: 3 }}>• {r}</div>)}
+                    </div>
+                    <PhotoUpload label="INE Frente" icon="🪪" value={ineFrontUrl} onChange={setIneFrontUrl} capture="environment" disabled={!canEdit('ine_front_url')} />
+                    <button onClick={() => setUseAltId(true)} style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '10px 0 4px', textAlign: 'left' }}>
+                      🤔 ¿No tienes tu INE a la mano?
+                    </button>
+                  </>
+                )}
+
+                {useAltId && (
+                  <>
+                    <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
+                      <p style={{ fontSize: 12, color: '#854d0e', margin: 0, lineHeight: 1.5 }}>Sin problema — cuéntanos qué puedes mostrar por ahora y lo revisamos contigo.</p>
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={lbl}>¿Qué puedes mostrar? *</label>
+                      <select style={inp} value={altIdType} onChange={e => setAltIdType(e.target.value)}>
+                        <option value="">Selecciona una opción</option>
+                        <option value="licencia">Licencia de conducir</option>
+                        <option value="pasaporte">Pasaporte</option>
+                        <option value="ine_anterior">Copia o foto anterior de mi INE (vencida o extraviada)</option>
+                        <option value="tramite">Comprobante de trámite / reposición en curso</option>
+                        <option value="otro">Otro documento oficial</option>
+                      </select>
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={lbl}>Cuéntanos brevemente tu situación *</label>
+                      <textarea style={{ ...inp, minHeight: 80, resize: 'vertical' }} placeholder="Ej: Extravié mi INE hace 2 semanas, ya tramité la reposición en el INE..." value={altIdExplanation} onChange={e => setAltIdExplanation(e.target.value)} />
+                    </div>
+                    <PhotoUpload label="Foto del documento (opcional)" icon="📎" value={altIdUrl} onChange={setAltIdUrl} capture="environment" disabled={!canEdit('id_alt_url')} />
+                    <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginTop: 12 }}>
+                      <p style={{ fontSize: 12, color: '#1e40af', margin: 0, lineHeight: 1.5 }}>💡 Nuestro equipo revisará tu caso y te contactará para definir los siguientes pasos.</p>
+                    </div>
+                    <button onClick={() => { setUseAltId(false); setAltIdType(''); setAltIdExplanation(''); setAltIdUrl('') }} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '10px 0 4px', textAlign: 'left' }}>
+                      ← Sí tengo mi INE, subirla mejor
+                    </button>
+                  </>
+                )}
+
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
-                <NavButtons onBack={() => goStepSafe(1)} onNext={() => { if (!ineFrontUrl) { setError('Sube el frente de tu INE.'); return } nextSub() }} />
+                <NavButtons onBack={() => goStepSafe(1)} onNext={() => {
+                  if (useAltId) {
+                    if (!altIdType)               { setError('Selecciona qué documento puedes mostrar.'); return }
+                    if (!altIdExplanation.trim()) { setError('Cuéntanos brevemente tu situación.'); return }
+                    setError(''); setSubStep(3) // salta el reverso — no aplica a documentos alternativos
+                  } else {
+                    if (!ineFrontUrl) { setError('Sube el frente de tu INE.'); return }
+                    nextSub()
+                  }
+                }} />
               </>
             )}
 
-            {/* Sub 2: INE Reverso */}
+            {/* Sub 2: INE Reverso (solo si se subió INE normal) */}
             {subStep === 2 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🪪 INE — Reverso</h2>
@@ -833,14 +891,14 @@ export default function OnboardingView({ onComplete }) {
             {/* Sub 3: Selfie */}
             {subStep === 3 && (
               <>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🤳 Selfie con tu INE</h2>
-                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Tómate una foto sosteniendo tu INE junto a tu cara.</p>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🤳 Selfie con tu identificación</h2>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Tómate una foto sosteniendo el documento junto a tu cara.</p>
                 <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
-                  {['Sostén tu INE con la foto hacia la cámara','Tu cara y el INE deben verse claramente','Buena iluminación, sin filtros ni lentes de sol'].map(r => <div key={r} style={{ fontSize: 12, color: '#854d0e', marginBottom: 3 }}>• {r}</div>)}
+                  {['Sostén el documento con la foto hacia la cámara','Tu cara y el documento deben verse claramente','Buena iluminación, sin filtros ni lentes de sol'].map(r => <div key={r} style={{ fontSize: 12, color: '#854d0e', marginBottom: 3 }}>• {r}</div>)}
                 </div>
-                <PhotoUpload label="Selfie con INE" icon="🤳" value={selfieIdUrl} onChange={setSelfieIdUrl} capture="user" disabled={!canEdit('selfie_with_id_url')} />
+                <PhotoUpload label="Selfie con identificación" icon="🤳" value={selfieIdUrl} onChange={setSelfieIdUrl} capture="user" disabled={!canEdit('selfie_with_id_url')} />
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
-                <NavButtons onBack={prevSub} onNext={() => { if (!selfieIdUrl) { setError('Sube tu selfie con el INE.'); return } nextSub() }} />
+                <NavButtons onBack={() => setSubStep(useAltId ? 1 : 2)} onNext={() => { if (!selfieIdUrl) { setError('Sube tu selfie.'); return } nextSub() }} />
               </>
             )}
 
@@ -1031,22 +1089,26 @@ export default function OnboardingView({ onComplete }) {
         {step === 4 && (
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🧴 Kit de materiales</h2>
-            <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Sube una foto de tu kit completo para verificar que tienes todo lo necesario.</p>
-            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: '14px 16px', marginBottom: 12 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: '#1e40af', margin: '0 0 8px' }}>✅ Materiales obligatorios:</p>
-              {['Shampoo pH neutro para autos','Producto waterless (lavado en seco) + atomizador','Microfibras por color: azul (carrocería), negro (rines), gris (interiores)','Brocha de detailing (para rejillas y emblemas)','Cubeta de doble balde','Aspiradora portátil','Producto antibacterial (spray)','Limpiador de cristales base agua'].map(m => (
-                <div key={m} style={{ fontSize: 13, color: '#1e40af', marginBottom: 4 }}>• {m}</div>
-              ))}
-              <p style={{ fontSize: 12, color: '#6b7280', margin: '8px 0 0', fontStyle: 'italic' }}>Recomendado: producto base agua para tablero y plásticos interiores</p>
-            </div>
-            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
+            <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Si ya lo tienes, sube una foto. Si no, no hay problema — puedes completarlo después.</p>
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
               <p style={{ fontSize: 13, color: '#065f46', margin: 0, lineHeight: 1.6 }}>
-                💰 <strong>Inversión estimada: $400–$800 MXN</strong> — muy probablemente ya tienes varios artículos en casa (shampoo, microfibras, cubeta), por lo que tu inversión real puede ser mucho menor.
+                💡 <strong>No es necesario tenerlo completo hoy.</strong> Puedes registrarte y completar tu kit antes de tu primer servicio — muchos artículos (shampoo, microfibras, cubeta) probablemente ya los tienes en casa. Inversión estimada: $400–$800 MXN.
               </p>
             </div>
-            <PhotoUpload label="Foto del kit" hint="Coloca todos los materiales visibles en la foto." icon="📦" value={kitPhotoUrl} onChange={setKitPhotoUrl} capture="environment" disabled={!canEdit('kit_photo_url')} />
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: '#1e40af', margin: '0 0 8px' }}>Lo que necesitarás:</p>
+              {['Shampoo pH neutro + producto waterless','Microfibras por color y brocha de detailing','Cubeta de doble balde + aspiradora portátil','Antibacterial y limpiador de cristales'].map(m => (
+                <div key={m} style={{ fontSize: 13, color: '#1e40af', marginBottom: 4 }}>• {m}</div>
+              ))}
+            </div>
+            <PhotoUpload label="Foto del kit (opcional)" hint="Coloca todos los materiales visibles en la foto." icon="📦" value={kitPhotoUrl} onChange={setKitPhotoUrl} capture="environment" disabled={!canEdit('kit_photo_url')} />
+            {!kitPhotoUrl && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginTop: 12 }}>
+                <p style={{ fontSize: 12, color: '#854d0e', margin: 0, lineHeight: 1.5 }}>⏳ Sin problema — quedarás aprobado condicionalmente y te recordaremos completar tu kit antes de tu primer servicio.</p>
+              </div>
+            )}
             {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
-            <NavButtons onBack={() => goStepSafe(3)} onNext={handleStep4} nextLabel="Guardar y continuar →" nextColor="#10b981" />
+            <NavButtons onBack={() => goStepSafe(3)} onNext={handleStep4} nextLabel={kitPhotoUrl ? 'Guardar y continuar →' : 'Continuar sin kit por ahora →'} nextColor="#10b981" />
           </div>
         )}
 
