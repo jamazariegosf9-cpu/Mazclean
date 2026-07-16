@@ -405,6 +405,9 @@ export default function OnboardingView({ onComplete }) {
 
   // Paso 4 — Materiales
   const [kitPhotoUrl, setKitPhotoUrl]   = useState(profile?.kit_photo_url || '')
+  const KIT_ITEMS = ['Shampoo pH neutro', 'Producto waterless + atomizador', 'Microfibras por color', 'Brocha de detailing', 'Cubeta de doble balde', 'Aspiradora portátil', 'Antibacterial', 'Limpiador de cristales']
+  const [kitMissing, setKitMissing] = useState(new Set(profile?.kit_items_missing || []))
+  const toggleKitItem = (item) => setKitMissing(prev => { const next = new Set(prev); next.has(item) ? next.delete(item) : next.add(item); return next })
 
   // Paso 5 — Contrato
   const [experienceYears, setExperienceYears] = useState(profile?.experience_years || '')
@@ -596,9 +599,14 @@ export default function OnboardingView({ onComplete }) {
   }
 
   const handleStep4 = async () => {
-    // El kit ya no bloquea el registro — si falta, queda marcado como pendiente
+    // El kit ya no bloquea el registro — si falta algo, queda marcado como pendiente
     // y se completa antes del primer servicio (aprobación condicional).
-    await saveStep({ kit_photo_url: kitPhotoUrl || null, kit_pending: !kitPhotoUrl }, 5)
+    const missingList = Array.from(kitMissing)
+    await saveStep({
+      kit_photo_url: kitPhotoUrl || null,
+      kit_items_missing: missingList,
+      kit_pending: !kitPhotoUrl || missingList.length > 0,
+    }, 5)
   }
 
   const handleStep5 = async () => {
@@ -1096,15 +1104,25 @@ export default function OnboardingView({ onComplete }) {
               </p>
             </div>
             <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: '#1e40af', margin: '0 0 8px' }}>Lo que necesitarás:</p>
-              {['Shampoo pH neutro + producto waterless','Microfibras por color y brocha de detailing','Cubeta de doble balde + aspiradora portátil','Antibacterial y limpiador de cristales'].map(m => (
-                <div key={m} style={{ fontSize: 13, color: '#1e40af', marginBottom: 4 }}>• {m}</div>
-              ))}
+              <p style={{ fontSize: 13, fontWeight: 700, color: '#1e40af', margin: '0 0 4px' }}>¿Qué ya tienes?</p>
+              <p style={{ fontSize: 11, color: '#6b7280', margin: '0 0 10px' }}>Toca lo que aún no tengas — está bien si te falta algo.</p>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {KIT_ITEMS.map(item => {
+                  const missing = kitMissing.has(item)
+                  return (
+                    <button key={item} onClick={() => toggleKitItem(item)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: missing ? '#fffbeb' : '#f0fdf4', border: `1.5px solid ${missing ? '#fde68a' : '#bbf7d0'}`, borderRadius: 10, padding: '10px 12px', cursor: 'pointer', textAlign: 'left', width: '100%' }}>
+                      <span style={{ fontSize: 16, flexShrink: 0 }}>{missing ? '❌' : '✅'}</span>
+                      <span style={{ fontSize: 13, color: missing ? '#854d0e' : '#065f46', fontWeight: 600, flex: 1 }}>{item}</span>
+                      <span style={{ fontSize: 11, color: missing ? '#d97706' : '#10b981', fontWeight: 600 }}>{missing ? 'Me falta' : 'Ya tengo'}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
             <PhotoUpload label="Foto del kit (opcional)" hint="Coloca todos los materiales visibles en la foto." icon="📦" value={kitPhotoUrl} onChange={setKitPhotoUrl} capture="environment" disabled={!canEdit('kit_photo_url')} />
-            {!kitPhotoUrl && (
+            {(kitMissing.size > 0 || !kitPhotoUrl) && (
               <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginTop: 12 }}>
-                <p style={{ fontSize: 12, color: '#854d0e', margin: 0, lineHeight: 1.5 }}>⏳ Sin problema — quedarás aprobado condicionalmente y te recordaremos completar tu kit antes de tu primer servicio.</p>
+                <p style={{ fontSize: 12, color: '#854d0e', margin: 0, lineHeight: 1.5 }}>⏳ Sin problema — quedarás aprobado condicionalmente y te recordaremos completar {kitMissing.size > 0 ? `lo que te falta (${kitMissing.size} artículo${kitMissing.size > 1 ? 's' : ''})` : 'tu kit'} antes de tu primer servicio.</p>
               </div>
             )}
             {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 8, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
