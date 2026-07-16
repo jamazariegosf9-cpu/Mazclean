@@ -1339,6 +1339,23 @@ const AdminViewB = ({
                     </div>
                   )}
 
+                  {/* Identificación alternativa — requiere decisión manual */}
+                  {op.id_alt_requested && (
+                    <div style={{ background: '#f5f3ff', borderRadius: 6, padding: '6px 10px', border: '1.5px solid #ddd6fe' }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#6d28d9', marginBottom: 2 }}>🪪 Sin INE — pidió identificación alternativa</div>
+                      <div style={{ fontSize: 11, color: '#5b21b6' }}>{op.id_alt_explanation}</div>
+                    </div>
+                  )}
+
+                  {/* Kit pendiente */}
+                  {op.kit_pending && (
+                    <div style={{ background: '#fffbeb', borderRadius: 6, padding: '6px 10px', border: '1px solid #fde68a' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#92400e' }}>
+                        🧴 Kit pendiente{Array.isArray(op.kit_items_missing) && op.kit_items_missing.length > 0 ? ` — falta: ${op.kit_items_missing.join(', ')}` : ''}
+                      </div>
+                    </div>
+                  )}
+
                 </div>
               );
             })}
@@ -1766,7 +1783,25 @@ const AdminViewB = ({
 
               {reviewDocTab === 'identidad' && (
                 <div style={{ display: 'grid', gap: 16 }}>
-                  {[{ field: 'ine_front_url', label: '🪪 INE — Frente' }, { field: 'ine_back_url', label: '🪪 INE — Reverso' }, { field: 'selfie_with_id_url', label: '🤳 Selfie con INE' }].map(({ field, label }) => (
+                  {reviewingOp.id_alt_requested && (
+                    <div style={{ background: '#f5f3ff', border: '1.5px solid #ddd6fe', borderRadius: 12, padding: '14px 16px' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#6d28d9', textTransform: 'uppercase', marginBottom: 8 }}>🪪 Identificación alternativa — requiere tu decisión</div>
+                      <div style={{ display: 'grid', gap: 8, marginBottom: 10 }}>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#6d28d9', fontWeight: 600 }}>Documento que puede mostrar</div>
+                          <div style={{ fontSize: 13, color: '#4c1d95', fontWeight: 600 }}>
+                            {{ licencia: 'Licencia de conducir', pasaporte: 'Pasaporte', ine_anterior: 'Copia/foto anterior de su INE', tramite: 'Comprobante de trámite / reposición', otro: 'Otro documento oficial' }[reviewingOp.id_alt_type] || reviewingOp.id_alt_type || '—'}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#6d28d9', fontWeight: 600 }}>Explicación del operador</div>
+                          <div style={{ fontSize: 13, color: '#4c1d95' }}>{reviewingOp.id_alt_explanation || '—'}</div>
+                        </div>
+                      </div>
+                      {reviewingOp.id_alt_url && <DocImage url={reviewingOp.id_alt_url} label="Documento alternativo" rejected={false} />}
+                    </div>
+                  )}
+                  {[{ field: 'ine_front_url', label: '🪪 INE — Frente' }, { field: 'ine_back_url', label: '🪪 INE — Reverso' }, { field: 'selfie_with_id_url', label: '🤳 Selfie con identificación' }].map(({ field, label }) => (
                     <div key={field}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                         <div style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>{label}</div>
@@ -1840,6 +1875,16 @@ const AdminViewB = ({
                       {isDocCorrected('kit_photo_url') && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: '#dbeafe', color: '#1e40af', fontWeight: 700, border: '1px solid #93c5fd' }}>🔄 Recién corregido</span>}
                     </div>
                     <DocImage url={reviewingOp.kit_photo_url} label="Kit" rejected={isDocRejected('kit_photo_url')} />
+                    {reviewingOp.kit_pending && (
+                      <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginTop: 10 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 4 }}>⏳ Aprobación condicional — kit incompleto</div>
+                        {Array.isArray(reviewingOp.kit_items_missing) && reviewingOp.kit_items_missing.length > 0 ? (
+                          <div style={{ fontSize: 12, color: '#854d0e' }}>Le falta: {reviewingOp.kit_items_missing.join(', ')}</div>
+                        ) : (
+                          <div style={{ fontSize: 12, color: '#854d0e' }}>No subió foto del kit todavía.</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
