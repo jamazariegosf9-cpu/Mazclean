@@ -806,6 +806,10 @@ export default function OnboardingView({ onComplete }) {
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🪪 INE — Frente</h2>
                 <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>Foto clara del frente de tu INE o licencia de conducir.</p>
+                <div style={{ background: 'linear-gradient(135deg,#eff6ff,#f0fdf4)', border: '1.5px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: '#1e40af', margin: '0 0 3px' }}>🔒 Tu información está protegida</p>
+                  <p style={{ fontSize: 12, color: '#374151', margin: 0, lineHeight: 1.5 }}>Solo se usa para validar tu identidad como operador MAZ CLEAN y nunca se comparte con terceros. Estás a un paso de empezar a generar ingresos 🚀</p>
+                </div>
                 <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
                   {['Foto legible sin reflejos ni sombras','Todos los datos visibles','No recortada ni doblada'].map(r => <div key={r} style={{ fontSize: 12, color: '#1e40af', marginBottom: 3 }}>• {r}</div>)}
                 </div>
