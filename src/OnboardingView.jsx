@@ -779,6 +779,19 @@ export default function OnboardingView({ onComplete }) {
               <p style={{ fontSize: 13, color: '#1e40af', margin: 0, lineHeight: 1.5 }}>🤝 Si algo no aplica a tu caso, avísanos durante el registro — buscamos la forma de que puedas empezar.</p>
             </div>
 
+            {profile?.operator_status !== 'aprobado' && (
+              <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#166534', margin: '0 0 6px' }}>📲 Antes de empezar, confírmanos por WhatsApp</p>
+                <p style={{ fontSize: 12, color: '#374151', margin: '0 0 10px', lineHeight: 1.5 }}>Así podremos avisarte por WhatsApp sobre el estado de tu registro y ayudarte más rápido si algo falta.</p>
+                <a
+                  href={`https://wa.me/5215539377258?text=${encodeURIComponent(`REGISTRO OPERADOR: Hola, soy ${profile?.full_name || ''} y acabo de iniciar mi registro como operador en MAZ CLEAN.`)}`}
+                  target="_blank" rel="noopener noreferrer"
+                  style={{ display: 'block', textAlign: 'center', width: '100%', padding: '12px 0', background: '#25D366', color: '#fff', borderRadius: 10, fontSize: 14, fontWeight: 700, textDecoration: 'none', boxSizing: 'border-box' }}>
+                  💬 Abrir WhatsApp y confirmar
+                </a>
+              </div>
+            )}
+
             {profile?.operator_status === 'aprobado' ? (
               <button onClick={onComplete} style={{ width: '100%', padding: '15px 0', background: '#10b981', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: 'pointer', minHeight: 52 }}>
                 Ir al Panel de Operador →
