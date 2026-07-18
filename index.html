@@ -1,3 +1,16 @@
+<!--
+Commit: chore(tracking): dejar base de gtag.js de Google Ads lista pero comentada
+
+- Se agrega (comentado) el script base de googletagmanager.com/gtag/js,
+  que estaba completamente ausente. No se activa porque no existe cuenta
+  de Google Ads para MAZ CLEAN a julio 2026 — activarlo sin cuenta real
+  no serviría de nada y solo agregaría una petición de red inútil.
+- Cuando exista la cuenta: descomentar, reemplazar AW-XXXXXXXXX por el
+  ID real, y cambiar el default de provider a 'all' en analytics.js.
+- trackMazEvent() se conserva sin cambios: no encontré referencias a esta
+  función en analytics.js ni AuthModal.jsx (posible código huérfano);
+  confirma si se usa en otro componente antes de eliminarla.
+-->
 <!doctype html>
 <html lang="es">
   <head>
@@ -25,11 +38,29 @@
     </noscript>
     <!-- End Meta Pixel Code -->
 
+    <!-- Google Ads Conversion Tracking (gtag.js) — DESACTIVADO -->
+    <!-- No existe cuenta de Google Ads para MAZ CLEAN a julio 2026. -->
+    <!-- analytics.js ya usa provider='meta' por default, así que este -->
+    <!-- bloque comentado no afecta nada mientras esté deshabilitado. -->
+    <!-- Para activarlo: descomenta, reemplaza AW-XXXXXXXXX por el ID -->
+    <!-- real de cuenta, y cambia el default de provider a 'all' en -->
+    <!-- analytics.js (o pasa provider:'all' explícito donde se use). -->
+    <!--
+    <script async src="https://www.googletagmanager.com/gtag/js?id=AW-XXXXXXXXX"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){ dataLayer.push(arguments); }
+      gtag('js', new Date());
+      gtag('config', 'AW-XXXXXXXXX');
+    </script>
+    -->
+    <!-- End Google Ads gtag.js -->
+
     <title>Maz Clean</title>
   </head>
   <body>
     <div id="root"></div>
-    
+
     <!-- Script de React/Vite -->
     <script type="module" src="/src/main.jsx"></script>
 

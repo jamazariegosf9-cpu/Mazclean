@@ -211,9 +211,12 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' })
         if (profileError) console.warn('[AuthModal] upsert profile cliente error:', profileError.message)
-        
-        // Tracking centralizado de Lead
-        Analytics.leadRegistered();
+
+        // Tracking centralizado de Lead. Se pasa userId explícito porque
+        // en este punto localStorage('mazclean-auth') aún no tiene sesión
+        // (el signIn ocurre más abajo); sin esto, analytics_events guarda
+        // user_id: null y se pierde la atribución.
+        Analytics.leadRegistered({ role: 'cliente', userId: data.user.id })
       }
 
       await new Promise(resolve => setTimeout(resolve, 800))
@@ -265,9 +268,12 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' })
         if (profileError) console.warn('[AuthModal] upsert profile error:', profileError.message)
-        
-        // Tracking centralizado de Lead
-        Analytics.leadRegistered();
+
+        // Tracking centralizado de Lead. role: 'operador' permite disparar
+        // el evento trackCustom 'LeadOperador' en Meta (para optimizar la
+        // campaña de reclutamiento sin mezclar señal con leads de cliente)
+        // y userId explícito evita perder la atribución en analytics_events.
+        Analytics.leadRegistered({ role: 'operador', userId: data.user.id })
       }
 
       await new Promise(resolve => setTimeout(resolve, 800))
@@ -596,3 +602,17 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
     </div>
   )
 }
+/* ─────────────────────────────────────────────────────────────
+ * Commit: fix(auth): pasar role y userId explícitos a Analytics.leadRegistered
+ *
+ * - handleRegister (cliente) y handleRegisterOperator ahora llaman a
+ *   leadRegistered() con { role, userId } en vez de sin argumentos.
+ * - Corrige pérdida de atribución: el evento se disparaba antes del
+ *   signIn(), cuando localStorage('mazclean-auth') aún no tenía sesión,
+ *   por lo que analytics_events guardaba user_id: null en cada lead.
+ * - Habilita diferenciar leads de operador (para campaña de
+ *   reclutamiento) de leads de cliente en Meta Ads.
+ * - BREAKING CHANGE dependiente: requiere el nuevo analytics.js con
+ *   leadRegistered({ role, userId, provider }) — no desplegar este
+ *   archivo sin actualizar src/lib/analytics.js al mismo tiempo.
+ * ───────────────────────────────────────────────────────────── */
