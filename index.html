@@ -29,6 +29,17 @@
   </head>
   <body>
     <div id="root"></div>
+    
+    <!-- Script de React/Vite -->
     <script type="module" src="/src/main.jsx"></script>
+
+    <!-- Script personalizado para eventos del Pixel -->
+    <script>
+      function trackMazEvent(eventName, params = {}) {
+        if (typeof fbq === 'function') {
+          fbq('track', eventName, params);
+        }
+      }
+    </script>
   </body>
 </html>
