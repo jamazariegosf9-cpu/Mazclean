@@ -201,7 +201,6 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
       if (signUpError) throw signUpError
 
       // 2. Upsert explícito del profile como cliente
-      //    No dependemos solo del trigger — garantiza profile disponible para loadProfileWithRetry
       if (data?.user?.id) {
         const { error: profileError } = await supabase.from('profiles').upsert({
           id: data.user.id,
@@ -213,12 +212,15 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' })
         if (profileError) console.warn('[AuthModal] upsert profile cliente error:', profileError.message)
+        
+        // Tracking de Lead
+        if (window.trackMazEvent) window.trackMazEvent('Lead');
       }
 
       // 3. Delay para que Supabase procese el trigger y el upsert
       await new Promise(resolve => setTimeout(resolve, 800))
 
-      // 4. Auto-login inmediato — sin pedir confirmación de correo
+      // 4. Auto-login inmediato
       const { error: loginError } = await signIn({ email, password })
       if (loginError) {
         if (loginError.message.includes('Email not confirmed')) {
@@ -228,7 +230,6 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
         }
         return
       }
-      // Login exitoso — App.jsx detecta role='cliente' y renderiza ClientView
       onClose()
     } catch (err) {
       setError(translateError(err.message))
@@ -238,10 +239,6 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
   }
 
   // REGISTRO OPERADOR
-  // CAMBIO: se agrega await delay(800) antes del signIn para asegurar que
-  // el trigger handle_new_user y el upsert del perfil terminen antes de
-  // intentar cargar el profile. Sin este delay, loadProfile puede devolver
-  // null y App.jsx no detecta role='operador' para ir al onboarding.
   const handleRegisterOperator = async (e) => {
     e.preventDefault()
     reset()
@@ -261,7 +258,6 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
       if (signUpError) throw signUpError
 
       // 2. Insertar profile con role operador directamente
-      //    No dependemos solo del trigger - hacemos upsert explicitamente
       if (data?.user?.id) {
         const { error: profileError } = await supabase.from('profiles').upsert({
           id: data.user.id,
@@ -275,14 +271,15 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' })
         if (profileError) console.warn('[AuthModal] upsert profile error:', profileError.message)
+        
+        // Tracking de Lead
+        if (window.trackMazEvent) window.trackMazEvent('Lead');
       }
 
-      // 3. CAMBIO: delay de 800ms para que Supabase termine de procesar
-      //    el trigger y el upsert antes de intentar el login
+      // 3. Delay de 800ms
       await new Promise(resolve => setTimeout(resolve, 800))
 
-      // 4. Auto-login - AuthContext.signIn usa loadProfileWithRetry (3 reintentos)
-      //    para manejar casos donde el profile aun no esta disponible
+      // 4. Auto-login
       const { error: loginError } = await signIn({ email, password })
       if (loginError) {
         if (loginError.message.includes('Email not confirmed')) {
@@ -292,8 +289,6 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
         }
         return
       }
-      // Login exitoso - App.jsx detecta role='operador' y onboarding_done=false
-      // y renderiza OnboardingView automaticamente
       onClose()
     } catch (err) {
       setError(translateError(err.message))
