@@ -6,6 +6,7 @@
 import { useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import Analytics from '../../lib/analytics' // Importación necesaria
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -193,14 +194,12 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
       return setError('La contrasena debe tener al menos 8 caracteres.')
     setLoading(true)
     try {
-      // 1. Crear usuario en auth con role cliente en metadata
       const { data, error: signUpError } = await supabase.auth.signUp({
         email, password,
         options: { data: { full_name: fullName, phone, role: 'cliente' } }
       })
       if (signUpError) throw signUpError
 
-      // 2. Upsert explícito del profile como cliente
       if (data?.user?.id) {
         const { error: profileError } = await supabase.from('profiles').upsert({
           id: data.user.id,
@@ -213,14 +212,11 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
         }, { onConflict: 'id' })
         if (profileError) console.warn('[AuthModal] upsert profile cliente error:', profileError.message)
         
-        // Tracking de Lead
-        if (window.trackMazEvent) window.trackMazEvent('Lead');
+        // Tracking centralizado de Lead
+        Analytics.leadRegistered();
       }
 
-      // 3. Delay para que Supabase procese el trigger y el upsert
       await new Promise(resolve => setTimeout(resolve, 800))
-
-      // 4. Auto-login inmediato
       const { error: loginError } = await signIn({ email, password })
       if (loginError) {
         if (loginError.message.includes('Email not confirmed')) {
@@ -250,14 +246,12 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
       return setError('La contrasena debe tener al menos 8 caracteres.')
     setLoading(true)
     try {
-      // 1. Crear usuario en auth con role operador en metadata
       const { data, error: signUpError } = await supabase.auth.signUp({
         email, password,
         options: { data: { full_name: fullName, phone, role: 'operador' } }
       })
       if (signUpError) throw signUpError
 
-      // 2. Insertar profile con role operador directamente
       if (data?.user?.id) {
         const { error: profileError } = await supabase.from('profiles').upsert({
           id: data.user.id,
@@ -272,14 +266,11 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
         }, { onConflict: 'id' })
         if (profileError) console.warn('[AuthModal] upsert profile error:', profileError.message)
         
-        // Tracking de Lead
-        if (window.trackMazEvent) window.trackMazEvent('Lead');
+        // Tracking centralizado de Lead
+        Analytics.leadRegistered();
       }
 
-      // 3. Delay de 800ms
       await new Promise(resolve => setTimeout(resolve, 800))
-
-      // 4. Auto-login
       const { error: loginError } = await signIn({ email, password })
       if (loginError) {
         if (loginError.message.includes('Email not confirmed')) {
@@ -325,7 +316,6 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
     return msg
   }
 
-  // Formulario de campo contrasena con indicador de fortaleza
   const renderPasswordField = (label = 'Contrasena', autocomplete = 'new-password') => (
     <div style={S.field}>
       <label style={S.label}>{label}</label>
@@ -370,13 +360,11 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
       <div style={S.card}>
         <button style={S.closeBtn} onClick={onClose}>x</button>
 
-        {/* Logo */}
         <div style={S.logo}>
           <div style={S.logoIcon}>💧</div>
           <span style={S.logoText}>Maz Clean</span>
         </div>
 
-        {/* FORGOT PASSWORD */}
         {tab === 'forgot' ? (
           <>
             <h2 style={S.title}>Recuperar contrasena</h2>
@@ -403,7 +391,6 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
           </>
 
         ) : tab === 'operator' ? (
-          /* REGISTRO OPERADOR */
           <>
             <h2 style={S.title}>Unete como Operador</h2>
             <p style={S.subtitle}>Registra tu cuenta para ofrecer servicios de lavado</p>
@@ -467,7 +454,6 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
           </>
 
         ) : (
-          /* LOGIN / REGISTRO CLIENTE */
           <>
             <div style={S.tabs}>
               <button style={S.tab(tab === 'login')}
@@ -480,7 +466,6 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
               </button>
             </div>
 
-            {/* Selector de tipo de cuenta al registrarse */}
             {(tab === 'register' || tab === 'operator') && !success && (
               <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
                 <button onClick={() => { setTab('register'); reset() }}
@@ -501,7 +486,6 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
             {error   && <div style={S.errorBox}>{error}</div>}
             {success && <div style={S.successBox}>{success}</div>}
 
-            {/* LOGIN */}
             {tab === 'login' && (
               <form onSubmit={handleLogin}>
                 <div style={S.field}>
@@ -546,7 +530,6 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
               </form>
             )}
 
-            {/* REGISTRO CLIENTE */}
             {tab === 'register' && !success && (
               <form onSubmit={handleRegister}>
                 <div style={S.field}>

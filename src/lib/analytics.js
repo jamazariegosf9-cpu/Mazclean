@@ -1,12 +1,7 @@
 // src/lib/analytics.js
-// Módulo de tracking de eventos para MAZ CLEAN
-// Registra eventos de visitas, clics y conversiones en analytics_events
-// Excluye automáticamente a usuarios con role='admin' para no ensuciar estadísticas
-
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-// ── Generar o recuperar session_id anónimo ────────────────────────────────────
 function getSessionId() {
   const KEY = 'maz_session_id'
   let sid = sessionStorage.getItem(KEY)
@@ -17,19 +12,16 @@ function getSessionId() {
   return sid
 }
 
-// ── Verificar si el usuario actual es admin ───────────────────────────────────
 function isAdminUser() {
   try {
     const stored = localStorage.getItem('mazclean-auth')
     if (!stored) return false
     const parsed = JSON.parse(stored)
-    // Verificar role en el profile guardado
     const role = parsed?.profile?.role || parsed?.user?.user_metadata?.role
     return role === 'admin'
   } catch { return false }
 }
 
-// ── Obtener user_id del usuario logueado (no admin) ───────────────────────────
 function getCurrentUserId() {
   try {
     const stored = localStorage.getItem('mazclean-auth')
@@ -41,7 +33,6 @@ function getCurrentUserId() {
   } catch { return null }
 }
 
-// ── Detectar fuente de tráfico ────────────────────────────────────────────────
 function getTrafficSource() {
   const params = new URLSearchParams(window.location.search)
   const utmSource   = params.get('utm_source')
@@ -56,9 +47,7 @@ function getTrafficSource() {
   return { source: 'direct', medium: 'none', campaign: null }
 }
 
-// ── Función principal de tracking ────────────────────────────────────────────
 export async function trackEvent(eventName, metadata = {}) {
-  // No rastrear admins
   if (isAdminUser()) return
 
   try {
@@ -76,7 +65,6 @@ export async function trackEvent(eventName, metadata = {}) {
       },
     }
 
-    // Fire-and-forget: no bloquear el UI si falla
     fetch(`${SUPABASE_URL}/rest/v1/analytics_events`, {
       method:  'POST',
       headers: {
@@ -86,11 +74,10 @@ export async function trackEvent(eventName, metadata = {}) {
         'Prefer':        'return=minimal',
       },
       body: JSON.stringify(payload),
-    }).catch(() => {}) // silencioso
+    }).catch(() => {})
   } catch {}
 }
 
-// ── Helpers específicos por evento ────────────────────────────────────────────
 export const Analytics = {
   pageView:             (page)     => trackEvent('page_view',              { page }),
   clickOperador:        ()         => trackEvent('click_quiero_operador'),
@@ -104,6 +91,22 @@ export const Analytics = {
   bookingStarted:       ()         => trackEvent('booking_started'),
   bookingCompleted:     (service)  => trackEvent('booking_completed',      { service }),
   sessionStart:         ()         => trackEvent('session_start'),
+  
+  leadRegistered: (provider = 'all') => {
+    trackEvent('lead_registered');
+    
+    if (provider === 'all' || provider === 'meta') {
+      if (typeof window.fbq === 'function') {
+        window.fbq('track', 'Lead');
+      }
+    }
+    
+    if (provider === 'all' || provider === 'google') {
+      if (typeof window.gtag === 'function') {
+        window.gtag('event', 'conversion', { 'send_to': 'TU_ID_DE_CONVERSION_AQUI' });
+      }
+    }
+  }
 }
 
 export default Analytics
