@@ -152,8 +152,6 @@ function PhotoUpload({ label, hint, icon, value, onChange, accept = 'image/*', c
     finally { setUploading(false) }
   }
 
-  // Detección basada solo en el valor guardado — no en el accept del input
-  // Esto evita que campos que aceptan PDF traten imágenes JPG como documento
   const isVideo = value && (value.includes('.mp4') || value.includes('.mov'))
   const isPdf   = value && value.includes('.pdf')
 
@@ -217,7 +215,7 @@ function PhotoUpload({ label, hint, icon, value, onChange, accept = 'image/*', c
         </div>
       )}
 
-      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: disabled ? '#e5e7eb' : uploading ? '#f3f4f6' : '#6366f1', color: disabled ? '#9ca3af' : uploading ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 700, cursor: disabled ? 'not-allowed' : uploading ? 'not-allowed' : 'pointer', pointerEvents: disabled || uploading ? 'none' : 'auto', minHeight: 50, flexShrink: 0 }}>
+      <label style={{ display: 'flex', alignItems: 'center', justifycontent: 'center', gap: 8, padding: '13px 0', borderRadius: 12, background: disabled ? '#e5e7eb' : uploading ? '#f3f4f6' : '#6366f1', color: disabled ? '#9ca3af' : uploading ? '#9ca3af' : '#fff', fontSize: 14, fontWeight: 700, cursor: disabled ? 'not-allowed' : uploading ? 'not-allowed' : 'pointer', pointerEvents: disabled || uploading ? 'none' : 'auto', minHeight: 50, flexShrink: 0 }}>
         {disabled ? '🔒 Documento bloqueado' : icon + ' ' + (value ? 'Cambiar archivo' : 'Seleccionar archivo')}
         <input type="file" accept={accept} capture={capture} style={{ display: 'none' }} onChange={e => { if (e.target.files[0] && !disabled) handleFile(e.target.files[0]) }} />
       </label>
@@ -260,14 +258,11 @@ function SignaturePad({ onSign, signed }) {
 }
 
 // ── Componente MapaZona — Google Maps Static con círculo aproximado ───────────
-// Usamos 8 puntos para el círculo (suficiente aproximación visual)
-// y coordenadas con 4 decimales para mantener la URL bajo el límite de 8192 chars
 function buildMapUrl(lat, lng, radius, key) {
   if (!key) return null
   const zoom   = radius >= 10 ? 11 : radius >= 5 ? 12 : radius >= 3 ? 13 : 14
   const degLat = radius / 111
   const degLng = radius / (111 * Math.cos(lat * Math.PI / 180))
-  // 8 puntos = octágono — visualmente suficiente, URL corta
   const pts = Array.from({ length: 8 }, (_, i) => {
     const a = (i * 2 * Math.PI) / 8
     return `${(lat + degLat * Math.sin(a)).toFixed(4)},${(lng + degLng * Math.cos(a)).toFixed(4)}`
@@ -362,25 +357,23 @@ export default function OnboardingView({ onComplete }) {
 
   // Paso 1 — Datos personales
   const [fullName, setFullName] = useState(profile?.full_name || '')
-  // Fix: limpiar prefijo +52 del teléfono guardado
   const [phone, setPhone]       = useState(cleanPhone(profile?.phone || ''))
-  // curp conservado en DB pero no se pide en registro simplificado
   const [curp, setCurp]         = useState(profile?.curp || '')
 
-  // Paso 2 — Identidad completa (INE + Selfie + Comprobante + Video)
+  // Paso 2 — Identidad completa
   const [ineFrontUrl, setIneFrontUrl]     = useState(profile?.ine_front_url || '')
   const [ineBackUrl, setIneBackUrl]       = useState(profile?.ine_back_url || '')
   const [selfieIdUrl, setSelfieIdUrl]     = useState(profile?.selfie_with_id_url || '')
   const [proofAddressUrl, setProofAddressUrl] = useState(profile?.proof_of_address_url || '')
   const [proofLifeUrl, setProofLifeUrl]   = useState(profile?.proof_of_life_video_url || '')
 
-  // Identificación alternativa — cuando el candidato no tiene su INE a la mano
+  // Identificación alternativa
   const [useAltId, setUseAltId]           = useState(!!profile?.id_alt_requested)
   const [altIdType, setAltIdType]         = useState(profile?.id_alt_type || '')
   const [altIdExplanation, setAltIdExplanation] = useState(profile?.id_alt_explanation || '')
   const [altIdUrl, setAltIdUrl]           = useState(profile?.id_alt_url || '')
 
-  // Estado banco — conservado en state aunque no se muestra (campo DB intacto)
+  // Estado banco
   const [clabe, setClabe]           = useState('')
   const [clabeHolder, setClabeHolder] = useState(profile?.clabe_holder || '')
   const [bankName, setBankName]     = useState(profile?.bank_name || '')
@@ -553,10 +546,19 @@ export default function OnboardingView({ onComplete }) {
   const handleStep1 = async () => {
     if (!fullName.trim()) { setError('El nombre completo es requerido.'); return }
     if (!/^\d{10}$/.test(phone.replace(/\s/g,''))) { setError('El teléfono debe tener 10 dígitos.'); return }
+    
+    // Ejecutar la persistencia original del paso 1
     await saveStep({ full_name: fullName.trim(), phone: phone.replace(/\s/g,'') }, 2)
+    
+    // Evento Pixel: Registro inicial completado con éxito (Lead)
+    if (typeof window !== 'undefined' && typeof window.trackMazEvent === 'function') {
+      window.trackMazEvent('Lead', {
+        full_name: fullName.trim(),
+        phone: phone.replace(/\s/g,'')
+      })
+    }
   }
 
-  // Paso 2: INE (o identificación alternativa) + Selfie + Comprobante + Video
   const handleStep2 = async () => {
     if (useAltId) {
       if (!altIdType)              { setError('Selecciona qué documento puedes mostrar.'); return }
@@ -567,6 +569,8 @@ export default function OnboardingView({ onComplete }) {
     }
     if (!selfieIdUrl)     { setError('Sube tu selfie con tu identificación.'); return }
     if (!proofAddressUrl) { setError('Sube tu comprobante de domicilio.'); return }
+    
+    // Ejecutar la persistencia original del paso 2
     await saveStep({
       ine_front_url: ineFrontUrl || null, ine_back_url: ineBackUrl || null,
       selfie_with_id_url: selfieIdUrl,
@@ -575,8 +579,15 @@ export default function OnboardingView({ onComplete }) {
       id_alt_type: useAltId ? altIdType : null,
       id_alt_explanation: useAltId ? altIdExplanation.trim() : null,
       id_alt_url: useAltId ? (altIdUrl || null) : null,
-      // proof_of_life_video_url: pedido post-aprobación en OperatorAccount
     }, 3)
+
+    // Evento Pixel: Carga de documentos de identidad completada con éxito (SubmitIdentity)
+    if (typeof window !== 'undefined' && typeof window.trackMazEvent === 'function') {
+      window.trackMazEvent('SubmitIdentity', {
+        identity_type: useAltId ? altIdType : 'ine',
+        has_proof_of_address: !!proofAddressUrl
+      })
+    }
   }
 
   const handleStep3 = async () => {
@@ -599,8 +610,6 @@ export default function OnboardingView({ onComplete }) {
   }
 
   const handleStep4 = async () => {
-    // El kit ya no bloquea el registro — si falta algo, queda marcado como pendiente
-    // y se completa antes del primer servicio (aprobación condicional).
     const missingList = Array.from(kitMissing)
     await saveStep({
       kit_photo_url: kitPhotoUrl || null,
@@ -647,8 +656,6 @@ export default function OnboardingView({ onComplete }) {
   }
 
   // ── Configuración de pasos ────────────────────────────────────────────────
-  // Paso 2 Identidad: 5 subs (INE frente, reverso, selfie, comprobante, video)
-  // Paso 3 Zona: 2 subs base + 1 extra si radio > 2 km
   const STEPS = [
     { n: 1, label: 'Datos',      icon: '👤', subs: 1 },
     { n: 2, label: 'Identidad',  icon: '🪪', subs: 4 },
@@ -724,7 +731,6 @@ export default function OnboardingView({ onComplete }) {
               <p style={{ fontSize: 14, color: '#6b7280', margin: 0, lineHeight: 1.6 }}>Toma solo <strong>~8 minutos</strong>. ¿Te falta algo de la lista? No te preocupes — muchas cosas las resolvemos juntos en el camino.</p>
             </div>
 
-            {/* Mensaje motivacional */}
             <div style={{ background: 'linear-gradient(135deg,#eff6ff,#f0fdf4)', border: '1.5px solid #bfdbfe', borderRadius: 12, padding: '14px 16px', marginBottom: 16, textAlign: 'center' }}>
               <p style={{ fontSize: 14, fontWeight: 700, color: '#1e40af', margin: 0 }}>🚀 Estás a minutos de empezar a generar ingresos con MAZ CLEAN.</p>
             </div>
@@ -828,11 +834,11 @@ export default function OnboardingView({ onComplete }) {
           </div>
         )}
 
-        {/* ════ PASO 2 — Identidad completa (5 sub-pasos) ════ */}
+        {/* ════ PASO 2 — Identidad completa ════ */}
         {step === 2 && (
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
 
-            {/* Sub 1: INE Frente (o identificación alternativa) */}
+            {/* Sub 1: INE Frente */}
             {subStep === 1 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🪪 Identificación — Frente</h2>
@@ -889,7 +895,7 @@ export default function OnboardingView({ onComplete }) {
                   if (useAltId) {
                     if (!altIdType)               { setError('Selecciona qué documento puedes mostrar.'); return }
                     if (!altIdExplanation.trim()) { setError('Cuéntanos brevemente tu situación.'); return }
-                    setError(''); setSubStep(3) // salta el reverso — no aplica a documentos alternativos
+                    setError(''); setSubStep(3)
                   } else {
                     if (!ineFrontUrl) { setError('Sube el frente de tu INE.'); return }
                     nextSub()
@@ -898,7 +904,7 @@ export default function OnboardingView({ onComplete }) {
               </>
             )}
 
-            {/* Sub 2: INE Reverso (solo si se subió INE normal) */}
+            {/* Sub 2: INE Reverso */}
             {subStep === 2 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🪪 INE — Reverso</h2>
@@ -937,14 +943,14 @@ export default function OnboardingView({ onComplete }) {
               </>
             )}
 
-            </div>
+          </div>
         )}
 
         {/* ════ PASO 3 — Zona de trabajo ════ */}
         {step === 3 && (
           <div style={{ background: '#fff', borderRadius: 16, padding: isMobile ? '20px 16px' : 28, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
 
-            {/* Sub 1: Punto de partida + radio en la misma pantalla */}
+            {/* Sub 1: Punto de partida + radio */}
             {subStep === 1 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🏠 Tu zona de trabajo</h2>
@@ -953,7 +959,6 @@ export default function OnboardingView({ onComplete }) {
                   <p style={{ fontSize: 12, color: '#1e40af', margin: 0, lineHeight: 1.5 }}>💡 No tiene que ser tu domicilio — puede ser desde donde tú decidas partir: tu colonia, tu trabajo, donde te sea más práctico.</p>
                 </div>
 
-                {/* Dirección */}
                 <div style={{ marginBottom: 16 }}>
                   <label style={lbl}>Punto de partida *</label>
                   <textarea style={{ ...inp, height: 80, resize: 'vertical', fontSize: 14 }}
@@ -984,7 +989,6 @@ export default function OnboardingView({ onComplete }) {
                   )}
                 </div>
 
-                {/* Radio de cobertura — en la misma pantalla */}
                 <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: 16, marginTop: 4 }}>
                   <label style={lbl}>
                     Radio de cobertura: <strong style={{ color: '#3b82f6' }}>{radius} km</strong>
@@ -1002,7 +1006,6 @@ export default function OnboardingView({ onComplete }) {
                 </div>
 
                 {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginTop: 12, color: '#dc2626', fontSize: 14 }}>⚠️ {error}</div>}
-
                 <NavButtons onBack={() => goStepSafe(2)} onNext={() => {
                   if (!baseAddress.trim()) { setError('Ingresa tu punto de partida.'); return }
                   if (!baseLat || !baseLng) { setError('Confirma tu dirección en el mapa o usa tu ubicación actual.'); return }
@@ -1011,7 +1014,7 @@ export default function OnboardingView({ onComplete }) {
               </>
             )}
 
-            {/* Sub 2: Mapa Google Maps con zona marcada */}
+            {/* Sub 2: Mapa */}
             {subStep === 2 && baseLat && baseLng && (
               <MapaZona
                 lat={baseLat}
@@ -1020,16 +1023,13 @@ export default function OnboardingView({ onComplete }) {
                 onConfirm={() => {
                   setZonaConfirmada(true)
                   if (radius > 2) nextSub()
-                  else {
-                    // Continuar directamente a horarios (siguiente pantalla)
-                    setSubStep(3)
-                  }
+                  else setSubStep(3)
                 }}
                 onBack={prevSub}
               />
             )}
 
-            {/* Sub 3: Días y horario (siempre) + Transporte si radio > 2 */}
+            {/* Sub 3: Días, horarios y Transporte */}
             {subStep === 3 && (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🗓️ Días y horario</h2>
@@ -1063,7 +1063,6 @@ export default function OnboardingView({ onComplete }) {
                   </div>
                 </div>
 
-                {/* Transporte — solo si radius > 2 */}
                 {radius > 2 && (
                   <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: 16, marginTop: 4 }}>
                     <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>🚗 Tu medio de transporte</h3>
@@ -1251,7 +1250,6 @@ export default function OnboardingView({ onComplete }) {
               ine_back_url:            { step: 2, subStep: 2 },
               selfie_with_id_url:      { step: 2, subStep: 3 },
               proof_of_address_url:    { step: 2, subStep: 4 },
-              // proof_of_life_video_url: verificación post-aprobación
               vehicle_photo_url:       { step: 3, subStep: 3 },
               kit_photo_url:           { step: 4, subStep: 1 },
               terms_accepted_at:       { step: 5, subStep: 2 },
