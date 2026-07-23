@@ -500,6 +500,65 @@ const AdminViewB = ({
     finally { setUpdatingMembership(null); }
   };
 
+  // ── Recordatorios de operador (certificación / pago / inactividad) ────────
+  // Reutilizan sendWhatsApp(event, phone, booking, options) de ./lib/whatsapp —
+  // misma firma que ya usan operator_docs_required/operator_rejected arriba.
+  const [sendingReminder, setSendingReminder] = useState(null); // `${op.id}-${tipo}` en curso, o null
+
+  const sendCertificationReminder = async (op) => {
+    if (!op.phone) { showToast('Este operador no tiene teléfono registrado', 'error'); return; }
+    const key = `${op.id}-certification`;
+    setSendingReminder(key);
+    try {
+      const result = await sendWhatsApp('operator_certification_pending', op.phone, { operator_name: op.full_name }, { operatorId: op.id });
+      if (result.success) showToast('✅ Recordatorio de certificación enviado', 'success');
+      else showToast('❌ Error: ' + (result.error || 'desconocido'), 'error');
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      setSendingReminder(null);
+    }
+  };
+
+  const sendPaymentReminder = async (op) => {
+    if (!op.phone) { showToast('Este operador no tiene teléfono registrado', 'error'); return; }
+    const key = `${op.id}-payment`;
+    setSendingReminder(key);
+    try {
+      // Monto real considerando promociones activas — misma RPC que usa
+      // OperatorView.jsx para calcular lo que el operador ve al pagar.
+      const { data: priceRows, error: priceError } = await supabase.rpc('get_effective_membership_price', {
+        p_user_id: op.id,
+        p_user_type: 'operador',
+      });
+      if (priceError) console.error('get_effective_membership_price:', priceError.message);
+      const pendingAmount = priceRows?.[0]?.effective_price || membershipConfig?.operator_price || 0;
+
+      const result = await sendWhatsApp('operator_payment_pending', op.phone, { operator_name: op.full_name, pending_amount: pendingAmount }, { operatorId: op.id });
+      if (result.success) showToast(`✅ Recordatorio de pago enviado ($${pendingAmount} MXN)`, 'success');
+      else showToast('❌ Error: ' + (result.error || 'desconocido'), 'error');
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      setSendingReminder(null);
+    }
+  };
+
+  const sendInactivityReminder = async (op) => {
+    if (!op.phone) { showToast('Este operador no tiene teléfono registrado', 'error'); return; }
+    const key = `${op.id}-inactive`;
+    setSendingReminder(key);
+    try {
+      const result = await sendWhatsApp('operator_inactive', op.phone, { operator_name: op.full_name }, { operatorId: op.id });
+      if (result.success) showToast('✅ Recordatorio de inactividad enviado', 'success');
+      else showToast('❌ Error: ' + (result.error || 'desconocido'), 'error');
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      setSendingReminder(null);
+    }
+  };
+
   const fetchDepositRequests = async () => {
     setLoadingDeposits(true);
     try {
@@ -598,7 +657,7 @@ const AdminViewB = ({
       // Enviar WA de confirmación al usuario
       if (req.profile?.phone) {
         const msg = `✅ *MAZ CLEAN* — ¡Tu membresía ${req.user_type === 'operador' ? 'de Operador' : 'Premium'} ha sido activada! Válida del ${now.toLocaleDateString('es-MX')} al ${endAt.toLocaleDateString('es-MX')}. ¡Bienvenido! 🚗`;
-        await sendWhatsApp({ to: req.profile.phone, message: msg });
+        await sendWhatsApp('free_message', req.profile.phone, { free_text: msg });
       }
       setDepositRequests(prev => prev.filter(r => r.id !== req.id));
       setOperators(prev => prev.map(o => o.id === req.user_id ? { ...o, membership_status: 'activa', membership_end_at: endAt.toISOString() } : o));
@@ -623,7 +682,7 @@ const AdminViewB = ({
       });
       if (req.profile?.phone) {
         const msg = `⚠️ *MAZ CLEAN* — Tu solicitud de membresía fue rechazada. Motivo: ${depositAdminNote}. Contacta al soporte si crees que es un error.`;
-        await sendWhatsApp({ to: req.profile.phone, message: msg });
+        await sendWhatsApp('free_message', req.profile.phone, { free_text: msg });
       }
       setDepositRequests(prev => prev.filter(r => r.id !== req.id));
       setDepositAdminNote('');
@@ -1555,6 +1614,15 @@ const AdminViewB = ({
                 const commission = totalRev * ((op.commission_pct || 15) / 100);
                 const opStatusCfg = getOpStatusCfg(op.status);
                 const memBadge = getMembershipBadge(op);
+                // ── Inactividad: 7+ días sin ningún servicio finalizado (solo aplica
+                // a operadores que ya tuvieron al menos 1 servicio antes) ────────────
+                const lastServiceDate = opBookings.length > 0
+                  ? opBookings.reduce((latest, b) => (!latest || b.scheduled_date > latest) ? b.scheduled_date : latest, null)
+                  : null;
+                const daysSinceLastService = lastServiceDate
+                  ? Math.floor((Date.now() - new Date(lastServiceDate + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24))
+                  : null;
+                const isInactive = opBookings.length > 0 && daysSinceLastService !== null && daysSinceLastService >= 7;
                 return (
                   <div key={op.id} style={{ background: '#f9fafb', borderRadius: 12, border: `1.5px solid ${opStatusCfg.border}`, padding: 16, display: 'flex', flexDirection: 'column', gap: 10, opacity: op.status === 'desactivado' ? 0.7 : 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1627,13 +1695,47 @@ const AdminViewB = ({
                             </button>
                           </>
                         ) : (
-                          <button onClick={() => openMembershipModal(op)} disabled={updatingMembership === op.id}
-                            style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#059669', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
-                            {updatingMembership === op.id ? '⏳' : '+ Activar'}
-                          </button>
+                          <>
+                            <button onClick={() => sendPaymentReminder(op)} disabled={sendingReminder === `${op.id}-payment`}
+                              style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #fde68a', background: '#fffbeb', color: '#92400e', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                              {sendingReminder === `${op.id}-payment` ? '⏳' : '💬 Recordatorio'}
+                            </button>
+                            <button onClick={() => openMembershipModal(op)} disabled={updatingMembership === op.id}
+                              style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #bbf7d0', background: '#f0fdf4', color: '#059669', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32 }}>
+                              {updatingMembership === op.id ? '⏳' : '+ Activar'}
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
+
+                    {/* ── CERTIFICACIÓN ── */}
+                    {!op.is_certified && (
+                      <div style={{ background: '#fef2f2', borderRadius: 10, padding: '10px 14px', border: '1.5px solid #fecaca', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626' }}>⚠️ Sin certificar</div>
+                          <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>No ha terminado la Academia</div>
+                        </div>
+                        <button onClick={() => sendCertificationReminder(op)} disabled={sendingReminder === `${op.id}-certification`}
+                          style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32, flexShrink: 0 }}>
+                          {sendingReminder === `${op.id}-certification` ? '⏳' : '💬 Recordatorio'}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* ── ACTIVIDAD ── */}
+                    {isInactive && (
+                      <div style={{ background: '#fffbeb', borderRadius: 10, padding: '10px 14px', border: '1.5px solid #fde68a', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#92400e' }}>😴 Inactivo</div>
+                          <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>Sin servicios hace {daysSinceLastService} días</div>
+                        </div>
+                        <button onClick={() => sendInactivityReminder(op)} disabled={sendingReminder === `${op.id}-inactive`}
+                          style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #fde68a', background: '#fff', color: '#92400e', fontSize: 10, fontWeight: 700, cursor: 'pointer', minHeight: 32, flexShrink: 0 }}>
+                          {sendingReminder === `${op.id}-inactive` ? '⏳' : '💬 Recordatorio'}
+                        </button>
+                      </div>
+                    )}
 
                     <div>
                       <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', marginBottom: 5 }}>Estado operativo</div>
