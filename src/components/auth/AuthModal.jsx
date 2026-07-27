@@ -210,7 +210,16 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
           is_active: true,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' })
-        if (profileError) console.warn('[AuthModal] upsert profile cliente error:', profileError.message)
+        if (profileError) {
+          // NOTA (28/07/2026): el trigger handle_new_user() del servidor ya
+          // crea esta fila de forma confiable (bug de cast de tipo corregido
+          // en la función SQL). Este upsert es ahora un respaldo, no la
+          // única fuente de verdad — por eso NO se bloquea el flujo aquí.
+          // Se sube a console.error (antes era console.warn) para que un
+          // fallo aquí sea más visible en logs de monitoreo si algo vuelve
+          // a romperse en el futuro.
+          console.error('[AuthModal] upsert profile cliente falló (respaldo del trigger, no bloqueante):', profileError.message)
+        }
 
         // Tracking centralizado de Lead. Se pasa userId explícito porque
         // en este punto localStorage('mazclean-auth') aún no tiene sesión
@@ -267,7 +276,16 @@ export default function AuthModal({ onClose, defaultTab = 'login' }) {
           status: 'activo',
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' })
-        if (profileError) console.warn('[AuthModal] upsert profile error:', profileError.message)
+        if (profileError) {
+          // NOTA (28/07/2026): el trigger handle_new_user() del servidor ya
+          // crea esta fila de forma confiable (bug de cast de tipo corregido
+          // en la función SQL). Este upsert es ahora un respaldo, no la
+          // única fuente de verdad — por eso NO se bloquea el flujo aquí.
+          // Se sube a console.error (antes era console.warn) para que un
+          // fallo aquí sea más visible en logs de monitoreo si algo vuelve
+          // a romperse en el futuro.
+          console.error('[AuthModal] upsert profile operador falló (respaldo del trigger, no bloqueante):', profileError.message)
+        }
 
         // Tracking centralizado de Lead. role: 'operador' permite disparar
         // el evento trackCustom 'LeadOperador' en Meta (para optimizar la
